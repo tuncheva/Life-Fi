@@ -29,7 +29,7 @@ How to read it:
 | Engine | `engine/` | C++ | Parses frames, DSP, ONNX inference, rules, records, sends results |
 | Server | `server/` | Java 21, Spring Boot | Talks to the engine, REST + WebSocket, history, alerts, profiles, labelling |
 | Scripts | `scripts/` | shell / Python | `run_all`, `fake-engine`, `check_session`, `onsite_adapt`, latency report |
-| Models | `ml/` | Python | Trains M1 and M2, exports ONNX + test vectors, fine-tunes on site |
+| Models | `ml/` | Python | Generates synthetic training data, trains M1 and M2, exports ONNX + test vectors, fine-tunes on site |
 | Dashboard | `ui/` | Next.js, TypeScript | Home / School / Clinic pages, labelling screen, alerts |
 
 **What CSI is, briefly.** Every Wi-Fi packet carries a known training
@@ -384,6 +384,7 @@ described in section 5.
 - [ ] `ml/`: loader: engine feature dumps + `labels.jsonl` → labelled 3 s windows, matched on host time, with a configurable reaction-time offset for marks
 - [ ] `ml/`: split config with locked test sessions; the training script refuses to train on them. Test sessions must never be used for training, otherwise the accuracy numbers are meaningless.
 - [ ] `ml/`: split by whole session, never by random windows. Neighbouring windows are almost identical, so a random split leaks test data into training.
+- [ ] `ml/synth.py`: generates synthetic feature windows (empty room, 1–3 people, standing / sitting / lying / walking, breathing 6–30 /min, noise, gain jumps, packet loss) in the same format as `--dump-features`, with labels. Used only for training: to test the training pipeline and pre-train M1 and M2 before real recordings exist. Synthetic data never goes through the engine or the network, and is never used as test data.
 - [ ] `ml/`: M1 and M2 training, with augmentation (noise, time shift, amplitude scale) to make up for limited data
 - [ ] `ml/`: ONNX export with `metadata_props` + test vectors; PyTorch vs ONNX Runtime check at 1e-3
 - [ ] `ml/`: evaluation report: per-class accuracy, confusion matrix, fall recall per event, false alarms per hour
