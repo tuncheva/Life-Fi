@@ -23,7 +23,6 @@ How to read it:
 |---|---|---|---|
 | Firmware | `firmware/` | C (ESP-IDF) | Pings the router at 100 Hz, captures CSI, sends frames over UDP |
 | csirec library | `tools/csirec/` | C | Reads and writes `.csirec` files; used by every tool and the engine |
-| fake-node | `tools/fake-node/` | C | Sends synthetic frames, so everything works without the ESP32 |
 | recorder | `tools/recorder/` | C | UDP → `.csirec`, standalone capture |
 | replayer | `tools/replayer/` | C | `.csirec` → UDP, stands in for the ESP32 |
 | serial-bridge | `tools/serial-bridge/` | C | USB serial → UDP, fallback transport |
@@ -49,7 +48,6 @@ flowchart LR
   R[Router] <-->|ping 100 Hz| F[Firmware]
   F -->|"UDP :5005, source=0"| E[Engine]
   P[Replayer] -->|"UDP :5005, source=1"| E
-  FN[fake-node] -->|"UDP :5005, source=2"| E
   E -->|"TCP :6000 results"| S[Server]
   S -->|"TCP :6000 commands"| E
   S -->|spawns, stops| P
@@ -86,9 +84,9 @@ bug:
 - **`.csirec` and `labels.jsonl` use the same clock: host wall-clock µs.**
   The ESP32 clock counts from boot and resets on every reboot, so labels made
   in the browser could never be matched to ESP32 timestamps.
-- **The replayer and fake-node send exactly the same packets as the ESP32.**
+- **The replayer sends exactly the same packets as the ESP32.**
   The engine does not know or care where frames come from, so every part of
-  the system can be developed and demonstrated without hardware.
+  the system can be developed and demonstrated from recordings.
 
 All binary formats are little-endian (ESP32 and x86 both are).
 
@@ -112,7 +110,7 @@ typedef struct {
   uint16_t version;            /* CSI_VERSION */
   uint16_t hdr_len;            /* sizeof(csi_frame_hdr_t) */
   uint8_t  node_id;
-  uint8_t  source;             /* 0 live, 1 replay, 2 synthetic */
+  uint8_t  source;             /* 0 live, 1 replay */
   uint8_t  sig_mode;           /* 0 non-HT, 1 HT */
   uint8_t  mcs;
   uint8_t  cwb;                /* 0 = 20 MHz, 1 = 40 MHz */
@@ -203,7 +201,7 @@ labels are matched against.
 |---|---|
 | `ts` | laptop time of the end of this window, ms |
 | `t_rx_last_us` | receive time of the newest frame in the window; used to measure latency |
-| `source` | `live`, `replay` or `synthetic`; the UI shows a banner when it is not `live` |
+| `source` | `live` or `replay`; the UI shows a banner when it is not `live` |
 | `rate_hz`, `loss` | health of the stream: frames per second and share of lost packets |
 | `calibration.state` | `none`, `running`, `ok` |
 | `count`, `posture` | model outputs with probabilities; `src` is `model` or `rule` (fallback) |
@@ -229,7 +227,7 @@ if the connection drops. Every command has an `id`; the engine replies
 | Command | Arguments | Effect |
 |---|---|---|
 | `calibrate` | `duration_s`, `mode`: `empty` / `rolling` | Builds the per-subcarrier baseline |
-| `set_source` | `mode`: `live` / `replay` / `synthetic` | The engine accepts only frames with that `source` |
+| `set_source` | `mode`: `live` / `replay` | The engine accepts only frames with that `source` |
 | `record_start` | `session`, `path` | Starts writing `.csirec` (live only) |
 | `record_stop` | — | Closes the file; returns the frame count and time range |
 | `reload_models` | — | Reloads the `.onnx` files |
@@ -299,7 +297,7 @@ Do the steps in order; within a step, components can be built in parallel.
 Each step ends with a check. Don't start the next step until the check passes,
 because every later step builds on it.
 
-### Step 1 — End-to-end skeleton with fake data
+### Step 1 — End-to-end skeleton
 
 **Why:** connecting the parts is where projects usually break. Building a thin
 version of the whole chain first, with no real logic, means every later
@@ -308,20 +306,19 @@ hardware or for another component.
 
 - [ ] `contracts/`: write all six files from section 3
 - [ ] `tools/csirec`: reader and writer + unit tests (write a file, read it back, compare)
-- [ ] `tools/fake-node`: frames per `csi_frame.h`. Flags: `--rate`, `--breath-bpm`, `--loss`, `--reset-every` (simulates a reboot), `--mix-nonht` (wrong packet types), `--motion-burst`. Each flag reproduces a real-world problem the engine must handle.
 - [ ] `engine/`: CMake + GoogleTest; portable UDP socket (POSIX and Winsock); parser that checks `magic`, `version`, `hdr_len`, `n_values` and counts rejected frames
 - [ ] `engine/`: TCP :6000 server sending a stub result every 0.5 s (motion = amplitude variance); answers `get_status`
 - [ ] `server/`: Spring Boot; engine client (connect, reconnect, JSON lines both ways); `/api/v1/status`, `/ws/live`; CORS for `localhost:3000`
 - [ ] `scripts/fake-engine`: replays a results file and acks commands, so the server and UI can be tested without the engine
 - [ ] `ui/`: Next.js app; TypeScript types generated from `results.schema.json`; one page with live motion from `/ws/live`
-- [ ] `scripts/run_all`: starts fake-node, engine, server and UI with one command
+- [ ] `scripts/run_all`: starts engine, server and UI with one command
 - [ ] CI: build and test each folder; compile `csi_frame.h` in C and C++ (the size check catches layout mistakes); validate UI mock data against the schema
 
-**Works when:** `run_all` shows live motion from fake-node in the browser.
+**Works when:** the engine parser tests pass on hand-built frames, and `run_all` with `fake-engine` shows live motion in the browser.
 
 ### Step 2 — Real CSI from the ESP32
 
-**Why:** the real device behaves differently from fake data: packet types mix,
+**Why:** the real device behaves differently from what we expect on paper: packet types mix,
 gain jumps, packets get lost, the ESP32 reboots. This step makes the real
 stream reliable before any processing depends on it.
 
