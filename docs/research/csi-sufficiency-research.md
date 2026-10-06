@@ -7,9 +7,9 @@ This document answers two questions:
 2. Is that data enough to train models that give correct predictions?
 
 It also audits the three existing docs
-([implementation-plan.md](implementation-plan.md),
-[plan-audit-and-model-research.md](plan-audit-and-model-research.md),
-[build-guide.md](build-guide.md)) against primary sources.
+([implementation-plan.md](../archive/implementation-plan.md),
+[plan-audit-and-model-research.md](../archive/plan-audit-and-model-research.md),
+[build-guide.md](../archive/build-guide.md)) against primary sources.
 
 **Scope note.** No device logs exist yet: there are no `.csirec`, serial or
 CSV captures in the repo or its history. Every hardware number below comes
@@ -156,7 +156,7 @@ ESP32 nodes or multi-antenna Intel cards; the table says which.
 - **Pretraining:** CSI foundation-model work says data, not model size, is
   the bottleneck [V L27], but none of that data is ESP32. Public ESP32
   datasets help only for pretraining or warm-starting (list in
-  [plan-audit §B.5](plan-audit-and-model-research.md); additions: 3DO,
+  [plan-audit §B.5](../archive/plan-audit-and-model-research.md); additions: 3DO,
   OpenCSI, ESP-Fi HAR, CSI-Bench [V L5, L6, L9, L34]).
 - **Drift:** expect −10 to −15 points day to day and after furniture moves
   on ESP32 [V L5, L11, L29]. This is the strongest argument for the
