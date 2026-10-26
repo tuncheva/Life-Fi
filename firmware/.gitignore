@@ -1,0 +1,13 @@
+.pio/
+.vscode/
+/sdkconfig.esp32dev
+/sdkconfig.esp32s3
+/sdkconfig.esp32dev.old
+/sdkconfig.esp32s3.old
+/dependencies.lock
+src/wifi_secrets.h
+logs/
+__pycache__/
+test/host/.venv/
+test/host/*.exe
+test/host/*.pdb
