@@ -32,6 +32,7 @@ async function main() {
     engineStatus: null,
     source: { mode: "live", file: null, speed: 1, loop: false, state: "running" },
     calibration: null,
+    recording: null,
   };
   const hub = new LiveHub(log);
   const history = new History();

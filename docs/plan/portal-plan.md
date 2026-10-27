@@ -95,8 +95,8 @@ Three layers, used in this order:
 
 **Then: data + demo hardening**
 - [ ] History on disk (SQLite vs H2 is still an open team decision; the in-memory store keeps the same query API)
-- [ ] Real phone notification from the mock fall through ntfy.sh, with the acknowledge action
-- [ ] Labelling page (segments, marks, keyboard shortcuts) on top of `/api/v1/recordings/*`
+- [x] Real phone notification from the mock fall through ntfy.sh, verified by reading the message back (priority 5, click URL, acknowledge action)
+- [x] Labelling page: session start writes `session.json`, segment buttons (digits) with count / subject / spot, non-overlapping segments, mark buttons (letters), hard negatives, live `labels.jsonl` list, `Status.recording` over WebSocket
 - [ ] `run_all live` against the real engine once it exists; replay fallback rehearsal
 - [ ] Apply Alex's design if it arrives: swap tokens / components, not structure
 - [ ] Gemini summaries (P4) once the team agrees

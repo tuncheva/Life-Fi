@@ -29,13 +29,20 @@ Writes: every `POST` and `PUT` below.
 | GET | `/profile` | — | `{"active": "home", "profiles": {…}}` (the `profiles` block of `profiles.yml`) |
 | PUT | `/profile` | `{"active": "clinic"}` | same as GET |
 | POST | `/calibrate` | `{"kind": "empty", "duration_s": 120}` | `{"started": true}`; `409` while one is running. Progress and outcome arrive as `status` WS messages: `calibration_job` (below) plus the engine's `calibration.state` in every result |
-| GET | `/recordings` | — | `{"recordings": [{"session","file","bytes","labels"}], "recording": "s03" \| null}` |
+| GET | `/recordings` | — | `{"recordings": [{"session","file","bytes","labels"}], "recording": Recording \| null, "vocabulary": {"segments": [...], "marks": [...]}}` |
+| GET | `/recordings/labels?session=` | — | `{"session", "labels": [lines of labels.jsonl], "open_segment"}`; `session` defaults to the one recording |
 | GET | `/source` | — | `Source` |
 | PUT | `/source` | `Source` without `state` | `Source` |
-| POST | `/recordings/start` | `{"session": "s03", "meta": {…}}` | `{"session": "s03"}` |
-| POST | `/recordings/stop` | `{}` | `{"session": "s03", "frames": 12345}` |
-| POST | `/recordings/segment` | `{"label","count","subject","spot","action":"start"\|"end"}` | `{}` |
-| POST | `/recordings/mark` | `{"event","subject"}` | `{}` |
+| POST | `/recordings/start` | `{"session": "s03", "meta": {…}}` (meta goes into `session.json`) | `{"session": "s03", "started_us"}`; `409` if recording or not live |
+| POST | `/recordings/stop` | `{}` | `{"session": "s03", "frames": 12345, "labels": 17}`; ends an open segment first |
+| POST | `/recordings/segment` | `{"action":"start","label","count","subject","spot"}` or `{"action":"end"}` | `{"ended": segment \| null, "open_segment"}`; starting a segment ends the open one (segments never overlap) |
+| POST | `/recordings/mark` | `{"event","subject"}` | the written mark line |
+
+`Recording` (also in `Status.recording` while a session runs):
+`{"session": "s03", "started_us": …, "open_segment": {"t_start_us","label","count","subject","spot"} | null, "labels": 17}`.
+
+Segment labels: `empty`, `standing`, `sitting`, `lying`, `walking`, `normal_activity`, `in_bed`, `bed_empty`, `breath_hold`, `paced_breathing_<bpm>`.
+Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `breath_hold_start`, `breath_hold_end`, `hard_negative_<what>`.
 | GET | `/settings` | — | `Settings` |
 | PUT | `/settings` | partial `Settings` (+ `pin` to change it, 4–8 digits) | `Settings` |
 | POST | `/settings/test-notification` | `{}` | `{"sent": true}`, or `502` `{"error":"notify"}` when ntfy refused or no topic is set |

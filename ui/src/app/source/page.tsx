@@ -14,6 +14,7 @@ export default function SourcePage() {
   const source = status?.source;
   const [recordings, setRecordings] = useState<RecordingInfo[]>([]);
   const [recording, setRecording] = useState<string | null>(null);
+  const [labelCounts, setLabelCounts] = useState<Record<string, number>>({});
   const [file, setFile] = useState("");
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
@@ -24,7 +25,8 @@ export default function SourcePage() {
     getRecordings()
       .then((r) => {
         setRecordings(r.recordings);
-        setRecording(r.recording);
+        setRecording(r.recording?.session ?? null);
+        setLabelCounts(Object.fromEntries(r.recordings.map((x) => [x.session, x.labels])));
       })
       .catch(() => {});
   useEffect(() => {
@@ -79,7 +81,7 @@ export default function SourcePage() {
               .filter((r) => r.file)
               .map((r) => (
                 <option key={r.session} value={r.file!}>
-                  {r.session} · {(r.bytes / 1e6).toFixed(1)} MB {r.labels ? "· labelled" : ""}
+                  {r.session} · {(r.bytes / 1e6).toFixed(1)} MB {r.labels ? `· ${r.labels} labels` : ""}
                 </option>
               ))}
           </select>
@@ -142,7 +144,7 @@ export default function SourcePage() {
           <ul className="mt-3 text-xs text-zinc-500">
             {recordings.map((r) => (
               <li key={r.session}>
-                {r.session} · {r.file ? `${(r.bytes / 1e6).toFixed(1)} MB` : "no .csirec"} {r.labels ? "· labels.jsonl" : ""}
+                {r.session} · {r.file ? `${(r.bytes / 1e6).toFixed(1)} MB` : "no .csirec"} {labelCounts[r.session] ? `· ${labelCounts[r.session]} labels` : ""}
               </li>
             ))}
           </ul>

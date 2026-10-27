@@ -34,6 +34,22 @@ export interface CalibrationJob {
   finished_at: number | null;
 }
 
+/** A segment that has been started but not ended (labels.jsonl segments are non-overlapping). */
+export interface OpenSegment {
+  t_start_us: number;
+  label: string;
+  count: number;
+  subject: string | null;
+  spot: string | null;
+}
+
+export interface RecordingState {
+  session: string;
+  started_us: number;
+  open_segment: OpenSegment | null;
+  labels: number;
+}
+
 export interface AppState {
   startedAt: number;
   latest: Result | null;
@@ -41,6 +57,7 @@ export interface AppState {
   engineStatus: EngineStatus | null;
   source: SourceState;
   calibration: CalibrationJob | null;
+  recording: RecordingState | null;
 }
 
 export interface AppContext {
@@ -76,6 +93,7 @@ export function buildStatus(ctx: AppContext, includeResult: boolean): Record<str
     device: ctx.state.engineStatus?.device ?? null,
     source: ctx.state.source,
     calibration_job: ctx.state.calibration,
+    recording: ctx.state.recording,
     ...(includeResult ? { result: ctx.state.latest } : {}),
     alerts_open: ctx.alerts.openCount(),
   };

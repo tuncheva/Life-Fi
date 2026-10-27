@@ -81,6 +81,7 @@ export interface Status {
   device: DeviceStatus | null;
   source: SourceState;
   calibration_job: CalibrationJob | null;
+  recording: RecordingState | null;
   result?: Result | null;
   alerts_open: number;
 }
@@ -115,8 +116,27 @@ export interface RecordingInfo {
   session: string;
   file: string | null;
   bytes: number;
-  labels: boolean;
+  labels: number;
 }
+
+export interface OpenSegment {
+  t_start_us: number;
+  label: string;
+  count: number;
+  subject: string | null;
+  spot: string | null;
+}
+
+export interface RecordingState {
+  session: string;
+  started_us: number;
+  open_segment: OpenSegment | null;
+  labels: number;
+}
+
+export type LabelLine =
+  | { kind: "segment"; session: string; t_start_us: number; t_end_us: number; label: string; count: number; subject: string | null; spot: string | null }
+  | { kind: "mark"; session: string; t_press_us: number; event: string; subject: string | null };
 
 export interface ProfileView {
   active: ProfileName;
@@ -191,10 +211,16 @@ export const getHistory = (from: number, to: number, fields?: string) =>
   api<{ rows: HistoryRow[] }>(`/history?from=${from}&to=${to}${fields ? `&fields=${fields}` : ""}`);
 export const getSource = () => api<SourceState>("/source");
 export const setSource = (s: Omit<SourceState, "state">) => api<SourceState>("/source", { method: "PUT", body: JSON.stringify(s), pin: true });
-export const getRecordings = () => api<{ recordings: RecordingInfo[]; recording: string | null }>("/recordings");
+export const getRecordings = () =>
+  api<{ recordings: RecordingInfo[]; recording: RecordingState | null; vocabulary: { segments: string[]; marks: string[] } }>("/recordings");
+export const getLabels = (session?: string) => api<{ session: string; labels: LabelLine[]; open_segment: OpenSegment | null }>(`/recordings/labels${session ? `?session=${session}` : ""}`);
 export const startRecording = (session: string, meta: Record<string, unknown>) =>
-  api<{ session: string }>("/recordings/start", { method: "POST", body: JSON.stringify({ session, meta }), pin: true });
-export const stopRecording = () => api<{ session: string; frames?: number }>("/recordings/stop", { method: "POST", body: "{}", pin: true });
+  api<{ session: string; started_us: number }>("/recordings/start", { method: "POST", body: JSON.stringify({ session, meta }), pin: true });
+export const stopRecording = () => api<{ session: string; frames?: number; labels: number }>("/recordings/stop", { method: "POST", body: "{}", pin: true });
+export const startSegment = (label: string, count: number, subject: string, spot: string) =>
+  api<{ open_segment: OpenSegment }>("/recordings/segment", { method: "POST", body: JSON.stringify({ action: "start", label, count, subject, spot }), pin: true });
+export const endSegment = () => api<{ open_segment: null }>("/recordings/segment", { method: "POST", body: JSON.stringify({ action: "end" }), pin: true });
+export const addMark = (event: string, subject: string) => api<LabelLine>("/recordings/mark", { method: "POST", body: JSON.stringify({ event, subject }), pin: true });
 
 // Dev-only (mock engine)
 export interface ScenarioInfo {

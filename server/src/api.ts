@@ -1,5 +1,5 @@
 // REST + WebSocket routes (contracts/api.md).
-import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ALERT_STATES, type AlertState } from "./alerts.js";
@@ -135,69 +135,141 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
     return ctx.state.source;
   });
 
-  // Recordings: start/stop go to the engine; segments and marks are appended to labels.jsonl (plan-v2 §4.3).
-  let session: string | null = null;
-  const labelsPath = (s: string) => join(config.dataDir, "sessions", s, "labels.jsonl");
+  // Recordings (plan-v2 §4.3, §10.1): the engine writes the .csirec, the
+  // server writes session.json at start and appends labels.jsonl. Segments
+  // are non-overlapping: starting one ends the open one.
+  const sessionDir = (s: string) => join(config.dataDir, "sessions", s);
+  const labelsPath = (s: string) => join(sessionDir(s), "labels.jsonl");
   const appendLabel = (s: string, line: Record<string, unknown>) => {
-    mkdirSync(join(config.dataDir, "sessions", s), { recursive: true });
+    mkdirSync(sessionDir(s), { recursive: true });
     appendFileSync(labelsPath(s), JSON.stringify(line) + "\n");
+    if (ctx.state.recording?.session === s) ctx.state.recording.labels++;
+  };
+  const readLabels = (s: string): Record<string, unknown>[] => {
+    if (!existsSync(labelsPath(s))) return [];
+    return readFileSync(labelsPath(s), "utf8")
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+  };
+  const broadcastStatus = () => ctx.hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
+  const SEGMENT_LABELS = ["empty", "standing", "sitting", "lying", "walking", "normal_activity", "in_bed", "bed_empty", "breath_hold"];
+  const MARK_EVENTS = ["sit_down", "stand_up", "lie_down", "get_up", "fall", "bed_exit", "breath_hold_start", "breath_hold_end"];
+  const validLabel = (l: string) => SEGMENT_LABELS.includes(l) || /^paced_breathing_\d{1,3}$/.test(l);
+  const validEvent = (e: string) => MARK_EVENTS.includes(e) || /^hard_negative_[\w-]+$/.test(e);
+
+  /** Ends the open segment (if any) at `t_us` and writes it. */
+  const endOpenSegment = (t_us: number): Record<string, unknown> | null => {
+    const rec = ctx.state.recording;
+    if (!rec?.open_segment) return null;
+    const seg = rec.open_segment;
+    rec.open_segment = null;
+    const line = { kind: "segment", session: rec.session, t_start_us: seg.t_start_us, t_end_us: t_us, label: seg.label, count: seg.count, subject: seg.subject, spot: seg.spot };
+    appendLabel(rec.session, line);
+    return line;
   };
 
-  /** Recorded sessions under data/sessions/<id>/<id>.csirec, for the replay picker. */
+  /** Recorded sessions under data/sessions/<id>/, for the replay picker and the labelling page. */
   app.get("/api/v1/recordings", async () => {
     const dir = join(config.dataDir, "sessions");
-    if (!existsSync(dir)) return { recordings: [], recording: session };
-    const recordings = readdirSync(dir, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => {
-        const file = join(dir, d.name, `${d.name}.csirec`);
-        const has = existsSync(file);
-        return { session: d.name, file: has ? file : null, bytes: has ? statSync(file).size : 0, labels: existsSync(labelsPath(d.name)) };
-      })
-      .sort((a, b) => a.session.localeCompare(b.session));
-    return { recordings, recording: session };
+    const recordings = !existsSync(dir)
+      ? []
+      : readdirSync(dir, { withFileTypes: true })
+          .filter((d) => d.isDirectory())
+          .map((d) => {
+            const file = join(dir, d.name, `${d.name}.csirec`);
+            const has = existsSync(file);
+            return { session: d.name, file: has ? file : null, bytes: has ? statSync(file).size : 0, labels: existsSync(labelsPath(d.name)) ? readLabels(d.name).length : 0 };
+          })
+          .sort((a, b) => a.session.localeCompare(b.session));
+    return { recordings, recording: ctx.state.recording, vocabulary: { segments: SEGMENT_LABELS, marks: MARK_EVENTS } };
+  });
+
+  app.get("/api/v1/recordings/labels", async (req, reply) => {
+    const q = req.query as Record<string, string | undefined>;
+    const s = q.session ?? ctx.state.recording?.session;
+    if (!s || !/^[\w-]+$/.test(s)) return fail(reply, 400, "bad_request", "session is required");
+    return { session: s, labels: readLabels(s), open_segment: ctx.state.recording?.session === s ? ctx.state.recording.open_segment : null };
   });
 
   app.post("/api/v1/recordings/start", write, async (req, reply) => {
     const body = (req.body ?? {}) as Body;
-    if (typeof body.session !== "string" || !/^[\w-]+$/.test(body.session)) return fail(reply, 400, "bad_request", "session must be a short id");
-    if (session) return fail(reply, 409, "conflict", `session '${session}' is already recording`);
-    const path = join(config.dataDir, "sessions", body.session, `${body.session}.csirec`);
+    if (typeof body.session !== "string" || !/^[\w-]+$/.test(body.session)) return fail(reply, 400, "bad_request", "session must be a short id (letters, digits, - _)");
+    if (ctx.state.recording) return fail(reply, 409, "conflict", `session '${ctx.state.recording.session}' is already recording`);
+    if (ctx.state.source.mode !== "live") return fail(reply, 409, "conflict", "recording is live only");
+    const meta = (body.meta && typeof body.meta === "object" ? body.meta : {}) as Record<string, unknown>;
+    const path = join(sessionDir(body.session), `${body.session}.csirec`);
     try {
-      await ctx.engine.send("record_start", { session: body.session, path, meta: body.meta ?? {} });
+      await ctx.engine.send("record_start", { session: body.session, path, meta });
     } catch (err) {
       return engineFail(reply, err);
     }
-    session = body.session;
-    return { session };
+    const started_us = Date.now() * 1000;
+    mkdirSync(sessionDir(body.session), { recursive: true });
+    const sessionJson = {
+      session: body.session,
+      started_us,
+      firmware: (ctx.state.engineStatus?.device as Record<string, unknown> | null)?.fw_version ?? null,
+      engine: ctx.state.engineStatus?.engine.version ?? null,
+      config_hash: ctx.state.latest?.config_hash ?? null,
+      pipeline_version: ctx.state.latest?.pipeline_version ?? null,
+      ...meta,
+    };
+    writeFileSync(join(sessionDir(body.session), "session.json"), JSON.stringify(sessionJson, null, 2) + "\n");
+    ctx.state.recording = { session: body.session, started_us, open_segment: null, labels: readLabels(body.session).length };
+    ctx.log.info({ session: body.session }, "recording started");
+    broadcastStatus();
+    return { session: body.session, started_us };
   });
 
   app.post("/api/v1/recordings/stop", write, async (_req, reply) => {
-    if (!session) return fail(reply, 409, "conflict", "no recording in progress");
+    const rec = ctx.state.recording;
+    if (!rec) return fail(reply, 409, "conflict", "no recording in progress");
+    endOpenSegment(Date.now() * 1000);
     try {
       const ack = await ctx.engine.send("record_stop");
-      const s = session;
-      session = null;
-      return { session: s, ...ack.data };
+      ctx.state.recording = null;
+      ctx.log.info({ session: rec.session, frames: ack.data.frames }, "recording stopped");
+      broadcastStatus();
+      return { session: rec.session, labels: readLabels(rec.session).length, ...ack.data };
     } catch (err) {
       return engineFail(reply, err);
     }
   });
 
   app.post("/api/v1/recordings/segment", write, async (req, reply) => {
-    if (!session) return fail(reply, 409, "conflict", "no recording in progress");
+    const rec = ctx.state.recording;
+    if (!rec) return fail(reply, 409, "conflict", "no recording in progress");
     const body = (req.body ?? {}) as Body;
-    if (body.action !== "start" && body.action !== "end") return fail(reply, 400, "bad_request", "action must be start or end");
-    appendLabel(session, { kind: "segment", session, t_us: Date.now() * 1000, ...body });
-    return {};
+    const t_us = Date.now() * 1000;
+    if (body.action === "end") {
+      const ended = endOpenSegment(t_us);
+      broadcastStatus();
+      return { ended, open_segment: null };
+    }
+    if (body.action !== "start") return fail(reply, 400, "bad_request", "action must be start or end");
+    if (typeof body.label !== "string" || !validLabel(body.label)) return fail(reply, 400, "bad_request", `label must be one of ${SEGMENT_LABELS.join(", ")} or paced_breathing_<bpm>`);
+    const ended = endOpenSegment(t_us);
+    rec.open_segment = {
+      t_start_us: t_us,
+      label: body.label,
+      count: typeof body.count === "number" ? body.count : 1,
+      subject: typeof body.subject === "string" && body.subject ? body.subject : null,
+      spot: typeof body.spot === "string" && body.spot ? body.spot : null,
+    };
+    broadcastStatus();
+    return { ended, open_segment: rec.open_segment };
   });
 
   app.post("/api/v1/recordings/mark", write, async (req, reply) => {
-    if (!session) return fail(reply, 409, "conflict", "no recording in progress");
+    const rec = ctx.state.recording;
+    if (!rec) return fail(reply, 409, "conflict", "no recording in progress");
     const body = (req.body ?? {}) as Body;
-    if (typeof body.event !== "string") return fail(reply, 400, "bad_request", "event is required");
-    appendLabel(session, { kind: "mark", session, t_press_us: Date.now() * 1000, event: body.event, subject: body.subject ?? null });
-    return {};
+    if (typeof body.event !== "string" || !validEvent(body.event)) return fail(reply, 400, "bad_request", `event must be one of ${MARK_EVENTS.join(", ")} or hard_negative_<what>`);
+    const line = { kind: "mark", session: rec.session, t_press_us: Date.now() * 1000, event: body.event, subject: typeof body.subject === "string" && body.subject ? body.subject : null };
+    appendLabel(rec.session, line);
+    broadcastStatus();
+    return line;
   });
 
   app.get("/api/v1/settings", async () => ctx.settings.public());
