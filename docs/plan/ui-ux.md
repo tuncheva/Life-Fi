@@ -78,7 +78,9 @@ Done on `claude/ui-ux-overhaul-7db99b`: items 1–12 above, checked with the moc
 exists), a "Call" button (needs a phone number, ask 2), shadcn components (the tokens and
 `components/ui.tsx` are the swap point; not worth the bundle yet), Gemini summaries (P4 not agreed).
 
-## 7. Asks for the server (not done here)
+## 7. Asks for the server
+
+Done on the server on 2026-10-28 (items 1-7); the UI uses them. Item 8 waits for the Gemini decision.
 
 1. **Room name** in settings (UI and notification say "Room 1" today).
 2. **Contact phone** in settings, so the alert can offer a `tel:` "Call" button next to Acknowledge.

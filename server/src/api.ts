@@ -60,7 +60,9 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
 
   app.post("/api/v1/alerts/:id/ack", write, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const r = ctx.alerts.ack(id);
+    const body = (req.body ?? {}) as Body;
+    const by = typeof body.by === "string" && body.by.trim() ? body.by.trim().slice(0, 40) : null;
+    const r = ctx.alerts.ack(id, by);
     if (r === null) return fail(reply, 404, "not_found", `no alert '${id}'`);
     if (r === false) return fail(reply, 409, "conflict", "alert is not open");
     return r;
@@ -289,6 +291,8 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
       patch.zone = body.zone;
     }
     if (typeof body.dashboard_url === "string") patch.dashboard_url = body.dashboard_url.trim();
+    if (typeof body.room_name === "string" && body.room_name.trim()) patch.room_name = body.room_name.trim().slice(0, 40);
+    if (typeof body.contact_phone === "string") patch.contact_phone = body.contact_phone.replace(/[^+\d\s()-]/g, "").trim().slice(0, 30);
     if (typeof body.retention_days === "number" && body.retention_days >= 1) patch.retention_days = Math.round(body.retention_days);
     if (body.notify && typeof body.notify === "object") {
       const n = body.notify as Record<string, unknown>;
@@ -300,6 +304,7 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
     }
     ctx.settings.update(patch);
     ctx.log.info({ keys: Object.keys(patch) }, "settings updated");
+    if ("room_name" in patch || "contact_phone" in patch) ctx.hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
     return ctx.settings.public();
   });
 

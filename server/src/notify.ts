@@ -26,7 +26,7 @@ async function post(settings: Settings, headers: Record<string, string>, body: s
   }
 }
 
-export async function notifyPhone(alert: Alert, kind: "open" | "escalation", settings: Settings, log: Logger): Promise<void> {
+export async function notifyPhone(alert: Alert, kind: "open" | "escalation", settings: Settings, log: Logger): Promise<NotifyResult> {
   const headers: Record<string, string> = {
     Title: kind === "escalation" ? "Life-Fi alert (not acknowledged)" : "Life-Fi alert",
     Priority: PRIORITY[alert.level],
@@ -36,9 +36,10 @@ export async function notifyPhone(alert: Alert, kind: "open" | "escalation", set
     headers.Click = settings.dashboard_url;
     headers.Actions = `http, Acknowledge, ${settings.dashboard_url.replace(/\/$/, "")}/api/v1/alerts/${alert.id}/ack, method=POST, headers.X-Lifefi-Pin=${settings.pin}, clear=true`;
   }
-  const r = await post(settings, headers, "Alert — Room 1 — open dashboard", log);
+  const r = await post(settings, headers, `Alert — ${settings.room_name || "Room 1"} — open dashboard`, log);
   if (r.ok) log.info({ alert: alert.id, kind }, "phone notified");
   else log.info({ alert: alert.id, reason: r.error }, "phone not notified");
+  return r;
 }
 
 /** A harmless message to check that the phone is subscribed to the topic. */

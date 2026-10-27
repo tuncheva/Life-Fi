@@ -12,6 +12,7 @@ import { EngineClient } from "./engine-client.js";
 import { History } from "./history.js";
 import { notifyPhone } from "./notify.js";
 import { loadProfiles } from "./profiles.js";
+import { ServerRules } from "./rules.js";
 import { SettingsStore } from "./settings.js";
 import { Store } from "./store.js";
 import { Watchdog } from "./watchdog.js";
@@ -34,6 +35,7 @@ async function main() {
     source: { mode: "live", file: null, speed: 1, loop: false, state: "running" },
     calibration: null,
     recording: null,
+    presence: null,
   };
   const hub = new LiveHub(log);
   const store = new Store(config.dbPath);
@@ -49,6 +51,7 @@ async function main() {
   };
   purge();
   const purgeTimer = setInterval(purge, 3600_000);
+  const rules = new ServerRules(alerts, profiles, () => settings.value.profile);
   const watchdog = new Watchdog({
     raise: (reason) => {
       log.warn({ reason }, "sensor offline");
@@ -95,6 +98,7 @@ async function main() {
     statusPoll = null;
     state.engineStatus = null;
     watchdog.setEngineConnected(false);
+    rules.onEngineLost();
     hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
   });
   engine.on("result", (r) => {
@@ -104,8 +108,14 @@ async function main() {
       state.source = { ...state.source, mode: r.source };
       hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
     }
+    if (state.presence?.state !== r.presence.state) {
+      // The first result after a start cannot say when the state began: it is a lower bound.
+      state.presence = { state: r.presence.state, since: r.ts, at_least: state.presence === null };
+      hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
+    }
     watchdog.onResult(r);
     alerts.onResult(r);
+    rules.onResult(r);
     history.add(r, profiles.profiles[settings.value.profile].breathing.store);
     hub.broadcast(r);
   });
@@ -115,7 +125,9 @@ async function main() {
     log.info({ id: a.id, type: a.type, state: a.state, level: a.level }, "alert");
     hub.broadcast({ type: "alert", alert: a });
   });
-  alerts.on("notify", (a, kind) => void notifyPhone(a, kind, settings.value, log));
+  alerts.on("notify", (a, kind) => {
+    void notifyPhone(a, kind, settings.value, log).then((r) => alerts.setNotifyOutcome(a.id, r.ok ? "sent" : r.error === "ntfy topic not set" ? "not_configured" : "failed", r.ok ? null : r.error));
+  });
 
   // ---- http -------------------------------------------------------------------
   // @fastify/cors v11 defaults to GET,HEAD,POST; the dashboard also uses PUT.
@@ -137,6 +149,7 @@ async function main() {
 
   // ---- start / stop --------------------------------------------------------------
   watchdog.start();
+  rules.start();
   engine.start();
   await app.listen({ port: config.port, host: config.host });
   log.info({ engine: `${config.engineHost}:${config.enginePort}`, profile: settings.value.profile, config_hash: profiles.hash }, "life-fi server up");
@@ -146,6 +159,7 @@ async function main() {
     if (statusPoll) clearInterval(statusPoll);
     clearInterval(purgeTimer);
     watchdog.stop();
+    rules.stop();
     alerts.stop();
     engine.stop();
     hub.closeAll();

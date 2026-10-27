@@ -61,6 +61,8 @@ export interface AppState {
   source: SourceState;
   calibration: CalibrationJob | null;
   recording: RecordingState | null;
+  /** Last presence change seen by this server process. */
+  presence: { state: Result["presence"]["state"]; since: number; at_least: boolean } | null;
 }
 
 export interface AppContext {
@@ -86,8 +88,11 @@ export function buildStatus(ctx: AppContext, includeResult: boolean): Record<str
       uptime_s: Math.floor((Date.now() - ctx.state.startedAt) / 1000),
       profile: s.profile,
       time_zone: s.zone,
+      room_name: s.room_name,
+      contact_phone: s.contact_phone,
       sensor_offline: ctx.watchdog.isOffline ? ctx.watchdog.reason : null,
     },
+    presence: ctx.state.presence,
     engine: {
       connected: ctx.engine.connected,
       last_result_ms: ctx.state.lastResultAt,

@@ -12,7 +12,8 @@ export type EventType =
   | "recalibrate_needed"
   | "bed_exit"
   | "sensor_offline"
-  | "long_inactivity";
+  | "long_inactivity"
+  | "after_hours_occupancy";
 
 /**
  * One result from the engine to the server, every 0.5 s (plan-v2 §4.5, version 2). Also the payload of the `result` WebSocket message.

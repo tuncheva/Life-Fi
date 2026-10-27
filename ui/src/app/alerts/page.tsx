@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { getAlerts, getSettings, type Alert } from "@/lib/api";
 import { useLive } from "@/lib/live";
-import { ROOM_NAME, alertTitle, clearedText, clock, duration, levelText } from "@/lib/words";
+import { roomName, alertTitle, clearedText, clock, duration, levelText } from "@/lib/words";
 import { Icon, Notice, Pill, type PillTone } from "@/components/ui";
 
 const STATE: Record<Alert["state"], { text: string; tone: PillTone }> = {
@@ -39,15 +39,18 @@ function story(a: Alert, phoneSetUp: boolean | null): { steps: Step[]; summary: 
   const steps: Step[] = [{ t: start, text: `${alertTitle(a.type)} detected`, icon: "alert" }];
   if (a.opened_at && a.opened_at - start > 1000) steps.push({ t: a.opened_at, text: `Still there after ${duration(a.opened_at - start)}, alert raised`, icon: "clock" });
   if (a.opened_at) {
-    if (phoneSetUp === false) steps.push({ t: a.opened_at, text: "Shown on the dashboard. Phone notifications were not set up", icon: "bell-off" });
+    if (a.notify === "sent") steps.push({ t: a.notified_at ?? a.opened_at, text: "Phone notification sent", icon: "bell" });
+    else if (a.notify === "failed") steps.push({ t: a.notified_at ?? a.opened_at, text: `Phone notification failed: ${a.notify_error ?? "unknown error"}`, icon: "bell-off" });
+    else if (a.notify === "not_configured" || phoneSetUp === false) steps.push({ t: a.opened_at, text: "Shown on the dashboard. Phone notifications were not set up", icon: "bell-off" });
     else if (a.notified_at) steps.push({ t: a.notified_at, text: "Phone notification sent", icon: "bell" });
   }
   if (a.escalated_at) steps.push({ t: a.escalated_at, text: "Nobody acknowledged, sent to the phone again", icon: "bell" });
-  if (a.acked_at) steps.push({ t: a.acked_at, text: `Acknowledged, ${duration(a.acked_at - (a.opened_at ?? start))} after the alert`, icon: "check" });
+  if (a.acked_at) steps.push({ t: a.acked_at, text: `Acknowledged${a.acked_by ? ` by ${a.acked_by}` : ""}, ${duration(a.acked_at - (a.opened_at ?? start))} after the alert`, icon: "check" });
   if (a.resolved_at) {
     const closedBy = typeof a.data.closed_by === "string" ? a.data.closed_by : null;
     if (a.state === "dropped") steps.push({ t: a.resolved_at, text: `Stopped after ${duration(a.resolved_at - start)}, before an alert was needed`, icon: "check" });
-    else steps.push({ t: a.resolved_at, text: closedBy ? `Closed: ${closedBy}` : `All clear: ${clearedText(a.type)}`, icon: "check" });
+    else if (closedBy && /restart|stopped reporting/.test(closedBy)) steps.push({ t: a.resolved_at, text: `Closed because the ${closedBy}; not confirmed as over`, icon: "clock" });
+    else steps.push({ t: a.resolved_at, text: `All clear: ${clearedText(a.type)}${closedBy ? ` (${closedBy})` : ""}`, icon: "check" });
   }
   steps.sort((x, y) => x.t - y.t);
 
@@ -58,13 +61,13 @@ function story(a: Alert, phoneSetUp: boolean | null): { steps: Step[]; summary: 
   else if (a.state === "dropped") summary = "Too short to alert anyone.";
   else {
     const lasted = a.resolved_at ? duration(a.resolved_at - start) : null;
-    summary = `${lasted ? `Lasted ${lasted}. ` : ""}${a.acked_at ? `Acknowledged after ${duration(a.acked_at - (a.opened_at ?? start))}.` : "Cleared before anyone acknowledged."}`;
+    summary = `${lasted ? `Lasted ${lasted}. ` : ""}${a.acked_at ? `Acknowledged${a.acked_by ? ` by ${a.acked_by}` : ""} after ${duration(a.acked_at - (a.opened_at ?? start))}.` : "Cleared before anyone acknowledged."}`;
   }
   return { steps, summary };
 }
 
 export default function AlertsPage() {
-  const { alerts: live } = useLive();
+  const { alerts: live, status } = useLive();
   const [history, setHistory] = useState<Alert[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [showDropped, setShowDropped] = useState(false);
@@ -98,7 +101,7 @@ export default function AlertsPage() {
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Alerts</h1>
-          <p className="text-sm text-muted">What happened in {ROOM_NAME} and what was done about it, newest first.</p>
+          <p className="text-sm text-muted">What happened in {roomName(status)} and what was done about it, newest first.</p>
         </div>
         {dropped > 0 && (
           <label className="ml-auto flex items-center gap-2 text-sm text-muted">

@@ -22,6 +22,9 @@ export interface Alert {
   resolved_at: number | null;
   notified_at: number | null;
   escalated_at: number | null;
+  acked_by: string | null;
+  notify: "sent" | "not_configured" | "failed" | null;
+  notify_error: string | null;
   data: Record<string, unknown>;
 }
 
@@ -76,7 +79,8 @@ export interface CalibrationJob {
 }
 
 export interface Status {
-  server: { version: string; uptime_s: number; profile: ProfileName; time_zone: string; sensor_offline: string | null };
+  server: { version: string; uptime_s: number; profile: ProfileName; time_zone: string; room_name: string; contact_phone: string; sensor_offline: string | null };
+  presence: { state: Result["presence"]["state"]; since: number; at_least: boolean } | null;
   engine: { connected: boolean; last_result_ms: number | null; status: EngineStatus | null };
   device: DeviceStatus | null;
   source: SourceState;
@@ -149,6 +153,8 @@ export interface PublicSettings {
   zone: string;
   dashboard_url: string;
   retention_days: number;
+  room_name: string;
+  contact_phone: string;
 }
 
 export type WsMessage = Result | { type: "alert"; alert: Alert } | { type: "status"; status: Status };
@@ -190,7 +196,24 @@ export async function api<T>(path: string, init: RequestInit & { pin?: boolean }
 
 export const getStatus = () => api<Status>("/status");
 export const getAlerts = (states = "open,acked") => api<{ alerts: Alert[] }>(`/alerts?state=${states}`);
-export const ackAlert = (id: string) => api<Alert>(`/alerts/${id}/ack`, { method: "POST", body: "{}", pin: true });
+export const ackAlert = (id: string, by?: string) => api<Alert>(`/alerts/${id}/ack`, { method: "POST", body: JSON.stringify(by ? { by } : {}), pin: true });
+
+const DEVICE_KEY = "lifefi.device";
+/** Name this browser or phone sends when acknowledging ("Maria's phone"), kept locally. */
+export function getDeviceName(): string {
+  try {
+    return localStorage.getItem(DEVICE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+export function setDeviceName(name: string): void {
+  try {
+    localStorage.setItem(DEVICE_KEY, name.trim().slice(0, 40));
+  } catch {
+    /* private mode */
+  }
+}
 export const getProfile = () => api<ProfileView>("/profile");
 export const setProfile = (active: ProfileName) => api<ProfileView>("/profile", { method: "PUT", body: JSON.stringify({ active }), pin: true });
 export const calibrate = (kind = "empty", duration_s = 120) => api<{ started: boolean }>("/calibrate", { method: "POST", body: JSON.stringify({ kind, duration_s }), pin: true });

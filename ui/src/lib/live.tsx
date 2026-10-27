@@ -88,6 +88,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [cleared, setCleared] = useState<Alert[]>([]);
   const [presenceSince, setPresenceSince] = useState<PresenceSince | null>(null);
   const lastPresence = useRef<PresenceSince["state"] | null>(null);
+  // Once the server reports presence changes itself (Status.presence), history seeding is not needed.
+  const serverPresence = useRef(false);
   // A stable mutable object (not React state): canvases read it on rAF, React never re-renders on it.
   const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), version: 0 }));
   const lastBoot = useRef<number | null>(null);
@@ -128,7 +130,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           for (const row of m.csi) buffers.csi.push(row);
           buffers.version++;
           const ps = m.presence.state;
-          if (lastPresence.current === null) {
+          if (serverPresence.current) {
+            /* Status.presence drives presenceSince */
+          } else if (lastPresence.current === null) {
             lastPresence.current = ps;
             void seedPresenceSince(ps, m.ts).then((seed) => setPresenceSince((cur) => (cur && cur.state !== seed.state ? cur : seed)));
           } else if (lastPresence.current !== ps) {
@@ -138,6 +142,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           setResult(m);
         } else if (m.type === "status") {
           setStatus((prev) => ({ ...m.status, result: prev?.result }));
+          if (m.status.presence) {
+            serverPresence.current = true;
+            const p = m.status.presence;
+            setPresenceSince({ state: p.state, since: p.since, atLeast: p.at_least });
+          }
         } else if (m.type === "alert") {
           if (m.alert.state === "resolved") setCleared((prev) => [m.alert, ...prev.filter((a) => a.id !== m.alert.id)].slice(0, 5));
           setAlerts((prev) => {

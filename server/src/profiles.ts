@@ -41,7 +41,14 @@ export function loadProfiles(path: string): ProfilesConfig {
   const text = readFileSync(path, "utf8");
   const doc = YAML.parse(text) as Omit<ProfilesConfig, "hash">;
   for (const name of PROFILE_NAMES) {
-    if (!doc.profiles?.[name]) throw new Error(`profiles.yml: missing profile '${name}'`);
+    const p = doc.profiles?.[name];
+    if (!p) throw new Error(`profiles.yml: missing profile '${name}'`);
+    // After-hours occupancy is written as an occupancy block in profiles.yml;
+    // the alert machinery needs it as a rule like any other.
+    const after = p.occupancy?.after_hours;
+    if (after && !p.alerts.after_hours_occupancy) {
+      p.alerts.after_hours_occupancy = { level: after.level, delay_s: 0, hours: `${after.from}-${after.to}` };
+    }
   }
   const hash = createHash("sha256").update(text).digest("hex").slice(0, 6);
   return { ...doc, hash };

@@ -29,6 +29,11 @@ export interface Alert {
   resolved_at: number | null;
   notified_at: number | null;
   escalated_at: number | null;
+  /** Who pressed acknowledge (a device or person name the browser sends), if known. */
+  acked_by: string | null;
+  /** Outcome of the last phone notification attempt. */
+  notify: "sent" | "not_configured" | "failed" | null;
+  notify_error: string | null;
   data: Record<string, unknown>;
 }
 
@@ -114,18 +119,18 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
   onResult(r: Result): void {
     if (this.lastBootId !== null && r.boot_id !== this.lastBootId) {
       // The engine restarted: its event ids start over, so every engine condition is gone.
-      for (const [key] of this.byKey) if (key.startsWith("e:")) this.clear(key, r.ts);
+      for (const [key] of this.byKey) if (key.startsWith("e:")) this.clear(key, r.ts, "engine restarted");
     }
     this.lastBootId = r.boot_id;
 
     for (const ev of r.events) {
       const key: ConditionKey = `e:${ev.id}`;
       if (ev.state === "active") this.raise(key, ev.type, ev.id, ev.t, ev.data);
-      else this.clear(key, ev.t);
+      else this.clear(key, ev.t, "cleared by the engine");
     }
     const active = new Set(r.active.map((id) => `e:${id}`));
     for (const [key] of this.byKey) {
-      if (key.startsWith("e:") && !active.has(key)) this.clear(key, r.ts);
+      if (key.startsWith("e:") && !active.has(key)) this.clear(key, r.ts, "no longer reported by the engine");
     }
   }
 
@@ -147,12 +152,21 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
   }
 
   /** Server-emitted condition (sensor_offline, long_inactivity). */
-  raiseServer(type: string, data: Record<string, unknown> = {}): void {
-    this.raise(`s:${type}`, type, null, this.now(), data);
+  raiseServer(type: string, data: Record<string, unknown> = {}, t = this.now()): void {
+    this.raise(`s:${type}`, type, null, t, data);
   }
 
-  clearServer(type: string): void {
-    this.clear(`s:${type}`, this.now());
+  clearServer(type: string, reason = "condition ended", t = this.now()): void {
+    this.clear(`s:${type}`, t, reason);
+  }
+
+  /** Records what happened to the phone notification for this alert. */
+  setNotifyOutcome(id: string, outcome: NonNullable<Alert["notify"]>, error: string | null = null): void {
+    const alert = this.alerts.get(id);
+    if (!alert) return;
+    alert.notify = outcome;
+    alert.notify_error = error;
+    this.emit("alert", { ...alert });
   }
 
   isActive(key: ConditionKey): boolean {
@@ -181,6 +195,9 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
       resolved_at: null,
       notified_at: null,
       escalated_at: null,
+      acked_by: null,
+      notify: null,
+      notify_error: null,
       data,
     };
     this.alerts.set(id, alert);
@@ -224,13 +241,14 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     this.emit("notify", { ...alert }, "escalation");
   }
 
-  private clear(key: ConditionKey, t: number): void {
+  private clear(key: ConditionKey, t: number, reason: string): void {
     const id = this.byKey.get(key);
     if (!id) return;
     this.byKey.delete(key);
     const alert = this.alerts.get(id);
     if (!alert) return;
     this.stopTimers(id);
+    alert.data = { ...alert.data, closed_by: reason };
     if (alert.state === "pending") {
       alert.state = "dropped";
       alert.resolved_at = t;
@@ -244,12 +262,13 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
   }
 
   /** Returns the alert, or null if it does not exist; `false` if it is not open. */
-  ack(id: string): Alert | null | false {
+  ack(id: string, by: string | null = null): Alert | null | false {
     const alert = this.alerts.get(id);
     if (!alert) return null;
     if (alert.state !== "open") return false;
     alert.state = "acked";
     alert.acked_at = this.now();
+    alert.acked_by = by;
     const timers = this.timers.get(id);
     if (timers?.escalate) clearTimeout(timers.escalate);
     this.emit("alert", { ...alert });

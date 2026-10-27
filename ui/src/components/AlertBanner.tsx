@@ -5,10 +5,10 @@
 // Presentation mode draws its own full-screen version.
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { ApiError, ackAlert, getSettings, type Alert } from "@/lib/api";
+import { ApiError, ackAlert, getDeviceName, getSettings, type Alert } from "@/lib/api";
 import { useLive, useNow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
-import { ROOM_NAME, alertAction, alertTitle, clearedText, clock, duration, levelText, stopwatch } from "@/lib/words";
+import { roomName, alertAction, alertTitle, clearedText, clock, duration, levelText, stopwatch } from "@/lib/words";
 import { Icon } from "./ui";
 
 /**
@@ -27,7 +27,7 @@ export function useAck() {
       await withPin(async () => {
         for (const a of list) {
           try {
-            await ackAlert(a.id);
+            await ackAlert(a.id, getDeviceName() || undefined);
           } catch (e) {
             // already acknowledged or resolved meanwhile: fine; a wrong PIN goes back to withPin
             if (e instanceof ApiError && e.status === 401) throw e;
@@ -56,13 +56,11 @@ export function situation(open: Alert[]) {
 
 const FILL: Record<Alert["level"], string> = { high: "bg-alert-high", medium: "bg-alert-medium", low: "bg-alert-low" };
 
-/**
- * The server stamps notified_at when it tries to notify, even with no topic set,
- * so "the phone was told" is only claimed when a topic is configured.
- */
+/** What happened to the phone notification, from the alert's `notify` outcome (older servers: from notified_at + the topic). */
 export function notifiedText(a: Alert, phoneSetUp: boolean | null): { text: string; sent: boolean } {
-  if (phoneSetUp === false) return { text: "Phone notifications are not set up (Setup → Settings)", sent: false };
-  if (!a.notified_at) return { text: "Phone not notified yet", sent: false };
+  if (a.notify === "failed") return { text: `Phone notification failed: ${a.notify_error ?? "unknown error"} (Setup → Settings)`, sent: false };
+  if (a.notify === "not_configured" || phoneSetUp === false) return { text: "Phone notifications are not set up (Setup → Settings)", sent: false };
+  if (!a.notified_at || a.notify === null) return { text: "Phone not notified yet", sent: false };
   const again = a.escalated_at ? ` · sent again at ${clock(a.escalated_at)} because nobody acknowledged` : "";
   return { text: `Phone notification sent at ${clock(a.notified_at, true)}${again}`, sent: true };
 }
@@ -79,7 +77,8 @@ export function usePhoneSetUp(key: unknown): boolean | null {
 }
 
 export function AlertBanner() {
-  const { alerts, cleared, dismissCleared } = useLive();
+  const { alerts, cleared, dismissCleared, status } = useLive();
+  const phoneNumber = status?.server.contact_phone?.trim() || null;
   const path = usePathname();
   const now = useNow();
   const { ack, busy, error } = useAck();
@@ -121,7 +120,7 @@ export function AlertBanner() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-3 text-sm font-medium opacity-95">
                     <span className="uppercase tracking-wide">{levelText(level)}</span>
-                    <span>{ROOM_NAME}</span>
+                    <span>{roomName(status)}</span>
                     <span className="ml-auto font-mono tabular-nums" title={`Started at ${clock(since, true)}`}>
                       open {stopwatch(now - since)}
                     </span>
@@ -143,6 +142,11 @@ export function AlertBanner() {
                 >
                   {busy ? "Acknowledging…" : "I'm on it · Acknowledge"}
                 </button>
+                {phoneNumber && (
+                  <a href={`tel:${phoneNumber.replace(/\s+/g, "")}`} className="rounded-lg border-2 border-white/80 px-5 py-3.5 text-center text-lg font-bold text-alert-fg hover:bg-white/10 sm:py-3">
+                    Call {phoneNumber}
+                  </a>
+                )}
                 <span className="text-sm opacity-90">Tells everyone watching that someone is handling it. It does not call anyone.</span>
               </div>
               {error && <p className="mt-2 rounded bg-black/25 px-3 py-2 text-sm font-medium sm:ml-16">{error}</p>}
@@ -154,7 +158,7 @@ export function AlertBanner() {
         <section key={a.id} aria-live="polite" className="flex items-start gap-3 rounded-card border border-line border-l-4 border-l-warn bg-surface px-4 py-3 shadow-sm">
           <Icon name="check" className="mt-0.5 h-5 w-5 shrink-0 text-warn" />
           <div className="text-sm">
-            <span className="font-semibold">{alertTitle(a.type)}</span> · someone is on it
+            <span className="font-semibold">{alertTitle(a.type)}</span> · {a.acked_by ?? "someone"} is on it
             {a.acked_at && (
               <span className="text-muted">
                 {" "}

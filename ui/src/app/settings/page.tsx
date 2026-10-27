@@ -4,7 +4,7 @@
 // click / acknowledge action, retention, and the PIN itself.
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { API_BASE, getPin, getSettings, setPin, setProfile, testNotification, updateSettings, type ProfileName, type PublicSettings } from "@/lib/api";
+import { API_BASE, getDeviceName, getPin, getSettings, setDeviceName, setPin, setProfile, testNotification, updateSettings, type ProfileName, type PublicSettings } from "@/lib/api";
 import { useLive } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
 import { PROFILE_TEXT } from "@/lib/words";
@@ -36,6 +36,8 @@ export default function SettingsPage() {
   const [newPin, setNewPin] = useState("");
   const [newPin2, setNewPin2] = useState("");
   const profile = status?.server.profile ?? null;
+  // Name sent with "I'm on it", kept on this device only.
+  const [device, setDevice] = useState(() => (typeof window === "undefined" ? "" : getDeviceName()));
 
   useEffect(() => {
     getSettings()
@@ -68,7 +70,7 @@ export default function SettingsPage() {
     }
   };
 
-  const save = () => form && run("notify", () => updateSettings({ notify: form.notify, zone: form.zone, dashboard_url: form.dashboard_url, retention_days: form.retention_days }), "Saved.");
+  const save = () => form && run("notify", () => updateSettings({ notify: form.notify, zone: form.zone, dashboard_url: form.dashboard_url, retention_days: form.retention_days, room_name: form.room_name, contact_phone: form.contact_phone }), "Saved.");
   const changePin = () =>
     run(
       "pin",
@@ -160,6 +162,18 @@ export default function SettingsPage() {
                     this address
                   </button>
                 </div>
+              </label>
+              <label className="text-sm font-medium">
+                Room name <span className="font-normal text-subtle">(on the dashboard and in notifications)</span>
+                <input className={inputCls} value={form.room_name} onChange={(e) => set({ room_name: e.target.value })} placeholder="Room 1" maxLength={40} />
+              </label>
+              <label className="text-sm font-medium">
+                Phone to call when an alert opens <span className="font-normal text-subtle">(shown as a Call button; nothing is dialled automatically)</span>
+                <input type="tel" className={inputCls} value={form.contact_phone} onChange={(e) => set({ contact_phone: e.target.value })} placeholder="+359 88 123 4567" />
+              </label>
+              <label className="text-sm font-medium">
+                This device&apos;s name <span className="font-normal text-subtle">(kept on this phone or browser; shown as who acknowledged)</span>
+                <input className={inputCls} value={device} onChange={(e) => { setDevice(e.target.value); setDeviceName(e.target.value); }} placeholder="Maria&apos;s phone" maxLength={40} />
               </label>
               <label className="text-sm font-medium">
                 Time zone <span className="font-normal text-subtle">(after-hours and night windows)</span>

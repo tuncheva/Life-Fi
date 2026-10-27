@@ -5,8 +5,10 @@
 import type { Result } from "./contracts.gen";
 import type { Alert, ProfileName, Status } from "./api";
 
-/** One room today. The server has no room name yet (server ask 1 in ui-ux.md). */
-export const ROOM_NAME = "Room 1";
+/** The room's name comes from the server settings; "Room 1" until the status has arrived. */
+export function roomName(status: Status | null | undefined): string {
+  return status?.server.room_name?.trim() || "Room 1";
+}
 
 export type Tone = "present" | "empty" | "uncertain" | "offline" | "connecting";
 

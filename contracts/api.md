@@ -25,7 +25,7 @@ Writes: every `POST` and `PUT` below.
 | GET | `/status` | — | `Status` (below) |
 | GET | `/history?from=&to=&fields=` | — | `{"rows": [HistoryRow]}`; `fields` is a comma list of `presence,motion,breathing,posture,count` |
 | GET | `/alerts?state=` | — | `{"alerts": [Alert]}`; `state` is a comma list of `pending,open,acked,resolved,dropped`; default `open,acked` |
-| POST | `/alerts/{id}/ack` | `{}` | `Alert` |
+| POST | `/alerts/{id}/ack` | `{"by": "Maria's phone"}` (optional, ≤ 40 chars) | `Alert` with `acked_by` |
 | GET | `/profile` | — | `{"active": "home", "profiles": {…}}` (the `profiles` block of `profiles.yml`) |
 | PUT | `/profile` | `{"active": "clinic"}` | same as GET |
 | POST | `/calibrate` | `{"kind": "empty", "duration_s": 120}` | `{"started": true}`; `409` while one is running. Progress and outcome arrive as `status` WS messages: `calibration_job` (below) plus the engine's `calibration.state` in every result |
@@ -52,7 +52,8 @@ Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `
 
 ```json
 {
-  "server": {"version": "0.1.0", "uptime_s": 120, "profile": "home", "time_zone": "Europe/Sofia"},
+  "server": {"version": "0.1.0", "uptime_s": 120, "profile": "home", "time_zone": "Europe/Sofia", "room_name": "Room 1", "contact_phone": "", "sensor_offline": null},
+  "presence": {"state": "present", "since": 1767225600000, "at_least": false},
   "engine": {"connected": true, "last_result_ms": 1767225600123, "status": { …get_status ack data.engine… }},
   "device": { …get_status ack data.device… } ,
   "source": {"mode": "live", "file": null, "speed": 1, "loop": false, "state": "running"},
@@ -85,9 +86,22 @@ Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `
   "resolved_at": null,
   "notified_at": null,
   "escalated_at": null,
-  "data": {"peak": 0.93}
+  "acked_by": null,
+  "notify": "sent" | "not_configured" | "failed" | null,
+  "notify_error": null,
+  "data": {"peak": 0.93, "closed_by": "cleared by the engine"}
 }
 ```
+
+`notify` is the outcome of the last phone notification attempt (`notified_at`
+is when it was attempted). `data.closed_by` is written on every resolve or
+drop: `cleared by the engine`, `no longer reported by the engine`,
+`engine restarted`, `server restart`, or for server rules `movement seen`,
+`room is empty`, `outside the after-hours window`, `sensor stopped reporting`.
+
+Server-emitted events: `sensor_offline` (watchdog), `long_inactivity` (Home:
+no motion for `inactivity.still_present_max_min`, or none by `no_motion_by`)
+and `after_hours_occupancy` (School: present inside `occupancy.after_hours`).
 
 State machine (plan-v2 §7.2):
 
@@ -117,7 +131,9 @@ One row per 5 s. Never contains `csi` or `wave`.
   "notify": {"ntfy_url": "https://ntfy.sh", "topic": "…", "escalate_after_s": 120},
   "zone": "Europe/Sofia",
   "dashboard_url": "http://192.168.1.10:8080",
-  "retention_days": 30
+  "retention_days": 30,
+  "room_name": "Room 1",
+  "contact_phone": "+359 88 123 4567"
 }
 ```
 

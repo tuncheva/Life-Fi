@@ -10,7 +10,7 @@ import type { Result } from "@/lib/contracts.gen";
 import { useLive, useNow, useStale } from "@/lib/live";
 import {
   PROFILE_TEXT,
-  ROOM_NAME,
+  roomName,
   activityText,
   alertTitle,
   breathingText,
@@ -133,15 +133,15 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
   const ring = urgent ? (openAlert.level === "high" ? "border-t-alert-high" : "border-t-alert-medium") : openAlert || ackedAlert ? "border-t-warn" : t.ring;
 
   return (
-    <section className={`overflow-hidden rounded-card border border-line border-t-4 bg-surface shadow-sm ${ring}`} aria-label={`${ROOM_NAME} status`}>
+    <section className={`overflow-hidden rounded-card border border-line border-t-4 bg-surface shadow-sm ${ring}`} aria-label={`${roomName(status)} status`}>
       {(urgent || ackedAlert) && (
         <div className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold sm:px-5 ${urgent ? "bg-danger-soft text-danger-fg" : "bg-warn-soft text-warn-fg"}`}>
           <Icon name="alert" className="h-4 w-4 shrink-0" />
-          {urgent ? `${alertTitle(openAlert.type)}: not acknowledged yet` : `${alertTitle(ackedAlert!.type)}: someone is on it`}
+          {urgent ? `${alertTitle(openAlert.type)}: not acknowledged yet` : `${alertTitle(ackedAlert!.type)}: ${ackedAlert!.acked_by ?? "someone"} is on it`}
         </div>
       )}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-4 text-sm text-muted sm:px-5">
-        <span className="font-semibold text-fg">{ROOM_NAME}</span>
+        <span className="font-semibold text-fg">{roomName(status)}</span>
         <span>· {PROFILE_TEXT[profile].title}</span>
         <span className="ml-auto flex items-center gap-1.5">
           {s.blind ? (

@@ -9,7 +9,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLive, useNow } from "@/lib/live";
-import { DISCLAIMER, PROFILE_TEXT, ROOM_NAME, activityText, alertAction, alertTitle, breathingText, clearedText, clock, postureText, stopwatch } from "@/lib/words";
+import { DISCLAIMER, PROFILE_TEXT, roomName, activityText, alertAction, alertTitle, breathingText, clearedText, clock, postureText, stopwatch } from "@/lib/words";
 import { BreathingChart } from "@/components/BreathingChart";
 import { CsiCanvas, StateHeadline, useRoomStatus } from "@/components/Cards";
 import { notifiedText, situation, useAck, usePhoneSetUp } from "@/components/AlertBanner";
@@ -61,7 +61,7 @@ export default function PresentPage() {
           Life-Fi
         </span>
         <span className="text-muted">
-          {ROOM_NAME} · {PROFILE_TEXT[s.profile].title}
+          {roomName(status)} · {PROFILE_TEXT[s.profile].title}
         </span>
         <span className={`ml-2 flex items-center gap-2 rounded-full px-3 py-1 text-base font-semibold ${!connected ? "bg-danger text-white" : replay ? "bg-replay text-replay-fg" : "bg-ok-soft text-ok-fg"}`}>
           <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${!connected ? "bg-white" : replay ? "bg-replay-fg" : "bg-ok"}`} />
@@ -83,7 +83,7 @@ export default function PresentPage() {
               <Icon name="alert" className="h-14 w-14" />
             </span>
             <div className="min-w-0">
-              <p className="text-3xl font-semibold uppercase tracking-wide opacity-90">{ROOM_NAME}</p>
+              <p className="text-3xl font-semibold uppercase tracking-wide opacity-90">{roomName(status)}</p>
               <h1 className="text-5xl font-bold leading-tight xl:text-7xl">{alertTitle(top.type)}</h1>
             </div>
             <span className="ml-auto font-mono text-6xl font-bold tabular-nums">{stopwatch(now - sit!.since)}</span>

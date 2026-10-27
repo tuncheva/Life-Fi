@@ -99,7 +99,8 @@ Three layers, used in this order:
 - [x] Labelling page: session start writes `session.json`, segment buttons (digits) with count / subject / spot, non-overlapping segments, mark buttons (letters), hard negatives, live `labels.jsonl` list, `Status.recording` over WebSocket
 - [ ] `run_all live` against the real engine once it exists; replay fallback rehearsal
 - [ ] Apply Alex's design if it arrives: swap tokens / components, not structure
-- [ ] Gemini summaries (P4) once the team agrees
+- [x] Server asks from the UI/UX brief (ui-ux.md §7): room name and contact phone in settings (Call button), acked_by, presence-since in Status, notification outcome on the alert, server rules for long_inactivity and after_hours_occupancy, a reason on every resolve
+- [ ] Gemini summaries (P4) once the team agrees; options researched in research/gemini-api-options.md
 
 ## 5. Working with Alex (design)
 

@@ -9,7 +9,7 @@ import { usePathname } from "next/navigation";
 import { useLive, useNow, useStale } from "@/lib/live";
 import { applyTheme, type Theme } from "@/lib/theme";
 import { useThemeChoice } from "@/lib/useTheme";
-import { ROOM_NAME, calibrationText, duration } from "@/lib/words";
+import { roomName, calibrationText, duration } from "@/lib/words";
 import { Icon, Pill } from "./ui";
 
 const SETUP: { href: string; label: string; hint: string }[] = [
@@ -91,12 +91,12 @@ export function TopBar() {
     <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
       <SystemBanners />
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
-        <Link href="/" className="flex items-center gap-2" aria-label={`Life-Fi, ${ROOM_NAME}`}>
+        <Link href="/" className="flex items-center gap-2" aria-label={`Life-Fi, ${roomName(status)}`}>
           <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-fg">
             <Icon name="wave" className="h-5 w-5" />
           </span>
           <span className="text-lg font-bold tracking-tight">Life-Fi</span>
-          <span className="hidden text-sm text-muted sm:inline">· {ROOM_NAME}</span>
+          <span className="hidden text-sm text-muted sm:inline">· {roomName(status)}</span>
         </Link>
 
         {/* Always-visible status (plan-v2 §8), in words. On phones this is its own row. */}

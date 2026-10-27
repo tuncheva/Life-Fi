@@ -10,6 +10,10 @@ export interface Settings {
   zone: string;
   dashboard_url: string;
   retention_days: number;
+  /** Shown on the dashboard and in notifications. */
+  room_name: string;
+  /** Who to call when an alert opens; offered as a tel: link, never dialled automatically. */
+  contact_phone: string;
 }
 
 export type PublicSettings = Omit<Settings, "pin" | "profile"> & { pin_set: boolean };
@@ -28,6 +32,8 @@ export class SettingsStore {
       zone: defaults.profiles.zone,
       dashboard_url: "",
       retention_days: 30,
+      room_name: "Room 1",
+      contact_phone: "",
     };
     if (existsSync(this.path)) {
       try {
