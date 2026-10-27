@@ -192,12 +192,28 @@ export const ALERT_TITLE: Record<string, string> = {
   presence_uncertain: "Can't tell if someone is there",
   recalibrate_needed: "Calibration needed",
   bed_exit: "Left the bed",
-  sensor_offline: "Sensor offline, we cannot see the room",
+  sensor_offline: "Sensor offline",
   long_inactivity: "No movement for a long time",
 };
 
 export function alertTitle(type: string): string {
   return ALERT_TITLE[type] ?? type.replace(/_/g, " ");
+}
+
+/** What "resolved" means for each type, in words: the recovery, not the problem. */
+const CLEARED: Record<string, string> = {
+  fall: "the possible fall is over",
+  fainted_suspected: "moving again after the fall",
+  no_breathing: "breathing detected again",
+  presence_uncertain: "presence is clear again",
+  recalibrate_needed: "calibration is fine again",
+  bed_exit: "back in bed",
+  sensor_offline: "the sensor is back",
+  long_inactivity: "moving again",
+};
+
+export function clearedText(type: string): string {
+  return CLEARED[type] ?? `${alertTitle(type).toLowerCase()} is over`;
 }
 
 export function alertAction(type: string, profile: ProfileName): string {
@@ -211,7 +227,7 @@ export function alertAction(type: string, profile: ProfileName): string {
     case "bed_exit":
       return "Check the patient is safe.";
     case "sensor_offline":
-      return "Check the sensor has power and Wi-Fi. Until then nothing in the room is detected.";
+      return "We cannot see the room. Check the sensor has power and Wi-Fi.";
     case "long_inactivity":
       return "Call them, or ask someone nearby to look in.";
     case "presence_uncertain":

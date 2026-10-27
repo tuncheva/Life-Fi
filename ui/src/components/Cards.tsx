@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { getAlerts, type Alert, type ProfileName } from "@/lib/api";
+import type { Result } from "@/lib/contracts.gen";
 import { useLive, useNow, useStale } from "@/lib/live";
 import {
   PROFILE_TEXT,
@@ -15,6 +16,7 @@ import {
   breathingText,
   calibrationText,
   clock,
+  duration,
   postureText,
   roomStatus,
   type RoomStatus,
@@ -88,12 +90,15 @@ export function StateHeadline({ s, size = "md" }: { s: Headline & { action?: Roo
 }
 
 /** Clinic: bed state is what a nurse asks first. Posture is "last change seen". */
-function clinicHeadline(s: RoomStatus, alerts: Alert[], posture: string | undefined): Headline {
+function clinicHeadline(s: RoomStatus, alerts: Alert[], posture: Result["posture"], now: number): Headline {
   if (s.blind || s.tone !== "present") return s;
-  const bedExit = alerts.some((a) => a.type === "bed_exit" && (a.state === "open" || a.state === "acked"));
-  if (bedExit) return { tone: "uncertain", headline: "Out of bed", detail: s.detail };
-  if (posture === "lying") return { tone: "present", headline: "In bed", detail: s.detail };
-  if (posture === "sitting" || posture === "standing") return { tone: "present", headline: `Up, ${posture}`, detail: s.detail };
+  const label = posture?.label;
+  // "since" is the last posture change we saw, not the presence start
+  const since = posture && label !== "unknown" ? `since ${clock(posture.since)} · ${duration(now - posture.since)} · last change seen` : s.detail;
+  const bedExit = alerts.find((a) => a.type === "bed_exit" && (a.state === "open" || a.state === "acked"));
+  if (bedExit) return { tone: "uncertain", headline: "Out of bed", detail: `since ${clock(bedExit.created_at)}` };
+  if (label === "lying") return { tone: "present", headline: "In bed", detail: since };
+  if (label === "sitting" || label === "standing") return { tone: "present", headline: `Up, ${label}`, detail: since };
   return s;
 }
 
@@ -102,7 +107,8 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
   const s = useRoomStatus();
   const today = useAlertsToday();
   const profile = s.profile;
-  const head = profile === "clinic" ? clinicHeadline(s, alerts, result?.posture?.label) : s;
+  const now = useNow();
+  const head = profile === "clinic" ? clinicHeadline(s, alerts, result?.posture ?? null, now) : s;
   const t = TONE_CLASS[head.tone];
   const cal = calibrationText(result?.calibration ?? status?.engine.status?.calibration ?? null);
   const showFacts = !s.blind && result && result.presence.state !== "empty";
@@ -123,14 +129,15 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
   // An open alert outranks the calm state colour: the card must not look "all fine" under a red banner.
   const openAlert = alerts.find((a) => a.state === "open");
   const ackedAlert = alerts.find((a) => a.state === "acked");
-  const ring = openAlert ? (openAlert.level === "high" ? "border-t-alert-high" : "border-t-alert-medium") : ackedAlert ? "border-t-warn" : t.ring;
+  const urgent = openAlert && openAlert.level !== "low";
+  const ring = urgent ? (openAlert.level === "high" ? "border-t-alert-high" : "border-t-alert-medium") : openAlert || ackedAlert ? "border-t-warn" : t.ring;
 
   return (
     <section className={`overflow-hidden rounded-card border border-line border-t-4 bg-surface shadow-sm ${ring}`} aria-label={`${ROOM_NAME} status`}>
-      {(openAlert || ackedAlert) && (
-        <div className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold sm:px-5 ${openAlert ? "bg-danger-soft text-danger-fg" : "bg-warn-soft text-warn-fg"}`}>
+      {(urgent || ackedAlert) && (
+        <div className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold sm:px-5 ${urgent ? "bg-danger-soft text-danger-fg" : "bg-warn-soft text-warn-fg"}`}>
           <Icon name="alert" className="h-4 w-4 shrink-0" />
-          {openAlert ? `${alertTitle(openAlert.type)}: not acknowledged yet` : `${alertTitle(ackedAlert!.type)}: someone is on it`}
+          {urgent ? `${alertTitle(openAlert.type)}: not acknowledged yet` : `${alertTitle(ackedAlert!.type)}: someone is on it`}
         </div>
       )}
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-4 text-sm text-muted sm:px-5">
@@ -139,6 +146,8 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
         <span className="ml-auto flex items-center gap-1.5">
           {s.blind ? (
             <span className="font-medium text-danger">Not watching</span>
+          ) : (status?.source.mode ?? result?.source) === "replay" ? (
+            <span className="font-medium text-replay">Recording, not the live room</span>
           ) : (
             <>
               <span aria-hidden className="h-2 w-2 rounded-full bg-ok" />
@@ -195,7 +204,7 @@ export function BreathingCard() {
     >
       <div className="flex items-baseline gap-2">
         <span className="text-4xl font-bold tabular-nums">{b?.value ?? "—"}</span>
-        <span className="text-sm text-muted">{b ? b.text : s.blind ? "Not available while the sensor is offline" : "Waiting for a reading"}</span>
+        <span className="text-sm text-muted">{b ? b.text : s.tone === "offline" ? "Not available while the room can't be seen" : s.blind && s.tone === "uncertain" ? "Starting up" : "Waiting for a reading"}</span>
       </div>
       <div className={`mt-3 transition-opacity ${valid ? "" : "opacity-40"}`}>
         <BreathingChart buffers={buffers} seconds={seconds} />
@@ -226,7 +235,7 @@ export function SensorDetails({ children }: { children: ReactNode }) {
           /* private mode */
         }
       }}
-      className="group rounded-card border border-line bg-surface shadow-sm md:col-span-2 lg:col-span-3"
+      className="group rounded-card border border-line bg-surface shadow-sm lg:col-span-3"
     >
       <summary className="flex items-center gap-3 px-4 py-3 sm:px-5">
         <Icon name="chevron" className="chev h-4 w-4 text-muted transition-transform" />

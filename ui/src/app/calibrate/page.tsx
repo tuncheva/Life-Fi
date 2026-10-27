@@ -83,7 +83,7 @@ export default function CalibratePage() {
             <button onClick={() => void start()} disabled={running || !engineUp} className={`${btn.primary} mt-2 px-6 py-3 text-base`}>
               {running ? "Calibrating…" : "Start calibration"}
             </button>
-            {!engineUp && <p className="mt-2 text-sm text-danger">The sensor software is not running, so it can&apos;t calibrate now.</p>}
+            {status && !engineUp && <p className="mt-2 text-sm text-danger">The sensor software is not running, so it can&apos;t calibrate now.</p>}
             {error && <Notice tone="danger" className="mt-2">{error}</Notice>}
           </Step>
           <Step n={3} done={job?.state === "ok"}>
@@ -103,7 +103,7 @@ export default function CalibratePage() {
             </div>
             <p className={`mt-4 flex items-center gap-2 text-xl font-semibold ${motionSeen ? "text-danger" : "text-ok"}`} role={motionSeen ? "alert" : undefined}>
               <Icon name={motionSeen ? "alert" : "check"} className="h-6 w-6" />
-              {motionSeen ? "Movement seen! Everyone must leave the room." : "Room looks empty. Stay out."}
+              {motionSeen ? "Movement seen! Everyone must leave the room." : "No movement seen. Stay out."}
             </p>
           </div>
         )}
@@ -131,7 +131,7 @@ export default function CalibratePage() {
         )}
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-sm">
           <span className="text-muted">Right now:</span>
-          <Pill tone={cal.tone}>{cal.text}</Pill>
+          {status ? <Pill tone={cal.tone}>{cal.text}</Pill> : <span className="text-muted">connecting…</span>}
         </div>
       </Card>
     </div>

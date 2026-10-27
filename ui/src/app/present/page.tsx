@@ -9,7 +9,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLive, useNow } from "@/lib/live";
-import { DISCLAIMER, PROFILE_TEXT, ROOM_NAME, activityText, alertAction, alertTitle, breathingText, clock, postureText, stopwatch } from "@/lib/words";
+import { DISCLAIMER, PROFILE_TEXT, ROOM_NAME, activityText, alertAction, alertTitle, breathingText, clearedText, clock, postureText, stopwatch } from "@/lib/words";
 import { BreathingChart } from "@/components/BreathingChart";
 import { CsiCanvas, StateHeadline, useRoomStatus } from "@/components/Cards";
 import { notifiedText, situation, useAck, usePhoneSetUp } from "@/components/AlertBanner";
@@ -27,7 +27,8 @@ export default function PresentPage() {
   const now = useNow();
   const router = useRouter();
   const { ack, busy, error } = useAck();
-  const open = alerts.filter((a) => a.state === "open");
+  // Only urgent or needs-attention alerts take over the screen; "for information" does not.
+  const open = alerts.filter((a) => a.state === "open" && a.level !== "low");
   const acked = alerts.find((a) => a.state === "acked");
   const phone = usePhoneSetUp(open.length);
   const allClear = cleared.find((a) => a.resolved_at && now - a.resolved_at < 60_000);
@@ -112,7 +113,7 @@ export default function PresentPage() {
             {!acked && allClear && (
               <div aria-live="polite" className="flex items-center gap-4 rounded-2xl bg-ok-soft px-6 py-4 text-3xl font-semibold text-ok-fg">
                 <Icon name="check" className="h-10 w-10" />
-                All clear: {alertTitle(allClear.type).toLowerCase()} stopped at {clock(allClear.resolved_at!)}
+                All clear at {clock(allClear.resolved_at!)}: {clearedText(allClear.type)}
               </div>
             )}
             <StateHeadline s={s} size="xl" />

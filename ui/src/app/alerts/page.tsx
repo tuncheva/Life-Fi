@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { getAlerts, getSettings, type Alert } from "@/lib/api";
 import { useLive } from "@/lib/live";
-import { ROOM_NAME, alertTitle, clock, duration, levelText } from "@/lib/words";
+import { ROOM_NAME, alertTitle, clearedText, clock, duration, levelText } from "@/lib/words";
 import { Icon, Notice, Pill, type PillTone } from "@/components/ui";
 
 const STATE: Record<Alert["state"], { text: string; tone: PillTone }> = {
@@ -47,7 +47,7 @@ function story(a: Alert, phoneSetUp: boolean | null): { steps: Step[]; summary: 
   if (a.resolved_at) {
     const closedBy = typeof a.data.closed_by === "string" ? a.data.closed_by : null;
     if (a.state === "dropped") steps.push({ t: a.resolved_at, text: `Stopped after ${duration(a.resolved_at - start)}, before an alert was needed`, icon: "check" });
-    else steps.push({ t: a.resolved_at, text: closedBy ? `Closed: ${closedBy}` : "No longer detected, all clear", icon: "check" });
+    else steps.push({ t: a.resolved_at, text: closedBy ? `Closed: ${closedBy}` : `All clear: ${clearedText(a.type)}`, icon: "check" });
   }
   steps.sort((x, y) => x.t - y.t);
 

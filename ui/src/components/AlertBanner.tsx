@@ -8,7 +8,7 @@ import { usePathname } from "next/navigation";
 import { ApiError, ackAlert, getSettings, type Alert } from "@/lib/api";
 import { useLive, useNow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
-import { ROOM_NAME, alertAction, alertTitle, clock, duration, levelText, stopwatch } from "@/lib/words";
+import { ROOM_NAME, alertAction, alertTitle, clearedText, clock, duration, levelText, stopwatch } from "@/lib/words";
 import { Icon } from "./ui";
 
 /**
@@ -96,10 +96,26 @@ export function AlertBanner() {
         (() => {
           const { lead, level, since, others } = situation(open);
           const n = notifiedText(lead, phone);
+          // Low level ("for information") stays a calm notice: red and pulsing are for urgent things only.
+          if (level === "low") {
+            return (
+              <section role="status" className="flex flex-wrap items-center gap-3 rounded-card border border-line border-l-4 border-l-alert-low bg-surface px-4 py-3 shadow-sm">
+                <Icon name="alert" className="h-5 w-5 shrink-0 text-muted" />
+                <div className="min-w-0 flex-1 text-sm">
+                  <span className="font-semibold">{alertTitle(lead.type)}</span>
+                  <span className="text-muted"> · {alertAction(lead.type, lead.profile)}</span>
+                </div>
+                <button onClick={() => void ack(open)} disabled={busy} className="rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-2 disabled:opacity-60">
+                  {busy ? "…" : "Got it"}
+                </button>
+                {error && <p className="w-full text-sm text-danger">{error}</p>}
+              </section>
+            );
+          }
           return (
             <section role="alert" aria-live="assertive" className={`rounded-card p-4 text-alert-fg shadow-lg sm:p-5 ${FILL[level]}`}>
               <div className="flex items-start gap-3 sm:gap-4">
-                <span className="relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 motion-safe:animate-beacon sm:h-12 sm:w-12">
+                <span className={`relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 sm:h-12 sm:w-12 ${level === "high" ? "motion-safe:animate-beacon" : ""}`}>
                   <Icon name="alert" className="h-6 w-6 sm:h-7 sm:w-7" />
                 </span>
                 <div className="min-w-0 flex-1">
@@ -154,7 +170,7 @@ export function AlertBanner() {
         <section aria-live="polite" className="flex items-center gap-3 rounded-card bg-ok-soft px-4 py-3 text-ok-fg">
           <Icon name="check" className="h-5 w-5 shrink-0" />
           <div className="flex-1 text-sm">
-            <span className="font-semibold">All clear:</span> {recent.map((a) => alertTitle(a.type).toLowerCase()).join(", ")} stopped at {clock(recent[0].resolved_at!)}.
+            <span className="font-semibold">All clear at {clock(recent[0].resolved_at!)}:</span> {recent.map((a) => clearedText(a.type)).join(", ")}.
           </div>
           <button onClick={() => recent.forEach((a) => dismissCleared(a.id))} className="rounded-md px-2 py-1 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10">
             Dismiss

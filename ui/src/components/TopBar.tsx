@@ -54,6 +54,7 @@ export function SystemBanners() {
 
 export function TopBar() {
   const { connected, result, status, alerts } = useLive();
+  const stale = useStale(result);
   const path = usePathname();
   const theme = useThemeChoice();
   const menu = useRef<HTMLDetailsElement>(null);
@@ -75,8 +76,9 @@ export function TopBar() {
   if (path.startsWith("/present")) return null;
 
   const replay = (status?.source.mode ?? result?.source) === "replay";
-  const cal = calibrationText(result?.calibration ?? status?.engine.status?.calibration ?? null);
-  const open = alerts.filter((a) => a.state === "open").length;
+  const calState = result?.calibration ?? status?.engine.status?.calibration ?? null;
+  const cal = calibrationText(calState);
+  const open = alerts.filter((a) => a.state === "open" && a.level !== "low").length;
   const onSetup = SETUP.some((s) => path.startsWith(s.href.replace(/\/$/, "")));
   const closeMenu = () => {
     if (menu.current) menu.current.open = false;
@@ -99,9 +101,17 @@ export function TopBar() {
 
         {/* Always-visible status (plan-v2 §8), in words. On phones this is its own row. */}
         <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:order-none sm:w-auto sm:flex-1">
-          {!connected ? (
+          {!connected && !status ? (
+            <Pill tone="neutral" dot>
+              Connecting…
+            </Pill>
+          ) : !connected ? (
             <Pill tone="danger" dot>
               Offline
+            </Pill>
+          ) : status && (!status.engine.connected || status.server.sensor_offline || stale) ? (
+            <Pill tone="danger" dot title="No readings from the sensor">
+              Sensor offline
             </Pill>
           ) : replay ? (
             <Pill tone="replay" dot>
@@ -118,9 +128,11 @@ export function TopBar() {
             </Pill>
           )}
           {result?.presence.state === "uncertain" && !result.health.warmup && <Pill tone="uncertain">Presence unclear</Pill>}
-          <Link href="/calibrate/" className={cal.tone === "ok" ? "hidden sm:inline-flex" : "inline-flex"} title="Empty-room calibration">
-            <Pill tone={cal.tone}>{cal.text}</Pill>
-          </Link>
+          {calState && (
+            <Link href="/calibrate/" className={cal.tone === "ok" ? "hidden sm:inline-flex" : "inline-flex"} title="Empty-room calibration">
+              <Pill tone={cal.tone}>{cal.text}</Pill>
+            </Link>
+          )}
         </div>
 
         <nav aria-label="Main" className="ml-auto flex items-center gap-1">
