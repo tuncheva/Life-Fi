@@ -20,8 +20,8 @@ export function DevPanel() {
   if (process.env.NODE_ENV === "production" || !scenarios) return null;
 
   return (
-    <div className="fixed bottom-3 right-3 z-30 max-w-xs text-xs">
-      <button onClick={() => setOpen(!open)} className="rounded-lg bg-zinc-900 px-3 py-2 font-mono text-white shadow-lg dark:bg-zinc-100 dark:text-black">
+    <div className="fixed bottom-3 right-3 z-30 max-w-[60vw] text-xs sm:max-w-xs">
+      <button onClick={() => setOpen(!open)} className="max-w-full truncate rounded-lg bg-zinc-900 px-3 py-2 font-mono text-white shadow-lg dark:bg-zinc-100 dark:text-black">
         mock: {mock?.scenario ?? "?"} · {mock?.phase ?? ""} {open ? "▾" : "▴"}
       </button>
       {open && (

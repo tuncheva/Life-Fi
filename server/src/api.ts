@@ -7,6 +7,7 @@ import { config } from "./config.js";
 import { buildStatus, type AppContext, type CalibrationJob } from "./context.js";
 import { EngineError } from "./engine-client.js";
 import { HISTORY_FIELDS, type HistoryField } from "./history.js";
+import { notifyTest } from "./notify.js";
 import { isProfileName } from "./profiles.js";
 
 type Body = Record<string, unknown>;
@@ -200,16 +201,41 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
   });
 
   app.get("/api/v1/settings", async () => ctx.settings.public());
-  app.put("/api/v1/settings", write, async (req) => {
+  app.put("/api/v1/settings", write, async (req, reply) => {
     const body = (req.body ?? {}) as Body;
     const patch: Record<string, unknown> = {};
-    if (typeof body.pin === "string") patch.pin = body.pin;
-    if (typeof body.zone === "string") patch.zone = body.zone;
-    if (typeof body.dashboard_url === "string") patch.dashboard_url = body.dashboard_url;
-    if (typeof body.retention_days === "number") patch.retention_days = body.retention_days;
-    if (body.notify && typeof body.notify === "object") patch.notify = body.notify;
+    if (typeof body.pin === "string") {
+      if (!/^\d{4,8}$/.test(body.pin)) return fail(reply, 400, "bad_request", "pin must be 4 to 8 digits");
+      patch.pin = body.pin;
+    }
+    if (typeof body.zone === "string") {
+      try {
+        Intl.DateTimeFormat(undefined, { timeZone: body.zone });
+      } catch {
+        return fail(reply, 400, "bad_request", `unknown time zone '${body.zone}'`);
+      }
+      patch.zone = body.zone;
+    }
+    if (typeof body.dashboard_url === "string") patch.dashboard_url = body.dashboard_url.trim();
+    if (typeof body.retention_days === "number" && body.retention_days >= 1) patch.retention_days = Math.round(body.retention_days);
+    if (body.notify && typeof body.notify === "object") {
+      const n = body.notify as Record<string, unknown>;
+      const notify: Record<string, unknown> = {};
+      if (typeof n.ntfy_url === "string") notify.ntfy_url = n.ntfy_url.trim().replace(/\/$/, "");
+      if (typeof n.topic === "string") notify.topic = n.topic.trim();
+      if (typeof n.escalate_after_s === "number" && n.escalate_after_s >= 0) notify.escalate_after_s = Math.round(n.escalate_after_s);
+      patch.notify = notify;
+    }
     ctx.settings.update(patch);
+    ctx.log.info({ keys: Object.keys(patch) }, "settings updated");
     return ctx.settings.public();
+  });
+
+  /** Sends a test message to the configured ntfy topic. */
+  app.post("/api/v1/settings/test-notification", write, async (_req, reply) => {
+    const r = await notifyTest(ctx.settings.value, ctx.log);
+    if (!r.ok) return fail(reply, 502, "notify", r.error);
+    return { sent: true };
   });
 
   app.get("/ws/live", { websocket: true }, (socket) => {

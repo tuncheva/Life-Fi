@@ -36,6 +36,7 @@ async function main() {
   const hub = new LiveHub(log);
   const history = new History();
   const alerts = new AlertManager(profiles, () => settings.value.profile);
+  alerts.setEscalateAfter(() => settings.value.notify.escalate_after_s);
   const watchdog = new Watchdog({
     raise: (reason) => {
       log.warn({ reason }, "sensor offline");

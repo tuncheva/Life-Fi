@@ -57,11 +57,12 @@ export function TopBar() {
           No results from the engine for a few seconds
         </div>
       )}
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2">
+      {/* Row 1: brand, status chips, profile. Row 2 on phones: the nav, scrollable. */}
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 sm:py-2">
         <Link href="/" className="text-lg font-bold tracking-tight">
           Life-Fi
         </Link>
-        <nav className="flex gap-1 text-sm">
+        <nav className="order-last -mx-4 flex w-[calc(100%+2rem)] gap-1 overflow-x-auto px-4 pb-1 text-sm whitespace-nowrap sm:order-none sm:mx-0 sm:w-auto sm:px-0 sm:pb-0">
           {NAV.map((n) => {
             const active = path === n.href || (n.href !== "/" && path.startsWith(n.href.replace(/\/$/, "")));
             return (
@@ -75,14 +76,18 @@ export function TopBar() {
             );
           })}
         </nav>
-        <div className="ml-auto flex flex-wrap items-center gap-2 text-xs">
+        <div className="ml-auto flex min-w-0 items-center gap-1.5 text-xs sm:gap-2">
           {result?.health.warmup && <Chip tone="warn">warm-up</Chip>}
-          {result?.presence.state === "uncertain" && <Chip tone="warn">presence uncertain</Chip>}
-          <CalibrationChip state={cal?.state ?? null} age={cal?.age_s ?? null} />
-          <Chip tone={connected ? "ok" : "bad"}>{connected ? "live link" : "offline"}</Chip>
+          {result?.presence.state === "uncertain" && <Chip tone="warn">uncertain</Chip>}
+          {/* On phones the calibration chip appears only when it needs attention. */}
+          <span className={cal?.state === "ok" ? "hidden sm:inline" : ""}>
+            <CalibrationChip state={cal?.state ?? null} age={cal?.age_s ?? null} />
+          </span>
+          <Chip tone={connected ? "ok" : "bad"}>{connected ? "live" : "offline"}</Chip>
           <label className="flex items-center gap-1 text-zinc-500">
-            profile
+            <span className="hidden sm:inline">profile</span>
             <select
+              aria-label="profile"
               className="rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
               value={profile}
               onChange={(e) => void onProfile(e.target.value as ProfileName)}

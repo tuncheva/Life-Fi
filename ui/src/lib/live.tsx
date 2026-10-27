@@ -8,7 +8,7 @@ import { getAlerts, getStatus, wsUrl, type Alert, type Status, type WsMessage } 
 import type { Result } from "./contracts.gen";
 
 export const WAVE_HZ = 10;
-export const WAVE_SECONDS = 30;
+export const WAVE_SECONDS = 300; // ring buffer length; the chart shows 30 s or 5 min of it
 export const CSI_ROWS = 300; // ~30 s at 5 rows per 0.5 s
 
 export class RingBuffer<T> {

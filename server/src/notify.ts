@@ -7,13 +7,26 @@ type Logger = { info: (o: unknown, msg?: string) => void; warn: (o: unknown, msg
 
 const PRIORITY: Record<Alert["level"], string> = { high: "5", medium: "4", low: "3" };
 
-export async function notifyPhone(alert: Alert, kind: "open" | "escalation", settings: Settings, log: Logger): Promise<void> {
+export type NotifyResult = { ok: true } | { ok: false; error: string };
+
+async function post(settings: Settings, headers: Record<string, string>, body: string, log: Logger): Promise<NotifyResult> {
   const { ntfy_url, topic } = settings.notify;
-  if (!topic) {
-    log.info({ alert: alert.id }, "ntfy topic not set, skipping phone notification");
-    return;
-  }
+  if (!topic) return { ok: false, error: "ntfy topic not set" };
   const url = `${ntfy_url.replace(/\/$/, "")}/${encodeURIComponent(topic)}`;
+  try {
+    const res = await fetch(url, { method: "POST", headers, body, signal: AbortSignal.timeout(5000) });
+    if (!res.ok) {
+      log.warn({ status: res.status }, "ntfy POST failed");
+      return { ok: false, error: `ntfy answered ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, "ntfy POST error");
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+export async function notifyPhone(alert: Alert, kind: "open" | "escalation", settings: Settings, log: Logger): Promise<void> {
   const headers: Record<string, string> = {
     Title: kind === "escalation" ? "Life-Fi alert (not acknowledged)" : "Life-Fi alert",
     Priority: PRIORITY[alert.level],
@@ -23,12 +36,14 @@ export async function notifyPhone(alert: Alert, kind: "open" | "escalation", set
     headers.Click = settings.dashboard_url;
     headers.Actions = `http, Acknowledge, ${settings.dashboard_url.replace(/\/$/, "")}/api/v1/alerts/${alert.id}/ack, method=POST, headers.X-Lifefi-Pin=${settings.pin}, clear=true`;
   }
-  const body = `Alert — Room 1 — open dashboard`;
-  try {
-    const res = await fetch(url, { method: "POST", headers, body, signal: AbortSignal.timeout(5000) });
-    if (!res.ok) log.warn({ status: res.status, alert: alert.id }, "ntfy POST failed");
-    else log.info({ alert: alert.id, kind }, "phone notified");
-  } catch (err) {
-    log.warn({ err: (err as Error).message, alert: alert.id }, "ntfy POST error");
-  }
+  const r = await post(settings, headers, "Alert — Room 1 — open dashboard", log);
+  if (r.ok) log.info({ alert: alert.id, kind }, "phone notified");
+  else log.info({ alert: alert.id, reason: r.error }, "phone not notified");
+}
+
+/** A harmless message to check that the phone is subscribed to the topic. */
+export function notifyTest(settings: Settings, log: Logger): Promise<NotifyResult> {
+  const headers: Record<string, string> = { Title: "Life-Fi test", Priority: "3", Tags: "white_check_mark" };
+  if (settings.dashboard_url) headers.Click = settings.dashboard_url;
+  return post(settings, headers, "Test notification from the Life-Fi dashboard. Alerts will arrive here.", log);
 }

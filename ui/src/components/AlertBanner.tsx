@@ -59,7 +59,7 @@ export function AlertBanner() {
           <button
             onClick={() => void onAck(a)}
             disabled={busy === a.id}
-            className="rounded-lg bg-white px-4 py-2 text-base font-semibold text-red-700 disabled:opacity-50"
+            className="w-full rounded-lg bg-white px-4 py-3 text-base font-semibold text-red-700 disabled:opacity-50 sm:w-auto sm:py-2"
           >
             {busy === a.id ? "…" : "Acknowledge"}
           </button>

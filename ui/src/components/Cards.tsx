@@ -1,7 +1,8 @@
 "use client";
 // Home page tiles: state, motion, breathing (bpm + wave), device health.
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLive } from "@/lib/live";
+import { BreathingChart } from "./BreathingChart";
 import { Chip } from "./TopBar";
 
 export function Card({ title, children, className = "" }: { title: string; children: React.ReactNode; className?: string }) {
@@ -78,52 +79,8 @@ export function MotionCard() {
 
 export function BreathingCard() {
   const { result, status, buffers } = useLive();
-  const canvas = useRef<HTMLCanvasElement>(null);
+  const [seconds, setSeconds] = useState(30);
   const show = status?.server.profile !== "school";
-
-  useEffect(() => {
-    if (!show) return;
-    let raf = 0;
-    let drawn = -1;
-    const draw = () => {
-      raf = requestAnimationFrame(draw);
-      const c = canvas.current;
-      if (!c || drawn === buffers.version) return;
-      drawn = buffers.version;
-      const dpr = window.devicePixelRatio || 1;
-      const w = c.clientWidth;
-      const h = c.clientHeight;
-      if (c.width !== w * dpr || c.height !== h * dpr) {
-        c.width = w * dpr;
-        c.height = h * dpr;
-      }
-      const g = c.getContext("2d")!;
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.clearRect(0, 0, w, h);
-      const data = buffers.wave.toArray();
-      const n = buffers.wave.capacity;
-      g.strokeStyle = "#a1a1aa";
-      g.lineWidth = 1;
-      g.beginPath();
-      g.moveTo(0, h / 2);
-      g.lineTo(w, h / 2);
-      g.stroke();
-      if (data.length < 2) return;
-      g.strokeStyle = "#0ea5e9";
-      g.lineWidth = 2;
-      g.beginPath();
-      const offset = n - data.length;
-      data.forEach((v, i) => {
-        const x = ((offset + i) / (n - 1)) * w;
-        const y = h / 2 - Math.max(-1, Math.min(1, v / 0.3)) * (h / 2 - 4);
-        if (i === 0) g.moveTo(x, y);
-        else g.lineTo(x, y);
-      });
-      g.stroke();
-    };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
-  }, [buffers, show]);
 
   if (!show) {
     return (
@@ -135,7 +92,7 @@ export function BreathingCard() {
   const b = result?.breathing;
   return (
     <Card title="Breathing">
-      <div className="flex items-baseline gap-2">
+      <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-3xl font-bold tabular-nums">{b?.valid && b.bpm !== null ? b.bpm.toFixed(0) : "—"}</span>
         <span className="text-sm text-zinc-500">bpm</span>
         {b && (
@@ -143,8 +100,21 @@ export function BreathingCard() {
             {b.valid ? `confidence ${(b.confidence * 100).toFixed(0)} %` : "no valid reading"}
           </Chip>
         )}
+        <span className="ml-auto flex gap-1 text-xs">
+          {[30, 300].map((s) => (
+            <button
+              key={s}
+              onClick={() => setSeconds(s)}
+              className={`rounded px-2 py-0.5 ${seconds === s ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}
+            >
+              {s === 30 ? "30 s" : "5 min"}
+            </button>
+          ))}
+        </span>
       </div>
-      <canvas ref={canvas} className="mt-2 h-24 w-full" aria-label="breathing waveform, last 30 seconds" />
+      <div className="mt-2">
+        <BreathingChart buffers={buffers} seconds={seconds} />
+      </div>
     </Card>
   );
 }

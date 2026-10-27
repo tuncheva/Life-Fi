@@ -89,9 +89,9 @@ Three layers, used in this order:
 - [x] Dashboard follows the active profile: Home, Clinic (bed state, posture since, breathing, alerts) and School (occupancy from presence, after-hours flag, no breathing)
 - [x] Guided calibration page (duration pick, "leave the room now", countdown, motion warning, outcome from `calibration_job` in Status)
 - [x] Source page (live / replay file / speed / loop with the banner; minimal record start / stop; `GET /api/v1/recordings`)
-- [ ] Breathing chart on uPlot instead of the raw canvas (axes, 30 s / 5 min)
-- [ ] Phone layout check for the alert banner and Home
-- [ ] Settings editing from the UI (ntfy topic, PIN change)
+- [x] Breathing chart on uPlot (axes, 30 s / 5 min, fed from the ring buffer on rAF)
+- [x] Phone layout: compact two-row header with a scrollable nav, full-width acknowledge button, single-column cards
+- [x] Settings from the UI: ntfy server / topic (generate) / re-notify delay, dashboard URL, time zone, retention, PIN change, "send test notification" (`POST /settings/test-notification`); escalation delay now comes from settings
 
 **Then: data + demo hardening**
 - [ ] History on disk (SQLite vs H2 is still an open team decision; the in-memory store keeps the same query API)

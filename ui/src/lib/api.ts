@@ -184,6 +184,9 @@ export const getProfile = () => api<ProfileView>("/profile");
 export const setProfile = (active: ProfileName) => api<ProfileView>("/profile", { method: "PUT", body: JSON.stringify({ active }), pin: true });
 export const calibrate = (kind = "empty", duration_s = 120) => api<{ started: boolean }>("/calibrate", { method: "POST", body: JSON.stringify({ kind, duration_s }), pin: true });
 export const getSettings = () => api<PublicSettings>("/settings");
+export type SettingsPatch = Partial<Omit<PublicSettings, "pin_set" | "notify">> & { pin?: string; notify?: Partial<PublicSettings["notify"]> };
+export const updateSettings = (patch: SettingsPatch) => api<PublicSettings>("/settings", { method: "PUT", body: JSON.stringify(patch), pin: true });
+export const testNotification = () => api<{ sent: boolean }>("/settings/test-notification", { method: "POST", body: "{}", pin: true });
 export const getHistory = (from: number, to: number, fields?: string) =>
   api<{ rows: HistoryRow[] }>(`/history?from=${from}&to=${to}${fields ? `&fields=${fields}` : ""}`);
 export const getSource = () => api<SourceState>("/source");

@@ -64,6 +64,13 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     this.profiles = p;
   }
 
+  /** Escalation delay in seconds; defaults to profiles.yml, the server overrides it from settings. */
+  private escalateAfterS: () => number = () => this.profiles.notify.escalate_after_s;
+
+  setEscalateAfter(fn: () => number): void {
+    this.escalateAfterS = fn;
+  }
+
   list(states?: AlertState[]): Alert[] {
     const all = [...this.alerts.values()].sort((a, b) => b.created_at - a.created_at);
     return states ? all.filter((a) => states.includes(a.state)) : all;
@@ -156,7 +163,7 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     alert.notified_at = t;
     const timers = this.timers.get(alert.id) ?? {};
     delete timers.delay;
-    const esc = this.profiles.notify.escalate_after_s;
+    const esc = this.escalateAfterS();
     if (esc > 0) timers.escalate = setTimeout(() => this.escalate(alert), esc * 1000);
     this.timers.set(alert.id, timers);
     this.emit("alert", { ...alert });
@@ -168,7 +175,7 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     const t = this.now();
     alert.escalated_at = t;
     alert.notified_at = t;
-    const esc = this.profiles.notify.escalate_after_s;
+    const esc = this.escalateAfterS();
     const timers = this.timers.get(alert.id) ?? {};
     if (esc > 0) timers.escalate = setTimeout(() => this.escalate(alert), esc * 1000);
     this.timers.set(alert.id, timers);

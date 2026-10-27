@@ -37,7 +37,8 @@ Writes: every `POST` and `PUT` below.
 | POST | `/recordings/segment` | `{"label","count","subject","spot","action":"start"\|"end"}` | `{}` |
 | POST | `/recordings/mark` | `{"event","subject"}` | `{}` |
 | GET | `/settings` | — | `Settings` |
-| PUT | `/settings` | partial `Settings` | `Settings` |
+| PUT | `/settings` | partial `Settings` (+ `pin` to change it, 4–8 digits) | `Settings` |
+| POST | `/settings/test-notification` | `{}` | `{"sent": true}`, or `502` `{"error":"notify"}` when ntfy refused or no topic is set |
 | WS | `/ws/live` | — | messages below |
 
 ### `Status`
