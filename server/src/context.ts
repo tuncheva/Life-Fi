@@ -1,0 +1,69 @@
+// Shared runtime objects, wired in main.ts and used by the API.
+import type { FastifyBaseLogger } from "fastify";
+import type { AlertManager } from "./alerts.js";
+import type { Result } from "./contracts.gen.js";
+import type { EngineClient } from "./engine-client.js";
+import type { History } from "./history.js";
+import type { ProfilesConfig } from "./profiles.js";
+import type { SettingsStore } from "./settings.js";
+import type { Watchdog } from "./watchdog.js";
+import type { LiveHub } from "./ws.js";
+
+export interface SourceState {
+  mode: "live" | "replay";
+  file: string | null;
+  speed: number;
+  loop: boolean;
+  state: "running" | "stopped";
+}
+
+/** `data` of the engine's get_status ack (contracts/control.md). */
+export interface EngineStatus {
+  engine: Record<string, unknown> & { calibration?: { state: string; id: string | null; age_s: number | null } };
+  device: (Record<string, unknown> & { last_status_us?: number }) | null;
+}
+
+export interface AppState {
+  startedAt: number;
+  latest: Result | null;
+  lastResultAt: number | null;
+  engineStatus: EngineStatus | null;
+  source: SourceState;
+}
+
+export interface AppContext {
+  log: FastifyBaseLogger;
+  engine: EngineClient;
+  alerts: AlertManager;
+  watchdog: Watchdog;
+  history: History;
+  settings: SettingsStore;
+  profiles: ProfilesConfig;
+  state: AppState;
+  hub: LiveHub;
+  version: string;
+  dev: boolean;
+}
+
+/** The `Status` object of contracts/api.md. */
+export function buildStatus(ctx: AppContext, includeResult: boolean): Record<string, unknown> {
+  const s = ctx.settings.value;
+  return {
+    server: {
+      version: ctx.version,
+      uptime_s: Math.floor((Date.now() - ctx.state.startedAt) / 1000),
+      profile: s.profile,
+      time_zone: s.zone,
+      sensor_offline: ctx.watchdog.isOffline ? ctx.watchdog.reason : null,
+    },
+    engine: {
+      connected: ctx.engine.connected,
+      last_result_ms: ctx.state.lastResultAt,
+      status: ctx.state.engineStatus?.engine ?? null,
+    },
+    device: ctx.state.engineStatus?.device ?? null,
+    source: ctx.state.source,
+    ...(includeResult ? { result: ctx.state.latest } : {}),
+    alerts_open: ctx.alerts.openCount(),
+  };
+}

@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://life-fi.local/contracts/results.schema.json",
+  "title": "Result",
+  "description": "One result from the engine to the server, every 0.5 s (plan-v2 §4.5, version 2). Also the payload of the `result` WebSocket message.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "v",
+    "ts",
+    "t_rx_last_us",
+    "node",
+    "boot_id",
+    "source",
+    "config_hash",
+    "pipeline_version",
+    "health",
+    "calibration",
+    "presence",
+    "motion",
+    "posture",
+    "count",
+    "breathing",
+    "csi",
+    "events",
+    "active"
+  ],
+  "properties": {
+    "type": {
+      "const": "result"
+    },
+    "v": {
+      "const": 2
+    },
+    "ts": {
+      "type": "integer",
+      "description": "Host wall-clock, ms since epoch, when the result was produced"
+    },
+    "t_rx_last_us": {
+      "type": "integer",
+      "description": "Host wall-clock, µs since epoch, of the last CSI frame used"
+    },
+    "node": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "boot_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "live",
+        "replay"
+      ]
+    },
+    "config_hash": {
+      "type": "string",
+      "description": "Hash of rules.yaml + profiles.yml the engine is running with"
+    },
+    "pipeline_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rate_hz",
+        "loss_udp",
+        "loss_air",
+        "invalid_ratio",
+        "rejected",
+        "warmup"
+      ],
+      "properties": {
+        "rate_hz": {
+          "type": "number",
+          "minimum": 0
+        },
+        "loss_udp": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "loss_air": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "invalid_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "rejected": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "required": [
+            "layout",
+            "gain_invalid"
+          ],
+          "properties": {
+            "layout": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "gain_invalid": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "warmup": {
+          "type": "boolean",
+          "description": "True for 3 s after a new boot_id and until every detector has its history. No event can start during warm-up."
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "id",
+        "age_s"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "none",
+            "running",
+            "ok",
+            "stale"
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "age_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "presence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "state",
+        "S",
+        "B",
+        "M"
+      ],
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "present",
+            "uncertain"
+          ]
+        },
+        "S": {
+          "type": "number",
+          "description": "Static deviation"
+        },
+        "B": {
+          "type": "number",
+          "description": "Breathing-band energy"
+        },
+        "M": {
+          "type": "number",
+          "description": "Motion"
+        }
+      }
+    },
+    "motion": {
+      "type": "number",
+      "minimum": 0
+    },
+    "posture": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "since",
+            "src"
+          ],
+          "properties": {
+            "label": {
+              "type": "string",
+              "enum": [
+                "unknown",
+                "standing",
+                "sitting",
+                "lying"
+              ]
+            },
+            "since": {
+              "type": "integer",
+              "description": "ms since epoch of the last known transition"
+            },
+            "src": {
+              "type": "string",
+              "enum": [
+                "transitions",
+                "walking",
+                "start"
+              ]
+            }
+          }
+        }
+      ],
+      "description": "null when not present. label is unknown until the first transition or walking has been seen."
+    },
+    "count": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "p",
+            "src"
+          ],
+          "properties": {
+            "value": {
+              "type": "integer",
+              "enum": [
+                1,
+                2
+              ],
+              "description": "2 means 2+"
+            },
+            "p": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "src": {
+              "type": "string",
+              "enum": [
+                "model"
+              ]
+            }
+          }
+        }
+      ],
+      "description": "null when the count model is not loaded."
+    },
+    "breathing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bpm",
+        "confidence",
+        "valid",
+        "wave"
+      ],
+      "properties": {
+        "bpm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "wave": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Breathing waveform samples produced in this window"
+        }
+      }
+    },
+    "csi": {
+      "type": "array",
+      "description": "Rows of exactly 52 log-amplitude (dB) values, the most recent frames of this window, for the heatmap only. (Length is checked by scripts/check-contracts.mjs, not by the schema, so the generated type stays number[][].)",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "Only the changes in this window",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "active": {
+      "type": "array",
+      "description": "Ids of every currently active event. The server reconciles its open alerts against this list on every result.",
+      "items": {
+        "type": "integer"
+      }
+    }
+  },
+  "$defs": {
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "fall",
+        "fainted_suspected",
+        "no_breathing",
+        "presence_uncertain",
+        "recalibrate_needed",
+        "bed_exit",
+        "sensor_offline",
+        "long_inactivity"
+      ]
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "state",
+        "t",
+        "data"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unique per boot of the engine"
+        },
+        "type": {
+          "$ref": "#/$defs/eventType"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "cleared"
+          ]
+        },
+        "t": {
+          "type": "integer",
+          "description": "ms since epoch of the change"
+        },
+        "data": {
+          "type": "object"
+        }
+      }
+    }
+  }
+}

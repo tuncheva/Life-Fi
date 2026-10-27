@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# runtime data (recordings, databases, logs)
+data/
+*.csirec
+*.sqlite
+*.sqlite-journal
+*.log
+
+# env
+.env
+.env.*
+!.env.example
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# python (engine / ml, owned by other teammates)
+__pycache__/
+*.pyc
+.venv/
+
+# claude code local settings (launch.json is shared)
+.claude/settings.local.json
