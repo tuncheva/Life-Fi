@@ -37,10 +37,19 @@ $pio = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
 The monitor runs at 115200 baud: type commands and press Enter, Ctrl+C to
 quit. To open it again later: `& $pio device monitor`.
 
+Run `pio` from the `firmware` folder, or add `-d firmware`. Anywhere else
+it can't see `platformio.ini`, falls back to 9600 baud and shows garbled
+symbols.
+
 - Windows PowerShell 5.1 has no `&&`: run the commands on separate lines,
   or join them with `;`.
 - Use a USB cable that carries data. If no new COM port appears in Device
   Manager when you plug in, the cable is probably charge-only.
+- `Could not open COMx ... A device attached to the system is not
+  functioning` on a **CH340** board: WCH's driver 3.8 and newer refuse clone
+  CH340 chips. Install an older CH341SER driver (3.4 or 3.5). Then in Device
+  Manager → the CH340 port → Update driver → Browse my computer → Let me
+  pick, choose that version.
 - On an ESP32-S3 DevKitC, plug into the **UART** USB connector, not the
   native "USB" one. The native port shows the logs but can't read typed
   commands.
@@ -74,7 +83,7 @@ use PlatformIO's Python, which already has pyserial:
 
 | Mode | When | CSI rate | Setup |
 |---|---|---|---|
-| **Station** (best) | `src/wifi_secrets.h` exists | ~100 Hz: every ping reply from the router is a sample | `Copy-Item src\wifi_secrets.h.example src\wifi_secrets.h`, then fill in a **2.4 GHz** SSID and password |
+| **Station** (best) | credentials saved with the `wifi` command, or in `src/wifi_secrets.h` | ~100 Hz: every ping reply from the router is a sample | Type `wifi <ssid> <password>` in the serial monitor (a **2.4 GHz** network; a phone hotspot works). It's saved in the board's flash, not in the repo, and the board restarts. Alternative: `Copy-Item src\wifi_secrets.h.example src\wifi_secrets.h` and rebuild |
 | **Sniffer** (fallback) | no credentials, or connecting failed for 20 s | whatever OFDM traffic is in the air, often 5–50 Hz | none: it surveys the channels of the 3 strongest APs (or `LIFEFI_SNIFF_SSID`) for 3 s each and locks onto the transmitter that gives the most CSI, preferring an AP with ≥ 10 Hz |
 
 Why the survey: many routers send beacons at 802.11b rates, which carry no
@@ -116,6 +125,14 @@ timeouts and free heap.
 | `learn N` | Record 30 s with N people (1–5) moving normally; stored in flash as level N |
 | `forget` | Clear the learned levels (back to default thresholds) |
 | `status` | Print thresholds and learned levels |
+| `wifi <ssid> <password>` | Save station credentials in flash and restart in station mode. Quote an SSID with spaces: `wifi "My Net" pass word`. The password is the rest of the line |
+| `wifi clear` | Erase the saved credentials and restart in sniffer mode |
+
+Typing into a log that scrolls every second is fiddly. Instead, close the
+monitor and run `powershell -ExecutionPolicy Bypass -File
+firmware\tools\set_wifi.ps1`. It asks for the network name and a hidden
+password, sends the `wifi` command and shows the board's reply. `-Clear`
+erases the saved credentials.
 | `help` | List commands |
 
 **Calibrate counting for a room:** after boot calibration, run `learn 1`,

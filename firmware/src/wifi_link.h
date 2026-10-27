@@ -16,3 +16,7 @@ esp_err_t wifi_link_start(void);
 
 /* One-line description for the periodic health log. */
 void wifi_link_describe(char *buf, size_t len);
+
+/* Store station credentials in flash; used from the next boot on, ahead of
+ * wifi_secrets.h. An empty or NULL ssid erases them (back to sniffer mode). */
+esp_err_t wifi_link_save_credentials(const char *ssid, const char *password);

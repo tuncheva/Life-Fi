@@ -1,10 +1,31 @@
-/* commands.c: parsing of typed lines and their effect on the estimator. */
+/* commands.c: parsing of typed lines and their effect on the estimator and
+ * on the stored Wi-Fi credentials. */
 #include <string.h>
 #include "commands.h"
+#include "esp_system.h"
 #include "estimator.h"
 #include "host_test.h"
+#include "wifi_link.h"
 
 static float s_profile[LIFEFI_NSC];
+
+/* ---- stubs for the Wi-Fi side ------------------------------------------- */
+
+static int s_saves, s_restarts;
+static char s_saved_ssid[40], s_saved_pass[80];
+
+esp_err_t wifi_link_save_credentials(const char *ssid, const char *password)
+{
+    s_saves++;
+    strcpy(s_saved_ssid, ssid ? ssid : "(cleared)");
+    strcpy(s_saved_pass, password ? password : "");
+    return ESP_OK;
+}
+
+void esp_restart(void)
+{
+    s_restarts++;
+}
 
 static void push_quiet(int seconds)
 {
@@ -24,7 +45,7 @@ static void push_quiet(int seconds)
 
 static void type(const char *text)
 {
-    char line[64];
+    char line[128];
     strncpy(line, text, sizeof(line) - 1);
     line[sizeof(line) - 1] = '\0';
     printf("  > %s\n", text);
@@ -76,6 +97,32 @@ int main(int argc, char **argv)
     push_quiet(10 + LIFEFI_CALIB_WINDOWS);
     CHECK(host_nvs_writes == writes + 2, "learn is refused while calibrating");
     CHECK(estimator_people() == 0, "calibrated again after grace + %d s", LIFEFI_CALIB_WINDOWS);
+
+    printf("== wifi\n");
+    type("wifi");
+    type("wifi Net short");
+    type("wifi \"unterminated");
+    type("wifi 123456789012345678901234567890123 password1");
+    CHECK(s_saves == 0 && s_restarts == 0, "bad wifi lines save nothing and don't restart");
+
+    type("WIFI MyNet S3cret Pass");
+    CHECK(s_saves == 1 && s_restarts == 1, "wifi saves and restarts");
+    CHECK(strcmp(s_saved_ssid, "MyNet") == 0, "SSID case kept (\"%s\")", s_saved_ssid);
+    CHECK(strcmp(s_saved_pass, "S3cret Pass") == 0, "password is the rest of the line (\"%s\")",
+          s_saved_pass);
+
+    type("  wifi   \"Home Net 2\"   p@ss w0rd!  ");
+    CHECK(strcmp(s_saved_ssid, "Home Net 2") == 0, "quoted SSID with spaces (\"%s\")", s_saved_ssid);
+    CHECK(strcmp(s_saved_pass, "p@ss w0rd!") == 0, "password trimmed at the ends (\"%s\")", s_saved_pass);
+
+    type("wifi OpenCafe");
+    CHECK(s_saves == 3 && s_saved_pass[0] == '\0', "no password = open network");
+
+    type("wifi clear");
+    CHECK(s_saves == 4 && strcmp(s_saved_ssid, "(cleared)") == 0 && s_restarts == 4,
+          "wifi clear erases and restarts");
+    type("wifi \"clear\" password1");
+    CHECK(strcmp(s_saved_ssid, "clear") == 0, "a network literally named \"clear\" can be quoted");
 
     return host_finish("test_commands");
 }

@@ -12,11 +12,18 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
+#include "nvs.h"
 #include "ping/ping_sock.h"
 #include "csi_capture.h"
 #include "lifefi_config.h"
 
 static const char *TAG = "link";
+
+#define NVS_NS       "lifefi"
+#define NVS_KEY_SSID "wifi_ssid"
+#define NVS_KEY_PASS "wifi_pass"
+
+static const char *load_credentials(char *ssid, size_t ssid_len, char *pass, size_t pass_len);
 
 #define BIT_GOT_IP      BIT0
 #define SCAN_MAX        20
@@ -228,8 +235,8 @@ static esp_err_t start_sniffer(void)
     ESP_LOGI(TAG, "sniffer mode: CSI from \"%s\" (" MACSTR ") on channel %d, %.0f Hz in the survey",
              s_ssid, MAC2STR(s_bssid), s_channel, best_rate);
     if (best_rate < GOOD_RATE_HZ) {
-        ESP_LOGW(TAG, "little CSI traffic here; add Wi-Fi credentials in src/wifi_secrets.h "
-                      "for ~100 Hz station mode");
+        ESP_LOGW(TAG, "little CSI traffic here; for ~100 Hz station mode type "
+                      "`wifi <ssid> <password>` in this console");
     }
     return ESP_OK;
 }
@@ -258,12 +265,12 @@ esp_err_t wifi_link_start(void)
     /* Power save makes the station sleep and the CSI rate collapse */
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_ps(WIFI_PS_NONE));
 
-    bool have_ssid = LIFEFI_WIFI_SSID[0] != '\0';
+    wifi_config_t wc = { 0 };
+    const char *source = load_credentials((char *)wc.sta.ssid, sizeof(wc.sta.ssid),
+                                          (char *)wc.sta.password, sizeof(wc.sta.password));
+    bool have_ssid = wc.sta.ssid[0] != '\0';
     s_mode = have_ssid ? LINK_STATION : LINK_SNIFFER;
     if (have_ssid) {
-        wifi_config_t wc = { 0 };
-        strlcpy((char *)wc.sta.ssid, LIFEFI_WIFI_SSID, sizeof(wc.sta.ssid));
-        strlcpy((char *)wc.sta.password, LIFEFI_WIFI_PASSWORD, sizeof(wc.sta.password));
         wc.sta.threshold.authmode = WIFI_AUTH_OPEN;
         ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &wc), TAG, "sta config");
     }
@@ -272,26 +279,76 @@ esp_err_t wifi_link_start(void)
     ESP_RETURN_ON_ERROR(csi_capture_start(), TAG, "csi");
 
     if (have_ssid) {
-        ESP_LOGI(TAG, "station mode: connecting to \"%s\"", LIFEFI_WIFI_SSID);
+        ESP_LOGI(TAG, "station mode: connecting to \"%s\" (credentials from %s)",
+                 (const char *)wc.sta.ssid, source);
         EventBits_t bits = xEventGroupWaitBits(s_events, BIT_GOT_IP, pdFALSE, pdTRUE,
                                                pdMS_TO_TICKS(LIFEFI_CONNECT_TIMEOUT_MS));
         if (bits & BIT_GOT_IP) {
             return ESP_OK;
         }
-        ESP_LOGW(TAG, "could not connect to \"%s\" in %d s, falling back to sniffer mode",
-                 LIFEFI_WIFI_SSID, LIFEFI_CONNECT_TIMEOUT_MS / 1000);
+        ESP_LOGW(TAG, "could not connect to \"%s\" in %d s, falling back to sniffer mode "
+                      "(check the password, and that the network is 2.4 GHz)",
+                 (const char *)wc.sta.ssid, LIFEFI_CONNECT_TIMEOUT_MS / 1000);
         s_give_up = true;
         esp_wifi_disconnect();
         vTaskDelay(pdMS_TO_TICKS(200));
     } else {
-        ESP_LOGI(TAG, "no Wi-Fi credentials (src/wifi_secrets.h): sniffer mode");
+        ESP_LOGI(TAG, "no Wi-Fi credentials: sniffer mode. For ~100 Hz CSI type "
+                      "`wifi <ssid> <password>` in this console");
     }
     return start_sniffer();
+}
+
+/* Flash (set with the `wifi` command) wins over wifi_secrets.h. Returns
+ * where the credentials came from, for the log. */
+static const char *load_credentials(char *ssid, size_t ssid_len, char *pass, size_t pass_len)
+{
+    strlcpy(ssid, LIFEFI_WIFI_SSID, ssid_len);
+    strlcpy(pass, LIFEFI_WIFI_PASSWORD, pass_len);
+    const char *source = "src/wifi_secrets.h";
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) {
+        return source;
+    }
+    char stored[33];
+    size_t n = sizeof(stored);
+    if (nvs_get_str(h, NVS_KEY_SSID, stored, &n) == ESP_OK && stored[0] != '\0') {
+        strlcpy(ssid, stored, ssid_len);
+        n = pass_len;
+        if (nvs_get_str(h, NVS_KEY_PASS, pass, &n) != ESP_OK) {
+            pass[0] = '\0';
+        }
+        source = "flash";
+    }
+    nvs_close(h);
+    return source;
+}
+
+esp_err_t wifi_link_save_credentials(const char *ssid, const char *password)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NVS_NS, NVS_READWRITE, &h), TAG, "nvs open");
+    esp_err_t err = ESP_OK;
+    if (ssid == NULL || ssid[0] == '\0') {
+        nvs_erase_key(h, NVS_KEY_SSID);
+        nvs_erase_key(h, NVS_KEY_PASS);
+    } else {
+        err = nvs_set_str(h, NVS_KEY_SSID, ssid);
+        if (err == ESP_OK) {
+            err = nvs_set_str(h, NVS_KEY_PASS, password != NULL ? password : "");
+        }
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
 }
 
 void wifi_link_describe(char *buf, size_t len)
 {
     snprintf(buf, len, "%s \"%s\" " MACSTR " ch %d | ping timeouts %lu | disconnects %lu",
-             s_mode == LINK_STATION ? "station" : "sniffer", s_ssid, MAC2STR(s_bssid),
-             s_channel, (unsigned long)s_ping_timeouts, (unsigned long)s_disconnects);
+             s_mode == LINK_STATION ? "CONNECTED to" : "NOT connected, only listening to",
+             s_ssid, MAC2STR(s_bssid), s_channel, (unsigned long)s_ping_timeouts,
+             (unsigned long)s_disconnects);
 }

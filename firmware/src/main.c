@@ -24,7 +24,7 @@ static void log_health(void)
     csi_counters_t c;
     wifi_link_describe(link, sizeof(link));
     csi_capture_counters(&c);
-    ESP_LOGI(TAG, "link %s | csi %lu, other tx %lu, rejected %lu, queue drops %lu | heap %lu",
+    ESP_LOGI(TAG, "wifi %s | csi %lu, other tx %lu, rejected %lu, queue drops %lu | heap %lu",
              link, (unsigned long)c.received, (unsigned long)c.other_mac,
              (unsigned long)c.rejected, (unsigned long)c.queue_drops,
              (unsigned long)esp_get_free_heap_size());
