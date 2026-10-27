@@ -1,10 +1,265 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens (docs/plan/ui-ux.md §4.1). Components use these semantic names,
+ * never raw palette colours, so a new visual design (Alex's Figma on the shadcn
+ * kit) lands by editing the values below. One meaning, one colour: "present" is
+ * the same teal in the room card, the timeline and every legend.
+ *
+ * Theme: follows the OS by default; <html data-theme="light|dark"> forces one
+ * (Setup menu, useful on a projector).
+ */
+:root {
+  color-scheme: light;
+  /* surfaces and text */
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef0f3;
+  --line: #dfe3e8;
+  --fg: #12161b;
+  --muted: #545d69;
+  --subtle: #616a76;
+  /* primary actions are neutral ink: teal is reserved for "someone is there" */
+  --primary: #1b2027;
+  --primary-fg: #ffffff;
+  --link: #1d4ed8;
+  --focus: #2563eb;
+
+  /* room states */
+  --present: #0d9488;
+  --present-soft: #d5f5f0;
+  --present-fg: #115e59;
+  --empty: #64748b;
+  --empty-soft: #e9edf2;
+  --empty-fg: #334155;
+  --uncertain: #d97706;
+  --uncertain-soft: #fdf0d2;
+  --uncertain-fg: #8a3d0b;
+  --offline: #b42318;
+  --offline-soft: #fde4e1;
+  --offline-fg: #8f1d14;
+
+  /* system health and feedback */
+  --ok: #15803d;
+  --ok-soft: #dcf5e4;
+  --ok-fg: #14532d;
+  --warn: var(--uncertain);
+  --warn-soft: var(--uncertain-soft);
+  --warn-fg: var(--uncertain-fg);
+  --danger: var(--offline);
+  --danger-soft: var(--offline-soft);
+  --danger-fg: var(--offline-fg);
+
+  /* alerts (filled banners, white text) */
+  --alert-high: #c81e1e;
+  --alert-medium: #c2410c;
+  --alert-low: #475569;
+  --alert-fg: #ffffff;
+  --replay: #6d28d9;
+  --replay-fg: #ffffff;
+
+  /* charts */
+  --chart-breath: #0369a1;
+  --chart-activity: #7b8794;
+  --chart-grid: #e3e7ec;
+  --chart-axis: #6a7380;
+  --posture-lying: #4f46e5;
+  --posture-sitting: #9333ea;
+  --posture-standing: #db2777;
+  --posture-unknown: #c3cad3;
+  --timeline-empty: #c5cdd7;
+
+  --radius: 0.875rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --surface: #14171c;
+    --surface-2: #1c2027;
+    --line: #2a3038;
+    --fg: #eef1f4;
+    --muted: #a3acb7;
+    --subtle: #8a939e;
+    --primary: #e8ecf0;
+    --primary-fg: #12161b;
+    --link: #93c5fd;
+    --focus: #60a5fa;
+    --present: #2dd4bf;
+    --present-soft: #0f2f2c;
+    --present-fg: #99f6e4;
+    --empty: #94a3b8;
+    --empty-soft: #1e242c;
+    --empty-fg: #d3dae3;
+    --uncertain: #fbbf24;
+    --uncertain-soft: #33270c;
+    --uncertain-fg: #fde68a;
+    --offline: #f87171;
+    --offline-soft: #3a1514;
+    --offline-fg: #fecaca;
+    --ok: #4ade80;
+    --ok-soft: #10301c;
+    --ok-fg: #bbf7d0;
+    --alert-high: #b91c1c;
+    --alert-medium: #c2410c;
+    --alert-low: #475569;
+    --replay: #7c3aed;
+    --chart-breath: #38bdf8;
+    --chart-activity: #6b7683;
+    --chart-grid: #232831;
+    --chart-axis: #8a939e;
+    --posture-lying: #818cf8;
+    --posture-sitting: #c084fc;
+    --posture-standing: #f472b6;
+    --posture-unknown: #3a414b;
+    --timeline-empty: #46505c;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0b0d10;
+  --surface: #14171c;
+  --surface-2: #1c2027;
+  --line: #2a3038;
+  --fg: #eef1f4;
+  --muted: #a3acb7;
+  --subtle: #8a939e;
+  --primary: #e8ecf0;
+  --primary-fg: #12161b;
+  --link: #93c5fd;
+  --focus: #60a5fa;
+  --present: #2dd4bf;
+  --present-soft: #0f2f2c;
+  --present-fg: #99f6e4;
+  --empty: #94a3b8;
+  --empty-soft: #1e242c;
+  --empty-fg: #d3dae3;
+  --uncertain: #fbbf24;
+  --uncertain-soft: #33270c;
+  --uncertain-fg: #fde68a;
+  --offline: #f87171;
+  --offline-soft: #3a1514;
+  --offline-fg: #fecaca;
+  --ok: #4ade80;
+  --ok-soft: #10301c;
+  --ok-fg: #bbf7d0;
+  --alert-high: #b91c1c;
+  --alert-medium: #c2410c;
+  --alert-low: #475569;
+  --replay: #7c3aed;
+  --chart-breath: #38bdf8;
+  --chart-activity: #6b7683;
+  --chart-grid: #232831;
+  --chart-axis: #8a939e;
+  --posture-lying: #818cf8;
+  --posture-sitting: #c084fc;
+  --posture-standing: #f472b6;
+  --posture-unknown: #3a414b;
+  --timeline-empty: #46505c;
+}
+
+/* `dark:` follows the same rule as the tokens (OS, unless data-theme forces one). */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+}
+
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-primary: var(--primary);
+  --color-primary-fg: var(--primary-fg);
+  --color-link: var(--link);
+  --color-focus: var(--focus);
+
+  --color-present: var(--present);
+  --color-present-soft: var(--present-soft);
+  --color-present-fg: var(--present-fg);
+  --color-empty: var(--empty);
+  --color-empty-soft: var(--empty-soft);
+  --color-empty-fg: var(--empty-fg);
+  --color-uncertain: var(--uncertain);
+  --color-uncertain-soft: var(--uncertain-soft);
+  --color-uncertain-fg: var(--uncertain-fg);
+  --color-offline: var(--offline);
+  --color-offline-soft: var(--offline-soft);
+  --color-offline-fg: var(--offline-fg);
+
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-fg: var(--ok-fg);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-fg: var(--warn-fg);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-fg: var(--danger-fg);
+
+  --color-alert-high: var(--alert-high);
+  --color-alert-medium: var(--alert-medium);
+  --color-alert-low: var(--alert-low);
+  --color-alert-fg: var(--alert-fg);
+  --color-replay: var(--replay);
+  --color-replay-fg: var(--replay-fg);
+
+  --color-chart-breath: var(--chart-breath);
+  --color-chart-activity: var(--chart-activity);
+  --color-posture-lying: var(--posture-lying);
+  --color-posture-sitting: var(--posture-sitting);
+  --color-posture-standing: var(--posture-standing);
+  --color-posture-unknown: var(--posture-unknown);
+  --color-timeline-empty: var(--timeline-empty);
+
+  --radius-card: var(--radius);
+
+  --animate-beacon: beacon 1.6s ease-out infinite;
+  @keyframes beacon {
+    0% {
+      box-shadow: 0 0 0 0 rgb(255 255 255 / 0.7);
+    }
+    100% {
+      box-shadow: 0 0 0 14px rgb(255 255 255 / 0);
+    }
+  }
 }
 
 body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* One visible focus style everywhere (keyboard users, installers labelling with keys). */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* <details> without the default marker; our summaries draw their own chevron. */
+summary {
+  list-style: none;
+  cursor: pointer;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+details[open] > summary .chev {
+  transform: rotate(90deg);
 }

@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LiveProvider } from "@/lib/live";
+import { PinProvider } from "@/lib/pin";
+import { THEME_BOOT } from "@/lib/theme";
+import { DISCLAIMER } from "@/lib/words";
 import { TopBar } from "@/components/TopBar";
 import { AlertBanner } from "@/components/AlertBanner";
 import { DevPanel } from "@/components/DevPanel";
@@ -14,20 +17,30 @@ export const metadata: Metadata = {
   description: "Camera-free presence, breathing and fall alerts from Wi-Fi",
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1 };
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0d10" },
+  ],
+};
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
+      <body className="flex min-h-full flex-col bg-bg text-fg">
         <LiveProvider>
-          <TopBar />
-          <AlertBanner />
-          <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-4">{children}</main>
-          <footer className="px-4 py-3 text-center text-xs text-zinc-400">
-            Assistive notification, not a medical device. Does not replace a nurse call or emergency services.
-          </footer>
-          <DevPanel />
+          <PinProvider>
+            <TopBar />
+            <AlertBanner />
+            <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:py-6">{children}</main>
+            <footer className="px-4 pb-16 pt-4 text-center text-xs text-subtle sm:pb-4">{DISCLAIMER} No camera, no microphone, no images.</footer>
+            <DevPanel />
+          </PinProvider>
         </LiveProvider>
       </body>
     </html>
