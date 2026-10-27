@@ -84,13 +84,13 @@ Three layers, used in this order:
 - [x] UI: shell, one shared WebSocket with backoff, replay banner, connection-lost banner, calibration / warm-up / uncertain chips, profile switch, state / motion / breathing (wave canvas) / device health / CSI heatmap cards, alert banner with acknowledge, alert history page, settings page, dev panel
 - [ ] Post status + chosen technologies in the organisers' shared space (they asked)
 
-**Next: Home page polish + profiles**
-- [ ] Day timeline (presence / posture / alerts over the last hours, from `/api/v1/history`)
+**Home page polish + profiles**
+- [x] Day timeline (presence / posture bands, motion, alert markers; 1 / 6 / 24 h; from `/api/v1/history` + alerts, live tail)
+- [x] Dashboard follows the active profile: Home, Clinic (bed state, posture since, breathing, alerts) and School (occupancy from presence, after-hours flag, no breathing)
+- [x] Guided calibration page (duration pick, "leave the room now", countdown, motion warning, outcome from `calibration_job` in Status)
+- [x] Source page (live / replay file / speed / loop with the banner; minimal record start / stop; `GET /api/v1/recordings`)
 - [ ] Breathing chart on uPlot instead of the raw canvas (axes, 30 s / 5 min)
-- [ ] Clinic page (breathing, posture since, bed state, alerts) and School page (presence-based occupancy, no breathing); page set follows the active profile
 - [ ] Phone layout check for the alert banner and Home
-- [ ] Guided calibration flow ("leave the room now", countdown, result)
-- [ ] Source control page (live / replay file / speed / loop) with the banner
 - [ ] Settings editing from the UI (ntfy topic, PIN change)
 
 **Then: data + demo hardening**

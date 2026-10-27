@@ -31,6 +31,7 @@ async function main() {
     lastResultAt: null,
     engineStatus: null,
     source: { mode: "live", file: null, speed: 1, loop: false, state: "running" },
+    calibration: null,
   };
   const hub = new LiveHub(log);
   const history = new History();
@@ -100,7 +101,13 @@ async function main() {
   alerts.on("notify", (a, kind) => void notifyPhone(a, kind, settings.value, log));
 
   // ---- http -------------------------------------------------------------------
-  if (config.devCors) await app.register(cors, { origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/] });
+  // @fastify/cors v11 defaults to GET,HEAD,POST; the dashboard also uses PUT.
+  if (config.devCors) {
+    await app.register(cors, {
+      origin: [/^http:\/\/localhost:\d+$/, /^http:\/\/127\.0\.0\.1:\d+$/],
+      methods: ["GET", "HEAD", "POST", "PUT", "DELETE"],
+    });
+  }
   await app.register(websocket, { options: { maxPayload: 64 * 1024 } });
   registerApi(app, ctx);
 

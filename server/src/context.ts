@@ -23,12 +23,24 @@ export interface EngineStatus {
   device: (Record<string, unknown> & { last_status_us?: number }) | null;
 }
 
+/** The calibration the dashboard last started, so the UI can show its outcome (refused, finished). */
+export interface CalibrationJob {
+  kind: string;
+  duration_s: number;
+  started_at: number;
+  state: "running" | "ok" | "failed";
+  id: string | null;
+  error: string | null;
+  finished_at: number | null;
+}
+
 export interface AppState {
   startedAt: number;
   latest: Result | null;
   lastResultAt: number | null;
   engineStatus: EngineStatus | null;
   source: SourceState;
+  calibration: CalibrationJob | null;
 }
 
 export interface AppContext {
@@ -63,6 +75,7 @@ export function buildStatus(ctx: AppContext, includeResult: boolean): Record<str
     },
     device: ctx.state.engineStatus?.device ?? null,
     source: ctx.state.source,
+    calibration_job: ctx.state.calibration,
     ...(includeResult ? { result: ctx.state.latest } : {}),
     alerts_open: ctx.alerts.openCount(),
   };

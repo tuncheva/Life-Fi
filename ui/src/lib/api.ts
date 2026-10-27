@@ -65,11 +65,22 @@ export interface EngineStatus {
   mock?: { scenario: string; phase: string };
 }
 
+export interface CalibrationJob {
+  kind: string;
+  duration_s: number;
+  started_at: number;
+  state: "running" | "ok" | "failed";
+  id: string | null;
+  error: string | null;
+  finished_at: number | null;
+}
+
 export interface Status {
   server: { version: string; uptime_s: number; profile: ProfileName; time_zone: string; sensor_offline: string | null };
   engine: { connected: boolean; last_result_ms: number | null; status: EngineStatus | null };
   device: DeviceStatus | null;
   source: SourceState;
+  calibration_job: CalibrationJob | null;
   result?: Result | null;
   alerts_open: number;
 }
@@ -86,6 +97,25 @@ export interface Profile {
   alerts: Record<string, ProfileRule>;
   breathing: { show: boolean; store: boolean };
   pages: string[];
+  inactivity?: { still_present_max_min: number; no_motion_by: string };
+  occupancy?: { after_hours: { from: string; to: string; level: AlertLevel; source: string } };
+}
+
+export interface HistoryRow {
+  t: number;
+  presence?: "empty" | "present" | "uncertain";
+  motion?: number;
+  breathing_bpm?: number | null;
+  breathing_valid?: boolean | null;
+  posture?: string | null;
+  count?: number | null;
+}
+
+export interface RecordingInfo {
+  session: string;
+  file: string | null;
+  bytes: number;
+  labels: boolean;
 }
 
 export interface ProfileView {
@@ -127,6 +157,15 @@ export function setPin(pin: string): void {
   }
 }
 
+/** Makes sure a PIN is stored for writes, asking once. Returns false if the user cancelled. */
+export function ensurePin(): boolean {
+  if (getPin()) return true;
+  const pin = window.prompt("Enter the dashboard PIN");
+  if (!pin) return false;
+  setPin(pin);
+  return true;
+}
+
 export async function api<T>(path: string, init: RequestInit & { pin?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
   if (init.body) headers["content-type"] = "application/json";
@@ -145,6 +184,14 @@ export const getProfile = () => api<ProfileView>("/profile");
 export const setProfile = (active: ProfileName) => api<ProfileView>("/profile", { method: "PUT", body: JSON.stringify({ active }), pin: true });
 export const calibrate = (kind = "empty", duration_s = 120) => api<{ started: boolean }>("/calibrate", { method: "POST", body: JSON.stringify({ kind, duration_s }), pin: true });
 export const getSettings = () => api<PublicSettings>("/settings");
+export const getHistory = (from: number, to: number, fields?: string) =>
+  api<{ rows: HistoryRow[] }>(`/history?from=${from}&to=${to}${fields ? `&fields=${fields}` : ""}`);
+export const getSource = () => api<SourceState>("/source");
+export const setSource = (s: Omit<SourceState, "state">) => api<SourceState>("/source", { method: "PUT", body: JSON.stringify(s), pin: true });
+export const getRecordings = () => api<{ recordings: RecordingInfo[]; recording: string | null }>("/recordings");
+export const startRecording = (session: string, meta: Record<string, unknown>) =>
+  api<{ session: string }>("/recordings/start", { method: "POST", body: JSON.stringify({ session, meta }), pin: true });
+export const stopRecording = () => api<{ session: string; frames?: number }>("/recordings/stop", { method: "POST", body: "{}", pin: true });
 
 // Dev-only (mock engine)
 export interface ScenarioInfo {

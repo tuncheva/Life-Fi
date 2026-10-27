@@ -4,11 +4,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLive, useStale } from "@/lib/live";
-import { setProfile, type ProfileName } from "@/lib/api";
+import { ensurePin, setPin, setProfile, type ProfileName } from "@/lib/api";
 
 const NAV: { href: string; label: string }[] = [
-  { href: "/", label: "Home" },
+  { href: "/", label: "Dashboard" },
   { href: "/alerts/", label: "Alerts" },
+  { href: "/calibrate/", label: "Calibrate" },
+  { href: "/source/", label: "Source" },
   { href: "/settings/", label: "Settings" },
 ];
 
@@ -23,10 +25,13 @@ export function TopBar() {
   const cal = result?.calibration ?? status?.engine.status?.calibration ?? null;
 
   const onProfile = async (p: ProfileName) => {
+    if (!ensurePin()) return;
     try {
       await setProfile(p);
     } catch (e) {
-      alert((e as Error).message);
+      const err = e as { status?: number; message: string };
+      if (err.status === 401) setPin("");
+      alert(err.message);
     }
   };
 

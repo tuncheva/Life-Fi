@@ -1,7 +1,7 @@
 "use client";
 // Open alerts, always on top of every page. Phone layout first.
 import { useState } from "react";
-import { ackAlert, getPin, setPin, type Alert } from "@/lib/api";
+import { ackAlert, ensurePin, setPin, type Alert } from "@/lib/api";
 import { useLive } from "@/lib/live";
 
 export const ALERT_TEXT: Record<string, string> = {
@@ -27,11 +27,7 @@ export function AlertBanner() {
   if (open.length === 0 && acked.length === 0) return null;
 
   const onAck = async (a: Alert) => {
-    if (!getPin()) {
-      const pin = window.prompt("Enter the dashboard PIN to acknowledge");
-      if (!pin) return;
-      setPin(pin);
-    }
+    if (!ensurePin()) return;
     setBusy(a.id);
     try {
       await ackAlert(a.id);

@@ -28,7 +28,8 @@ Writes: every `POST` and `PUT` below.
 | POST | `/alerts/{id}/ack` | `{}` | `Alert` |
 | GET | `/profile` | — | `{"active": "home", "profiles": {…}}` (the `profiles` block of `profiles.yml`) |
 | PUT | `/profile` | `{"active": "clinic"}` | same as GET |
-| POST | `/calibrate` | `{"kind": "empty", "duration_s": 120}` | `{"started": true}`; completion arrives as a `status` WS message with `calibration.state` |
+| POST | `/calibrate` | `{"kind": "empty", "duration_s": 120}` | `{"started": true}`; `409` while one is running. Progress and outcome arrive as `status` WS messages: `calibration_job` (below) plus the engine's `calibration.state` in every result |
+| GET | `/recordings` | — | `{"recordings": [{"session","file","bytes","labels"}], "recording": "s03" \| null}` |
 | GET | `/source` | — | `Source` |
 | PUT | `/source` | `Source` without `state` | `Source` |
 | POST | `/recordings/start` | `{"session": "s03", "meta": {…}}` | `{"session": "s03"}` |
@@ -47,6 +48,7 @@ Writes: every `POST` and `PUT` below.
   "engine": {"connected": true, "last_result_ms": 1767225600123, "status": { …get_status ack data.engine… }},
   "device": { …get_status ack data.device… } ,
   "source": {"mode": "live", "file": null, "speed": 1, "loop": false, "state": "running"},
+  "calibration_job": {"kind": "empty", "duration_s": 120, "started_at": 1767225600000, "state": "running" | "ok" | "failed", "id": null, "error": null, "finished_at": null},
   "result": { …latest Result or null… },
   "alerts_open": 0
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { calibrate, getPin, getSettings, setPin, type PublicSettings } from "@/lib/api";
+import Link from "next/link";
+import { getPin, getSettings, setPin, type PublicSettings } from "@/lib/api";
 import { useLive } from "@/lib/live";
 import { Card } from "@/components/Cards";
 
@@ -9,22 +10,10 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   // localStorage is read lazily on the client; the static export renders "" on the server.
   const [pin, setPinState] = useState(() => (typeof window === "undefined" ? "" : getPin()));
-  const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
     getSettings().then(setSettings).catch(() => {});
   }, []);
-
-  const onCalibrate = async () => {
-    setPin(pin);
-    setMsg(null);
-    try {
-      await calibrate("empty", 10);
-      setMsg("Calibration started: leave the room now and stay out for 10 s (demo length).");
-    } catch (e) {
-      setMsg((e as Error).message);
-    }
-  };
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -43,10 +32,9 @@ export default function SettingsPage() {
         <p className="mb-2 text-sm text-zinc-500">
           Current: {status?.engine.status?.calibration.state ?? "—"} {status?.engine.status?.calibration.id ?? ""}
         </p>
-        <button onClick={() => void onCalibrate()} className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white dark:bg-zinc-100 dark:text-black">
-          Calibrate empty room
-        </button>
-        {msg && <p className="mt-2 text-sm">{msg}</p>}
+        <Link href="/calibrate/" className="text-sm text-sky-600 hover:underline">
+          Guided calibration →
+        </Link>
       </Card>
       <Card title="Notifications (ntfy)">
         {settings ? (
