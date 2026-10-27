@@ -64,18 +64,30 @@ services" stay on screen.
 - Phone first: hero and alert fit above the fold at 375 px.
 - The hero is a **room card** with the room name; a future multi-room list is a grid of these cards
   sorted by "needs attention", so the layout does not fight a nurse station view.
-- One accent of urgency per screen: red only for an open high alert or a dead sensor.
+- One accent of urgency per screen: red only for an open high alert or a dead sensor. Low-level
+  ("for information") alerts are a calm notice with "Got it": no pulse, no badge, no takeover.
+- One situation, one tap: a fall followed by fainted_suspected shows as one block ("also: …"),
+  and "I'm on it" acknowledges every open alert of the room.
+- Teal means "someone is there" and nothing else; buttons are neutral ink.
 - Dev-only mock panel stays hidden in production builds.
 
-## 6. Asks for the server (not done here)
+## 6. Status (2026-10-28)
+
+Done on `claude/ui-ux-overhaul-7db99b`: items 1–12 above, checked with the mock scenarios at 375 /
+768 / 1280 px in light, dark and a forced theme. Left for later: a multi-room list (only one room
+exists), a "Call" button (needs a phone number, ask 2), shadcn components (the tokens and
+`components/ui.tsx` are the swap point; not worth the bundle yet), Gemini summaries (P4 not agreed).
+
+## 7. Asks for the server (not done here)
 
 1. **Room name** in settings (UI and notification say "Room 1" today).
 2. **Contact phone** in settings, so the alert can offer a `tel:` "Call" button next to Acknowledge.
 3. **Who acknowledged** (`acked_by`, e.g. a device name entered once per browser), for nurses at handover.
 4. **Presence-since** in `Status` (time of the last presence change). The UI derives it from
    `/history` today, which is 5 s coarse and empty after a fresh server start.
-5. **Notification outcome** on the alert: distinguish "not configured", "sent" and "ntfy refused"
-   (today only `notified_at` or null).
+5. **Notification outcome** on the alert: distinguish "not configured", "sent" and "ntfy refused".
+   Today `notified_at` is stamped on every attempt, even with no topic set, so the UI cross-checks
+   the topic in `/settings` before claiming "phone notified", and cannot tell a refused POST.
 6. **After-hours occupancy** (School) and **long_inactivity** (Home) are defined in `profiles.yml` but not
    raised by the server; the School page computes "occupied after hours" locally for now.
 7. **Resolution reason** in `data` for every resolve (cleared by the engine, server restart, profile change);
