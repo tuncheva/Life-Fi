@@ -5,30 +5,53 @@
 // Presentation mode draws its own full-screen version.
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { ackAlert, getSettings, type Alert } from "@/lib/api";
+import { ApiError, ackAlert, getSettings, type Alert } from "@/lib/api";
 import { useLive, useNow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
 import { ROOM_NAME, alertAction, alertTitle, clock, duration, levelText, stopwatch } from "@/lib/words";
 import { Icon } from "./ui";
 
+/**
+ * "I'm on it" acknowledges every open alert of the room at once: a fall followed
+ * by "no movement after a fall" is one situation for the person responding.
+ */
 export function useAck() {
   const { refreshAlerts } = useLive();
   const { withPin } = usePin();
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const ack = async (a: Alert) => {
+  const ack = async (list: Alert[]) => {
     setError(null);
-    setBusy(a.id);
+    setBusy(true);
     try {
-      await withPin(() => ackAlert(a.id));
+      await withPin(async () => {
+        for (const a of list) {
+          try {
+            await ackAlert(a.id);
+          } catch (e) {
+            // already acknowledged or resolved meanwhile: fine; a wrong PIN goes back to withPin
+            if (e instanceof ApiError && e.status === 401) throw e;
+            if (!(e instanceof ApiError && (e.status === 409 || e.status === 404))) throw e;
+          }
+        }
+        return true;
+      });
     } catch (e) {
       setError(friendlyError(e));
       await refreshAlerts();
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
   return { ack, busy, error };
+}
+
+/** Open alerts as one situation: the newest leads, the level is the highest, the clock runs from the first. */
+export function situation(open: Alert[]) {
+  const lead = open[0];
+  const level: Alert["level"] = open.some((a) => a.level === "high") ? "high" : open.some((a) => a.level === "medium") ? "medium" : "low";
+  const since = Math.min(...open.map((a) => a.opened_at ?? a.created_at));
+  return { lead, level, since, others: open.slice(1) };
 }
 
 const FILL: Record<Alert["level"], string> = { high: "bg-alert-high", medium: "bg-alert-medium", low: "bg-alert-low" };
@@ -69,45 +92,47 @@ export function AlertBanner() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-2 px-4 pt-3">
-      {open.map((a) => {
-        const opened = a.opened_at ?? a.created_at;
-        const n = notifiedText(a, phone);
-        return (
-          <section key={a.id} role="alert" aria-live="assertive" className={`rounded-card p-4 text-alert-fg shadow-lg sm:p-5 ${FILL[a.level]}`}>
-            <div className="flex items-start gap-3 sm:gap-4">
-              <span className="relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 motion-safe:animate-beacon sm:h-12 sm:w-12">
-                <Icon name="alert" className="h-6 w-6 sm:h-7 sm:w-7" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-3 text-sm font-medium opacity-95">
-                  <span className="uppercase tracking-wide">{levelText(a.level)}</span>
-                  <span>{ROOM_NAME}</span>
-                  <span className="ml-auto font-mono tabular-nums" title={`Opened at ${clock(opened, true)}`}>
-                    open {stopwatch(now - opened)}
-                  </span>
+      {open.length > 0 &&
+        (() => {
+          const { lead, level, since, others } = situation(open);
+          const n = notifiedText(lead, phone);
+          return (
+            <section role="alert" aria-live="assertive" className={`rounded-card p-4 text-alert-fg shadow-lg sm:p-5 ${FILL[level]}`}>
+              <div className="flex items-start gap-3 sm:gap-4">
+                <span className="relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/20 motion-safe:animate-beacon sm:h-12 sm:w-12">
+                  <Icon name="alert" className="h-6 w-6 sm:h-7 sm:w-7" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-x-3 text-sm font-medium opacity-95">
+                    <span className="uppercase tracking-wide">{levelText(level)}</span>
+                    <span>{ROOM_NAME}</span>
+                    <span className="ml-auto font-mono tabular-nums" title={`Started at ${clock(since, true)}`}>
+                      open {stopwatch(now - since)}
+                    </span>
+                  </div>
+                  <h2 className="mt-0.5 text-2xl font-bold leading-tight sm:text-3xl">{alertTitle(lead.type)}</h2>
+                  {others.length > 0 && <p className="text-sm font-medium opacity-95">Also: {others.map((a) => alertTitle(a.type).toLowerCase()).join(", ")}</p>}
+                  <p className="mt-1 text-base font-medium sm:text-lg">{alertAction(lead.type, lead.profile)}</p>
+                  <p className="mt-2 flex items-center gap-1.5 text-sm opacity-95">
+                    <Icon name={n.sent ? "bell" : "bell-off"} className="h-4 w-4 shrink-0" />
+                    {n.text}
+                  </p>
                 </div>
-                <h2 className="mt-0.5 text-2xl font-bold leading-tight sm:text-3xl">{alertTitle(a.type)}</h2>
-                <p className="mt-1 text-base font-medium sm:text-lg">{alertAction(a.type, a.profile)}</p>
-                <p className="mt-2 flex items-center gap-1.5 text-sm opacity-95">
-                  <Icon name={n.sent ? "bell" : "bell-off"} className="h-4 w-4 shrink-0" />
-                  {n.text}
-                </p>
               </div>
-            </div>
-            <div className="mt-3 flex flex-col gap-2 sm:ml-16 sm:flex-row sm:items-center">
-              <button
-                onClick={() => void ack(a)}
-                disabled={busy === a.id}
-                className="rounded-lg bg-white px-5 py-3.5 text-lg font-bold text-black shadow hover:bg-white/90 disabled:opacity-60 sm:py-3"
-              >
-                {busy === a.id ? "Acknowledging…" : "I'm on it · Acknowledge"}
-              </button>
-              <span className="text-sm opacity-90">Acknowledging tells everyone watching that someone is handling it. It does not call anyone.</span>
-            </div>
-            {error && <p className="mt-2 rounded bg-black/25 px-3 py-2 text-sm font-medium sm:ml-16">{error}</p>}
-          </section>
-        );
-      })}
+              <div className="mt-3 flex flex-col gap-2 sm:ml-16 sm:flex-row sm:items-center">
+                <button
+                  onClick={() => void ack(open)}
+                  disabled={busy}
+                  className="rounded-lg bg-white px-5 py-3.5 text-lg font-bold text-black shadow hover:bg-white/90 disabled:opacity-60 sm:py-3"
+                >
+                  {busy ? "Acknowledging…" : "I'm on it · Acknowledge"}
+                </button>
+                <span className="text-sm opacity-90">Tells everyone watching that someone is handling it. It does not call anyone.</span>
+              </div>
+              {error && <p className="mt-2 rounded bg-black/25 px-3 py-2 text-sm font-medium sm:ml-16">{error}</p>}
+            </section>
+          );
+        })()}
 
       {acked.map((a) => (
         <section key={a.id} aria-live="polite" className="flex items-start gap-3 rounded-card border border-line border-l-4 border-l-warn bg-surface px-4 py-3 shadow-sm">
