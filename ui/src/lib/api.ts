@@ -177,15 +177,6 @@ export function setPin(pin: string): void {
   }
 }
 
-/** Makes sure a PIN is stored for writes, asking once. Returns false if the user cancelled. */
-export function ensurePin(): boolean {
-  if (getPin()) return true;
-  const pin = window.prompt("Enter the dashboard PIN");
-  if (!pin) return false;
-  setPin(pin);
-  return true;
-}
-
 export async function api<T>(path: string, init: RequestInit & { pin?: boolean } = {}): Promise<T> {
   const headers: Record<string, string> = { ...(init.headers as Record<string, string>) };
   if (init.body) headers["content-type"] = "application/json";

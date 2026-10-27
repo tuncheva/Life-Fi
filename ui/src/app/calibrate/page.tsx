@@ -1,121 +1,137 @@
 "use client";
-// Guided empty-room calibration (plan-v2 §6.6, §8): "leave the room now",
-// a countdown, a motion warning, and the outcome.
-import { useEffect, useState } from "react";
-import { calibrate, ensurePin } from "@/lib/api";
-import { useLive } from "@/lib/live";
-import { Card } from "@/components/Cards";
-import { Chip } from "@/components/TopBar";
+// Guided empty-room calibration (plan-v2 §6.6, §8): numbered steps, "leave the
+// room now", a countdown readable from the doorway, a motion warning, and an
+// outcome that says what to do next.
+import { useState } from "react";
+import Link from "next/link";
+import { calibrate } from "@/lib/api";
+import { useLive, useNow } from "@/lib/live";
+import { friendlyError, usePin } from "@/lib/pin";
+import { calibrationText, clock } from "@/lib/words";
+import { Card, Icon, Notice, Pill, btn } from "@/components/ui";
 
 const DURATIONS = [
-  { s: 120, label: "2 min (real)" },
-  { s: 30, label: "30 s" },
-  { s: 10, label: "10 s (demo)" },
+  { s: 120, label: "2 min", note: "the real one" },
+  { s: 30, label: "30 s", note: "quick check" },
+  { s: 10, label: "10 s", note: "demo only" },
 ];
+
+function Step({ n, done, children }: { n: number; done?: boolean; children: React.ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${done ? "bg-ok text-white" : "bg-surface-2 text-muted"}`}>{done ? <Icon name="check" className="h-4 w-4" /> : n}</span>
+      <div className="pt-0.5 text-sm">{children}</div>
+    </li>
+  );
+}
 
 export default function CalibratePage() {
   const { result, status } = useLive();
+  const { withPin } = usePin();
   const job = status?.calibration_job ?? null;
   const [duration, setDuration] = useState(120);
   const [error, setError] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(t);
-  }, []);
+  const now = useNow(250);
 
   const running = job?.state === "running";
   const remaining = running ? Math.max(0, Math.ceil((job.started_at + job.duration_s * 1000 - now) / 1000)) : 0;
   const motion = result?.motion ?? 0;
   const motionSeen = running && motion > 0.1;
-  const cal = result?.calibration;
+  const cal = calibrationText(result?.calibration ?? status?.engine.status?.calibration ?? null);
+  const engineUp = !!status?.engine.connected;
 
   const start = async () => {
     setError(null);
-    if (!ensurePin()) return;
     try {
-      await calibrate("empty", duration);
+      await withPin(() => calibrate("empty", duration));
     } catch (e) {
-      setError((e as Error).message);
+      setError(friendlyError(e));
     }
   };
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Card title="Empty-room calibration">
-        <p className="text-sm text-zinc-600 dark:text-zinc-300">
-          The engine records what the room looks like with nobody in it. Still-person presence depends on it; motion, breathing and fall detection do not.
+      <div className="md:col-span-2">
+        <h1 className="text-2xl font-bold tracking-tight">Empty-room calibration</h1>
+        <p className="text-sm text-muted">
+          Life-Fi learns what the room looks like with nobody in it. Noticing a person who sits very still depends on it; movement, breathing and falls do not.
         </p>
-        <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm">
-          <li>Pick the duration. Two minutes is the real one; the short ones are for demos.</li>
-          <li>Press start, then <strong>everyone leaves the room and closes the door</strong>.</li>
-          <li>Stay out until the countdown ends. Any motion makes the engine refuse the calibration.</li>
+      </div>
+
+      <Card title="How to do it">
+        <ol className="space-y-4">
+          <Step n={1}>
+            <p className="font-medium">Choose how long</p>
+            <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label="Duration">
+              {DURATIONS.map((d) => (
+                <button
+                  key={d.s}
+                  role="radio"
+                  aria-checked={duration === d.s}
+                  disabled={running}
+                  onClick={() => setDuration(d.s)}
+                  className={`rounded-lg border px-3 py-2 text-left ${duration === d.s ? "border-primary ring-1 ring-primary" : "border-line hover:bg-surface-2"}`}
+                >
+                  <span className="block font-semibold">{d.label}</span>
+                  <span className="block text-xs text-muted">{d.note}</span>
+                </button>
+              ))}
+            </div>
+          </Step>
+          <Step n={2} done={running || job?.state === "ok"}>
+            <p className="font-medium">Press start, then everyone leaves the room and closes the door</p>
+            <button onClick={() => void start()} disabled={running || !engineUp} className={`${btn.primary} mt-2 px-6 py-3 text-base`}>
+              {running ? "Calibrating…" : "Start calibration"}
+            </button>
+            {!engineUp && <p className="mt-2 text-sm text-danger">The sensor software is not running, so it can&apos;t calibrate now.</p>}
+            {error && <Notice tone="danger" className="mt-2">{error}</Notice>}
+          </Step>
+          <Step n={3} done={job?.state === "ok"}>
+            <p className="font-medium">Stay out until the countdown ends</p>
+            <p className="text-muted">Any movement in the room makes it refuse the calibration, and you start again.</p>
+          </Step>
         </ol>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <select
-            value={duration}
-            disabled={running}
-            onChange={(e) => setDuration(Number(e.target.value))}
-            className="rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          >
-            {DURATIONS.map((d) => (
-              <option key={d.s} value={d.s}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => void start()}
-            disabled={running || !status?.engine.connected}
-            className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40 dark:bg-zinc-100 dark:text-black"
-          >
-            {running ? "Running…" : "Start calibration"}
-          </button>
-          {!status?.engine.connected && <Chip tone="bad">engine offline</Chip>}
-        </div>
-        {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </Card>
 
       <Card title="Progress">
-        {!job && <div className="text-sm text-zinc-500">No calibration started from this dashboard yet.</div>}
+        {!job && <p className="text-sm text-muted">Nothing running. The countdown appears here, big enough to read from the doorway.</p>}
         {running && (
-          <div>
-            <div className="text-5xl font-bold tabular-nums">{remaining}s</div>
-            <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-              <div className="h-full bg-sky-500 transition-[width]" style={{ width: `${100 - (remaining / job.duration_s) * 100}%` }} />
+          <div aria-live="polite">
+            <div className="text-7xl font-bold tabular-nums sm:text-8xl">{remaining}s</div>
+            <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-surface-2">
+              <div className="h-full bg-fg transition-[width] duration-300" style={{ width: `${100 - (remaining / job.duration_s) * 100}%` }} />
             </div>
-            <div className={`mt-3 text-lg font-semibold ${motionSeen ? "text-red-600" : "text-emerald-600"}`}>
-              {motionSeen ? "Motion seen! Leave the room." : "Leave the room now and stay out."}
-            </div>
-            <div className="mt-1 text-sm text-zinc-500">motion {motion.toFixed(2)}</div>
+            <p className={`mt-4 flex items-center gap-2 text-xl font-semibold ${motionSeen ? "text-danger" : "text-ok"}`} role={motionSeen ? "alert" : undefined}>
+              <Icon name={motionSeen ? "alert" : "check"} className="h-6 w-6" />
+              {motionSeen ? "Movement seen! Everyone must leave the room." : "Room looks empty. Stay out."}
+            </p>
           </div>
         )}
         {job?.state === "ok" && (
           <div>
-            <Chip tone="ok">calibration saved</Chip>
-            <div className="mt-2 text-sm">
-              New calibration id <code>{job.id ?? "—"}</code> at {job.finished_at ? new Date(job.finished_at).toLocaleTimeString() : ""}.
-            </div>
+            <p className="flex items-center gap-2 text-xl font-semibold text-ok">
+              <Icon name="check" className="h-6 w-6" /> Done. The empty room is saved.
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              Calibration {job.id ?? ""} finished at {job.finished_at ? clock(job.finished_at) : "—"}. You can go back in.
+            </p>
+            <Link href="/" className={`${btn.secondary} mt-3`}>
+              Back to the room
+            </Link>
           </div>
         )}
         {job?.state === "failed" && (
           <div>
-            <Chip tone="bad">calibration failed</Chip>
-            <div className="mt-2 text-sm">{job.error}</div>
-            <div className="mt-1 text-xs text-zinc-500">Usually: someone moved during it. Leave the room and try again.</div>
+            <p className="flex items-center gap-2 text-xl font-semibold text-danger">
+              <Icon name="alert" className="h-6 w-6" /> It didn&apos;t work
+            </p>
+            <p className="mt-1 text-sm">{job.error}</p>
+            <p className="mt-1 text-sm text-muted">Usually someone moved or was still in the room. Make sure it is empty and start again.</p>
           </div>
         )}
-        <div className="mt-4 border-t border-zinc-200 pt-3 text-sm dark:border-zinc-800">
-          Engine calibration now:{" "}
-          {cal ? (
-            <Chip tone={cal.state === "ok" ? "ok" : cal.state === "running" ? "warn" : "bad"}>
-              {cal.state}
-              {cal.id ? ` · ${cal.id}` : ""}
-              {cal.age_s !== null ? ` · ${Math.round(cal.age_s / 60)} min old` : ""}
-            </Chip>
-          ) : (
-            "—"
-          )}
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-sm">
+          <span className="text-muted">Right now:</span>
+          <Pill tone={cal.tone}>{cal.text}</Pill>
         </div>
       </Card>
     </div>

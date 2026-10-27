@@ -1,11 +1,15 @@
 "use client";
-// Day timeline: presence and posture bands, motion, and alert markers over
-// the last 1 / 6 / 24 h, from /api/v1/history (5 s rows) and /api/v1/alerts.
+// The day at a glance: who was in the room, in what position, how active, and
+// when alerts happened, over the last 1 / 6 / 24 h, from /api/v1/history (5 s
+// rows) and /api/v1/alerts plus the live tail. Colours are the design tokens,
+// so "present" here is the same teal as the room card. Pointer and touch both
+// show the moment under the finger in words.
 import { useEffect, useRef, useState } from "react";
 import { getAlerts, getHistory, type Alert, type HistoryRow } from "@/lib/api";
 import { useLive } from "@/lib/live";
-import { Card } from "./Cards";
-import { alertText } from "./AlertBanner";
+import { token, useResolvedTheme } from "@/lib/useTheme";
+import { POSTURE_TEXT, activityText, alertTitle, clock } from "@/lib/words";
+import { Card, btn } from "./ui";
 
 const RANGES: { label: string; hours: number }[] = [
   { label: "1 h", hours: 1 },
@@ -13,18 +17,27 @@ const RANGES: { label: string; hours: number }[] = [
   { label: "24 h", hours: 24 },
 ];
 
-const PRESENCE_COLOR: Record<string, string> = { present: "#10b981", empty: "#52525b", uncertain: "#f59e0b" };
-const POSTURE_COLOR: Record<string, string> = { lying: "#3b82f6", sitting: "#14b8a6", standing: "#f59e0b", unknown: "#71717a" };
-const LEVEL_COLOR: Record<string, string> = { high: "#ef4444", medium: "#f97316", low: "#a1a1aa" };
+const PRESENCE_VAR: Record<string, string> = { present: "--present", empty: "--timeline-empty", uncertain: "--uncertain" };
+const POSTURE_VAR: Record<string, string> = { lying: "--posture-lying", sitting: "--posture-sitting", standing: "--posture-standing", unknown: "--posture-unknown" };
+const LEVEL_VAR: Record<string, string> = { high: "--alert-high", medium: "--alert-medium", low: "--alert-low" };
+const PRESENCE_WORD: Record<string, string> = { present: "Someone there", empty: "Nobody there", uncertain: "Not sure" };
 const BUCKET_MS = 5000;
+const GUTTER = 64; // px for lane labels on the left
+
+interface Hover {
+  x: number;
+  text: string;
+}
 
 export function Timeline({ showPosture = true }: { showPosture?: boolean }) {
   const { alerts: liveAlerts, result } = useLive();
+  const theme = useResolvedTheme();
   const [hours, setHours] = useState(1);
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [hover, setHover] = useState<string | null>(null);
+  const [hover, setHover] = useState<Hover | null>(null);
 
   // Refetch on range change, on alert changes, and every 15 s.
   useEffect(() => {
@@ -37,6 +50,7 @@ export function Timeline({ showPosture = true }: { showPosture?: boolean }) {
         if (cancelled) return;
         setRows(h.rows);
         setAlerts(a.alerts.filter((x) => x.created_at >= from));
+        setLoaded(true);
       } catch {
         /* offline: keep what we have */
       }
@@ -49,140 +63,202 @@ export function Timeline({ showPosture = true }: { showPosture?: boolean }) {
     };
   }, [hours, liveAlerts]);
 
-  // Draw whenever data or the latest result changes.
+  // Draw whenever data, the latest result or the theme changes.
   useEffect(() => {
     const c = canvas.current;
     if (!c) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = c.clientWidth;
+    const W = c.clientWidth;
     const h = c.clientHeight;
-    if (c.width !== w * dpr || c.height !== h * dpr) {
-      c.width = w * dpr;
+    if (c.width !== W * dpr || c.height !== h * dpr) {
+      c.width = W * dpr;
       c.height = h * dpr;
     }
     const g = c.getContext("2d")!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, w, h);
+    g.clearRect(0, 0, W, h);
 
-    const now = Date.now();
-    const to = now;
+    const w = W - GUTTER;
+    const to = Date.now();
     const from = to - hours * 3600 * 1000;
-    const x = (t: number) => ((t - from) / (to - from)) * w;
+    const x = (t: number) => GUTTER + ((t - from) / (to - from)) * w;
     const bucketW = Math.max(1, (BUCKET_MS / (to - from)) * w);
 
-    const laneTop = 18;
-    const laneH = 12;
-    const gap = 4;
+    const laneTop = 16;
+    const laneH = 16;
+    const gap = 6;
     const presenceY = laneTop;
     const postureY = presenceY + laneH + gap;
     const motionY = (showPosture ? postureY + laneH : presenceY + laneH) + gap;
-    const motionH = h - motionY - 18;
+    const motionH = h - motionY - 20;
+
+    const muted = token("--muted");
+    const grid = token("--chart-grid");
+    // lane guides (no data stays unfilled, so it never looks like "nobody") and labels
+    g.fillStyle = grid;
+    g.fillRect(GUTTER, presenceY + laneH / 2, w, 1);
+    if (showPosture) g.fillRect(GUTTER, postureY + laneH / 2, w, 1);
+    g.fillRect(GUTTER, motionY + motionH, w, 1);
+    g.fillStyle = muted;
+    g.font = "500 11px system-ui, sans-serif";
+    g.textAlign = "left";
+    g.textBaseline = "middle";
+    g.fillText("In room", 0, presenceY + laneH / 2);
+    if (showPosture) g.fillText("Position", 0, postureY + laneH / 2);
+    g.fillText("Activity", 0, motionY + motionH / 2);
 
     // live tail: the latest result is newer than the last 5 s row
-    const all = result && (rows.length === 0 || result.ts > rows[rows.length - 1].t + BUCKET_MS)
-      ? [...rows, { t: result.ts, presence: result.presence.state, posture: result.posture?.label ?? null, motion: result.motion }]
-      : rows;
+    const all =
+      result && (rows.length === 0 || result.ts > rows[rows.length - 1].t + BUCKET_MS)
+        ? [...rows, { t: result.ts, presence: result.presence.state, posture: result.posture?.label ?? null, motion: result.motion }]
+        : rows;
 
+    const colors = {
+      presence: Object.fromEntries(Object.entries(PRESENCE_VAR).map(([k, v]) => [k, token(v)])),
+      posture: Object.fromEntries(Object.entries(POSTURE_VAR).map(([k, v]) => [k, token(v)])),
+      activity: token("--chart-activity"),
+    };
     for (const r of all) {
       const px = x(r.t);
-      if (px + bucketW < 0 || px > w) continue;
+      if (px + bucketW < GUTTER || px > W) continue;
       if (r.presence) {
-        g.fillStyle = PRESENCE_COLOR[r.presence] ?? "#52525b";
+        g.fillStyle = colors.presence[r.presence] ?? grid;
         g.fillRect(px, presenceY, bucketW + 0.5, laneH);
       }
       if (showPosture && r.posture) {
-        g.fillStyle = POSTURE_COLOR[r.posture] ?? "#71717a";
+        g.fillStyle = colors.posture[r.posture] ?? grid;
         g.fillRect(px, postureY, bucketW + 0.5, laneH);
       }
       if (typeof r.motion === "number") {
-        const mh = Math.min(1, r.motion) * motionH;
-        g.fillStyle = r.motion > 0.6 ? "#ef4444" : r.motion > 0.2 ? "#f59e0b" : "#34d399";
+        const mh = Math.max(1, Math.min(1, r.motion) * motionH);
+        g.fillStyle = colors.activity;
         g.fillRect(px, motionY + motionH - mh, bucketW + 0.5, mh);
       }
     }
 
-    // axis
-    g.fillStyle = "#71717a";
-    g.font = "10px system-ui, sans-serif";
+    // time axis
+    g.fillStyle = muted;
+    g.font = "11px system-ui, sans-serif";
     g.textAlign = "center";
-    const stepMs = hours <= 1 ? 10 * 60_000 : hours <= 6 ? 60 * 60_000 : 3 * 3600_000;
+    g.textBaseline = "alphabetic";
+    const stepMs = hours <= 1 ? 15 * 60_000 : hours <= 6 ? 60 * 60_000 : 4 * 3600_000;
     const first = Math.ceil(from / stepMs) * stepMs;
     for (let t = first; t <= to; t += stepMs) {
       const px = x(t);
-      g.fillRect(px, h - 16, 1, 4);
-      g.fillText(new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), px, h - 3);
+      if (px < GUTTER + 16 || px > W - 24) continue;
+      g.fillRect(px, h - 18, 1, 4);
+      g.fillText(clock(t), px, h - 3);
     }
+    g.textAlign = "right";
+    g.fillText("now", W - 1, h - 3);
+
     // alert markers
     for (const a of alerts) {
       const px = x(a.created_at);
-      if (px < 0 || px > w) continue;
-      g.fillStyle = LEVEL_COLOR[a.level] ?? "#a1a1aa";
+      if (px < GUTTER || px > W) continue;
+      g.fillStyle = token(LEVEL_VAR[a.level] ?? "--alert-low");
       g.beginPath();
-      g.moveTo(px, 14);
-      g.lineTo(px - 5, 3);
-      g.lineTo(px + 5, 3);
+      g.moveTo(px, 12);
+      g.lineTo(px - 5, 2);
+      g.lineTo(px + 5, 2);
       g.closePath();
       g.fill();
-      g.fillRect(px - 0.5, 14, 1, h - 30);
+      g.fillRect(px - 0.75, 12, 1.5, h - 30);
     }
     // now line
-    g.fillStyle = "#e4e4e7";
-    g.fillRect(w - 1, 0, 1, h - 18);
-  }, [rows, alerts, hours, result, showPosture]);
+    g.fillStyle = token("--fg");
+    g.fillRect(W - 1.5, presenceY - 2, 1.5, h - presenceY - 18);
+  }, [rows, alerts, hours, result, showPosture, theme]);
 
-  const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const onPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const c = canvas.current;
     if (!c) return;
     const rect = c.getBoundingClientRect();
-    const frac = (e.clientX - rect.left) / rect.width;
+    const px = e.clientX - rect.left;
+    if (px < GUTTER) return setHover(null);
+    const frac = (px - GUTTER) / (rect.width - GUTTER);
     const to = Date.now();
     const from = to - hours * 3600 * 1000;
     const t = from + frac * (to - from);
-    const near = alerts.find((a) => Math.abs(a.created_at - t) < (to - from) * 0.01);
-    const row = rows.find((r) => Math.abs(r.t - t) < BUCKET_MS);
-    const time = new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    if (near) setHover(`${time} · ${alertText(near.type)} (${near.state})`);
-    else if (row) setHover(`${time} · ${row.presence ?? "—"}${row.posture ? ` · ${row.posture}` : ""}${typeof row.motion === "number" ? ` · motion ${row.motion.toFixed(2)}` : ""}`);
-    else setHover(time);
+    const near = alerts.find((a) => Math.abs(a.created_at - t) < (to - from) * 0.015);
+    let row: HistoryRow | undefined;
+    for (const r of rows) if (Math.abs(r.t - t) < BUCKET_MS * Math.max(1, hours)) row = r;
+    const time = clock(t);
+    let text = `${time} · no data`;
+    if (near) text = `${clock(near.created_at)} · Alert: ${alertTitle(near.type)}`;
+    else if (row) {
+      const parts = [time, PRESENCE_WORD[row.presence ?? ""] ?? "no data"];
+      if (showPosture && row.posture && row.presence === "present") parts.push((POSTURE_TEXT[row.posture] ?? row.posture).toLowerCase());
+      if (typeof row.motion === "number" && row.presence !== "empty") parts.push(activityText(row.motion).toLowerCase());
+      text = parts.join(" · ");
+    }
+    setHover({ x: px, text });
   };
 
+  const empty = loaded && rows.length === 0 && !result;
+
   return (
-    <Card title="Timeline" className="md:col-span-2 lg:col-span-3">
-      <div className="mb-2 flex items-center gap-2 text-xs">
-        {RANGES.map((r) => (
-          <button
-            key={r.hours}
-            onClick={() => setHours(r.hours)}
-            className={`rounded px-2 py-0.5 ${hours === r.hours ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"}`}
+    <Card
+      title="Today in the room"
+      className="lg:col-span-3"
+      actions={
+        <div className="flex rounded-lg bg-surface-2 p-0.5" role="group" aria-label="Time range">
+          {RANGES.map((r) => (
+            <button key={r.hours} onClick={() => setHours(r.hours)} aria-pressed={hours === r.hours} className={btn.segment(hours === r.hours)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+      }
+    >
+      <div className="relative">
+        <canvas
+          ref={canvas}
+          onPointerMove={onPoint}
+          onPointerDown={onPoint}
+          onPointerLeave={() => setHover(null)}
+          className={`w-full touch-pan-y ${showPosture ? "h-36" : "h-28"}`}
+          role="img"
+          aria-label={`Timeline of the last ${hours} hour${hours > 1 ? "s" : ""}: presence, ${showPosture ? "position, " : ""}activity and alerts`}
+        />
+        {hover && (
+          <div
+            className="pointer-events-none absolute -top-2 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md bg-fg px-2 py-1 text-xs font-medium text-bg shadow"
+            style={{ left: `clamp(80px, ${hover.x}px, calc(100% - 80px))` }}
           >
-            {r.label}
-          </button>
-        ))}
-        <span className="ml-auto text-zinc-400">{hover ?? "hover for details"}</span>
+            {hover.text}
+          </div>
+        )}
+        {empty && <p className="absolute inset-0 flex items-center justify-center pl-16 text-sm text-muted">No history yet. It fills in as the sensor runs.</p>}
       </div>
-      <canvas ref={canvas} onMouseMove={onMove} onMouseLeave={() => setHover(null)} className={`w-full ${showPosture ? "h-32" : "h-28"}`} aria-label="timeline" />
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-        <Legend color={PRESENCE_COLOR.present}>present</Legend>
-        <Legend color={PRESENCE_COLOR.uncertain}>uncertain</Legend>
-        <Legend color={PRESENCE_COLOR.empty}>empty</Legend>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
+        <Legend v="--present">Someone there</Legend>
+        <Legend v="--uncertain">Not sure</Legend>
+        <Legend v="--timeline-empty">Nobody</Legend>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="inline-block h-px w-3 bg-line" /> No data
+        </span>
         {showPosture && (
           <>
-            <Legend color={POSTURE_COLOR.lying}>lying</Legend>
-            <Legend color={POSTURE_COLOR.sitting}>sitting</Legend>
-            <Legend color={POSTURE_COLOR.standing}>standing</Legend>
+            <Legend v="--posture-lying">Lying</Legend>
+            <Legend v="--posture-sitting">Sitting</Legend>
+            <Legend v="--posture-standing">Standing</Legend>
           </>
         )}
-        <Legend color="#34d399">motion</Legend>
-        <Legend color={LEVEL_COLOR.high}>▲ alert</Legend>
+        <Legend v="--chart-activity">Activity (taller = more movement)</Legend>
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="text-alert-high">▼</span> Alert
+        </span>
+        <span className="text-subtle">Tap or hover for details</span>
       </div>
     </Card>
   );
 }
 
-function Legend({ color, children }: { color: string; children: React.ReactNode }) {
+function Legend({ v, children, outline }: { v: string; children: React.ReactNode; outline?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1">
-      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+    <span className="inline-flex items-center gap-1.5">
+      <span aria-hidden className={`inline-block h-3 w-3 rounded-sm ${outline ? "border border-line" : ""}`} style={{ background: `var(${v})` }} />
       {children}
     </span>
   );

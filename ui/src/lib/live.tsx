@@ -4,8 +4,9 @@
 // ref-held ring buffers for the breathing wave and the CSI heatmap so canvases
 // can draw on requestAnimationFrame without re-rendering React.
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAlerts, getStatus, wsUrl, type Alert, type Status, type WsMessage } from "./api";
+import { getAlerts, getHistory, getStatus, wsUrl, type Alert, type Status, type WsMessage } from "./api";
 import type { Result } from "./contracts.gen";
+import type { PresenceSince } from "./words";
 
 export const WAVE_HZ = 10;
 export const WAVE_SECONDS = 300; // ring buffer length; the chart shows 30 s or 5 min of it
@@ -52,8 +53,29 @@ export interface LiveState {
   result: Result | null;
   status: Status | null;
   alerts: Alert[];
+  /** Alerts that resolved while this page was open, newest first, for a calm "all clear" line. */
+  cleared: Alert[];
+  dismissCleared: (id: string) => void;
+  /** When the current presence state started (from /history on first load, then live). */
+  presenceSince: PresenceSince | null;
   buffers: LiveBuffers;
   refreshAlerts: () => Promise<void>;
+}
+
+const HISTORY_ROW_MS = 5000;
+
+/** Start of the current presence run, from the 5 s history rows (oldest first). */
+async function seedPresenceSince(state: PresenceSince["state"], now: number): Promise<PresenceSince> {
+  try {
+    const { rows } = await getHistory(now - 24 * 3600 * 1000, now, "presence");
+    let i = rows.length - 1;
+    while (i >= 0 && rows[i].presence === state) i--;
+    if (i === rows.length - 1) return { state, since: now, atLeast: false }; // changed just now
+    if (i < 0) return { state, since: rows.length ? rows[0].t : null, atLeast: true };
+    return { state, since: rows[i].t + HISTORY_ROW_MS, atLeast: false };
+  } catch {
+    return { state, since: null, atLeast: true };
+  }
 }
 
 const LiveContext = createContext<LiveState | null>(null);
@@ -63,6 +85,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [result, setResult] = useState<Result | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [cleared, setCleared] = useState<Alert[]>([]);
+  const [presenceSince, setPresenceSince] = useState<PresenceSince | null>(null);
+  const lastPresence = useRef<PresenceSince["state"] | null>(null);
   // A stable mutable object (not React state): canvases read it on rAF, React never re-renders on it.
   const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), version: 0 }));
   const lastBoot = useRef<number | null>(null);
@@ -102,10 +127,19 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           for (const v of m.breathing.wave) buffers.wave.push(v);
           for (const row of m.csi) buffers.csi.push(row);
           buffers.version++;
+          const ps = m.presence.state;
+          if (lastPresence.current === null) {
+            lastPresence.current = ps;
+            void seedPresenceSince(ps, m.ts).then((seed) => setPresenceSince((cur) => (cur && cur.state !== seed.state ? cur : seed)));
+          } else if (lastPresence.current !== ps) {
+            lastPresence.current = ps;
+            setPresenceSince({ state: ps, since: m.ts, atLeast: false });
+          }
           setResult(m);
         } else if (m.type === "status") {
           setStatus((prev) => ({ ...m.status, result: prev?.result }));
         } else if (m.type === "alert") {
+          if (m.alert.state === "resolved") setCleared((prev) => [m.alert, ...prev.filter((a) => a.id !== m.alert.id)].slice(0, 5));
           setAlerts((prev) => {
             const next = prev.filter((a) => a.id !== m.alert.id);
             if (m.alert.state === "pending" || m.alert.state === "open" || m.alert.state === "acked") next.unshift(m.alert);
@@ -131,7 +165,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const value = useMemo<LiveState>(() => ({ connected, result, status, alerts, buffers, refreshAlerts }), [connected, result, status, alerts, buffers]);
+  const dismissCleared = (id: string) => setCleared((prev) => prev.filter((a) => a.id !== id));
+  const value = useMemo<LiveState>(
+    () => ({ connected, result, status, alerts, cleared, dismissCleared, presenceSince, buffers, refreshAlerts }),
+    [connected, result, status, alerts, cleared, presenceSince, buffers],
+  );
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }
 
@@ -143,10 +181,16 @@ export function useLive(): LiveState {
 
 /** True when the last result is older than `staleMs`. Re-evaluated on a timer so it flips without new data. */
 export function useStale(result: Result | null, staleMs = 3000): boolean {
+  const now = useNow();
+  return !result || now - result.ts > staleMs;
+}
+
+/** Wall clock that re-renders every `everyMs`, for "since" texts and ticking counters. */
+export function useNow(everyMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
+    const t = setInterval(() => setNow(Date.now()), everyMs);
     return () => clearInterval(t);
-  }, []);
-  return !result || now - result.ts > staleMs;
+  }, [everyMs]);
+  return now;
 }
