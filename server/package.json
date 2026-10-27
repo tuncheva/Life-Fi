@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Life-Fi server: engine client, REST + WebSocket, alerts, history, ntfy",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "node dist/main.js",
+    "dev": "tsx watch --no-warnings=ExperimentalWarning src/main.ts",
+    "start": "node --no-warnings=ExperimentalWarning dist/main.js",
     "mock-engine": "tsx src/mock-engine/main.ts",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -26,5 +26,8 @@
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vitest": "^3.1.3"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }

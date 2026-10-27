@@ -21,6 +21,7 @@ interface ActiveEvent {
   id: number;
   type: EventType;
   t: number;
+  data: Record<string, unknown>;
 }
 
 export interface CalibrationState {
@@ -156,9 +157,9 @@ export class Simulator {
     }
     for (const type of wanted) {
       if (!this.active.has(type)) {
-        const ev: ActiveEvent = { id: this.nextEventId++, type, t: now };
+        const ev: ActiveEvent = { id: this.nextEventId++, type, t: now, data: this.eventData(type) };
         this.active.set(type, ev);
-        events.push({ id: ev.id, type, state: "active", t: now, data: this.eventData(type) });
+        events.push({ id: ev.id, type, state: "active", t: now, data: ev.data });
       }
     }
 
@@ -256,6 +257,7 @@ export class Simulator {
         models: [{ name: "transitions", loaded: true, pipeline_version: 2 }],
         calibration: { state: this.calibration.state, id: this.calibration.id, age_s: calAge },
         recording: null,
+        active_events: [...this.active.values()].map((e) => ({ id: e.id, type: e.type, t: e.t, data: e.data })),
         mock: { scenario: this.scenario.name, phase: this.phaseLabel },
       },
       device: this.lastScene.silent

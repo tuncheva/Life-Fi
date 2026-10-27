@@ -19,7 +19,10 @@ export interface SourceState {
 
 /** `data` of the engine's get_status ack (contracts/control.md). */
 export interface EngineStatus {
-  engine: Record<string, unknown> & { calibration?: { state: string; id: string | null; age_s: number | null } };
+  engine: Record<string, unknown> & {
+    calibration?: { state: string; id: string | null; age_s: number | null };
+    active_events?: { id: number; type: string; t: number; data?: Record<string, unknown> }[];
+  };
   device: (Record<string, unknown> & { last_status_us?: number }) | null;
 }
 

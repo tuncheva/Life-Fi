@@ -13,6 +13,7 @@ import { History } from "./history.js";
 import { notifyPhone } from "./notify.js";
 import { loadProfiles } from "./profiles.js";
 import { SettingsStore } from "./settings.js";
+import { Store } from "./store.js";
 import { Watchdog } from "./watchdog.js";
 import { LiveHub } from "./ws.js";
 
@@ -35,9 +36,19 @@ async function main() {
     recording: null,
   };
   const hub = new LiveHub(log);
-  const history = new History();
+  const store = new Store(config.dbPath);
+  const history = new History(store);
   const alerts = new AlertManager(profiles, () => settings.value.profile);
   alerts.setEscalateAfter(() => settings.value.notify.escalate_after_s);
+  alerts.on("alert", (a) => store.saveAlert(a));
+  const restored = alerts.load(store.loadAlerts());
+  log.info({ db: config.dbPath, history_rows: store.historySize(), alerts: restored }, "store opened");
+  const purge = () => {
+    const gone = store.purge(settings.value.retention_days);
+    if (gone) log.info({ rows: gone, days: settings.value.retention_days }, "history purged");
+  };
+  purge();
+  const purgeTimer = setInterval(purge, 3600_000);
   const watchdog = new Watchdog({
     raise: (reason) => {
       log.warn({ reason }, "sensor offline");
@@ -63,6 +74,10 @@ async function main() {
       const data = ack.data as unknown as EngineStatus;
       state.engineStatus = data;
       watchdog.onDeviceStatus(typeof data.device?.last_status_us === "number" ? data.device.last_status_us : null);
+      if (Array.isArray(data.engine.active_events)) {
+        const n = alerts.syncActive(data.engine.active_events);
+        if (n) log.info({ raised: n }, "alerts recovered from active engine events");
+      }
       hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
     } catch (err) {
       log.debug({ err: (err as Error).message }, "get_status failed");
@@ -129,11 +144,13 @@ async function main() {
   const shutdown = async (signal: string) => {
     log.info({ signal }, "shutting down");
     if (statusPoll) clearInterval(statusPoll);
+    clearInterval(purgeTimer);
     watchdog.stop();
     alerts.stop();
     engine.stop();
     hub.closeAll();
     await app.close();
+    store.close();
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown("SIGINT"));

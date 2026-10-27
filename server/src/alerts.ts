@@ -71,6 +71,30 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     this.escalateAfterS = fn;
   }
 
+  /**
+   * Loads alerts persisted by a previous run. Anything that was still live is
+   * marked resolved: after a restart the engine's `active` list re-raises
+   * whatever is really still going on, as a new alert.
+   */
+  load(saved: Alert[], now = this.now()): number {
+    let restored = 0;
+    for (const a of saved) {
+      if (this.alerts.has(a.id)) continue;
+      const alert: Alert = { ...a };
+      if (alert.state === "pending" || alert.state === "open" || alert.state === "acked") {
+        alert.state = alert.state === "pending" ? "dropped" : "resolved";
+        alert.resolved_at = now;
+        alert.data = { ...alert.data, closed_by: "server restart" };
+        this.emit("alert", { ...alert });
+      }
+      this.alerts.set(alert.id, alert);
+      const n = Number(/^a-(\d+)$/.exec(alert.id)?.[1] ?? 0);
+      if (n > this.seq) this.seq = n;
+      restored++;
+    }
+    return restored;
+  }
+
   list(states?: AlertState[]): Alert[] {
     const all = [...this.alerts.values()].sort((a, b) => b.created_at - a.created_at);
     return states ? all.filter((a) => states.includes(a.state)) : all;
@@ -103,6 +127,23 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     for (const [key] of this.byKey) {
       if (key.startsWith("e:") && !active.has(key)) this.clear(key, r.ts);
     }
+  }
+
+  /**
+   * Engine events that are active right now, from `get_status`. Results only
+   * carry ids in `active`, so after a server restart or reconnect this is how
+   * an ongoing condition gets its alert back (N8).
+   */
+  syncActive(events: { id: number; type: string; t: number; data?: Record<string, unknown> }[]): number {
+    let raised = 0;
+    for (const ev of events) {
+      const key: ConditionKey = `e:${ev.id}`;
+      if (this.byKey.has(key)) continue;
+      const before = this.alerts.size;
+      this.raise(key, ev.type, ev.id, ev.t, ev.data ?? {});
+      if (this.alerts.size > before) raised++;
+    }
+    return raised;
   }
 
   /** Server-emitted condition (sensor_offline, long_inactivity). */

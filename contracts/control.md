@@ -50,7 +50,8 @@ later), so the server must not apply the 3 s timeout to it; it uses
     "inference_ms": {"p50": 4.1, "p95": 9.8},
     "models": [{"name": "transitions", "loaded": true, "pipeline_version": 2}],
     "calibration": {"state": "ok", "id": "cal-0007", "age_s": 312},
-    "recording": null
+    "recording": null,
+    "active_events": [{"id": 42, "type": "fall", "t": 1767225600100, "data": {"peak": 0.93}}]
   },
   "device": {
     "node": 1, "boot_id": 2913411, "fw_version": "0.1.0",
@@ -63,6 +64,11 @@ later), so the server must not apply the 3 s timeout to it; it uses
   }
 }
 ```
+
+`engine.active_events` lists every currently active event with its type:
+results carry only ids in `active`, so this is how a server that restarted
+or reconnected recovers an ongoing condition (N8). The server polls
+`get_status` every second.
 
 `device` is `null` while no status packet has ever been received.
 `device.last_status_us` is what the server's watchdog uses for "no status

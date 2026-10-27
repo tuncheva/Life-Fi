@@ -19,6 +19,8 @@ export const config = {
   /** Shared PIN for dashboard writes (plan-v2 §7.4). Dev default; change it in settings. */
   pin: env("LIFEFI_PIN", "1234"),
   dataDir: resolve(env("LIFEFI_DATA_DIR", join(repoRoot, "data"))),
+  /** SQLite file for history and alerts; ":memory:" keeps nothing. */
+  dbPath: env("LIFEFI_DB", join(env("LIFEFI_DATA_DIR", join(repoRoot, "data")), "lifefi.sqlite")),
   profilesPath: resolve(env("LIFEFI_PROFILES", join(repoRoot, "contracts", "profiles.yml"))),
   uiDir: resolve(env("LIFEFI_UI_DIR", join(repoRoot, "ui", "out"))),
   /** Allow CORS from the Next.js dev server. */

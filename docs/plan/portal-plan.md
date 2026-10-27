@@ -30,7 +30,7 @@ decision, the change is listed in §1 and must be agreed by the team.
 | # | plan-v2 says | Proposal | Why |
 |---|---|---|---|
 | P1 | Server is Java 21 / Spring Boot (D1) | **Server in TypeScript (Node 24)**, same responsibilities, same contracts | Max's new split assigns the server to nobody. No Java on the build machine. One language for server + UI, two days to deliver. The engine link is TCP JSON lines, trivial in Node `net`. The contracts (§4.4, §4.5, §4.7) stay byte-identical, so the engine team sees no difference. |
-| P2 | H2 file database (D9) | **SQLite file** (`better-sqlite3`), 1 row / 5 s, no raw CSI | Same data-minimisation intent, zero install. |
+| P2 | H2 file database (D9) | **SQLite file** via Node's built-in `node:sqlite`, 1 row / 5 s, no raw CSI. *Decided 2026-10-27:* H2 was chosen only because it is Java's embedded database; with a TypeScript server SQLite is the same thing. | Same data-minimisation intent, zero install, nothing native to compile. |
 | P3 | `engine/tools/fakesensor` (Python) feeds the engine | Add a **mock engine** (`server/mock-engine`) that *is* the engine from the portal's point of view: listens on TCP 127.0.0.1:6000, answers the control commands, emits schema-valid results every 0.5 s following scripted scenarios | The mock sits exactly on the engine contract. Server and UI are 100 % real code. When the Python engine exists, it takes port 6000 and nothing in the portal changes. |
 | P4 | ntfy for phone alerts (D8) | Keep ntfy. Add **Gemini API** in the server for two non-safety features: a plain-language daily / shift summary for the caregiver, and "explain this alert" (what happened in the minute around it) | Covers the "Google stack" judging criterion honestly: the LLM never decides an alert, it only writes text from the server's own history. Cheap, visible in the demo. |
 
@@ -94,7 +94,7 @@ Three layers, used in this order:
 - [x] Settings from the UI: ntfy server / topic (generate) / re-notify delay, dashboard URL, time zone, retention, PIN change, "send test notification" (`POST /settings/test-notification`); escalation delay now comes from settings
 
 **Then: data + demo hardening**
-- [ ] History on disk (SQLite vs H2 is still an open team decision; the in-memory store keeps the same query API)
+- [x] History and alerts on disk: `data/lifefi.sqlite` (`node:sqlite`, WAL), one history row per 5 s, every alert transition logged with `config_hash`, hourly purge by `retention_days`, alerts restored at startup (live ones closed as "server restart")
 - [x] Real phone notification from the mock fall through ntfy.sh, verified by reading the message back (priority 5, click URL, acknowledge action)
 - [x] Labelling page: session start writes `session.json`, segment buttons (digits) with count / subject / spot, non-overlapping segments, mark buttons (letters), hard negatives, live `labels.jsonl` list, `Status.recording` over WebSocket
 - [ ] `run_all live` against the real engine once it exists; replay fallback rehearsal

@@ -22,8 +22,8 @@ The plan is [docs/plan/plan-v2.md](docs/plan/plan-v2.md). The docs index is
 
 ## Run the portal on mock data
 
-Requirements: Node ≥ 22 (24 recommended) and npm. No Python or Java needed
-for the portal.
+Requirements: Node ≥ 22.13 (24 recommended; the server uses the built-in
+`node:sqlite`) and npm. No Python or Java needed for the portal.
 
 ```bash
 npm install
@@ -50,8 +50,10 @@ Production-style: `npm run build`, then `npm start -w server` serves the
 dashboard and the API from one port (8080).
 
 The dashboard PIN for writes defaults to `1234` (`LIFEFI_PIN` or
-`data/settings.json`). Phone notifications need an ntfy topic in
-`data/settings.json`.
+`data/settings.json`). Phone notifications need an ntfy topic, set on the
+Settings page. History and alerts live in `data/lifefi.sqlite` (one row per
+5 s, no raw CSI, purged after `retention_days`); recordings and labels go to
+`data/sessions/<id>/`.
 
 ## Where the real engine plugs in
 
