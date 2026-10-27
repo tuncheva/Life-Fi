@@ -43,6 +43,8 @@ export class ServerRules {
     if (r.presence.state !== this.presence) {
       this.presence = r.presence.state;
       this.presentSince = r.presence.state === "present" ? t : null;
+      // Motion seen before an absence must not count against the new presence.
+      this.lastMotionAt = null;
     }
     if (r.motion >= MOTION_ON && !r.health.warmup) {
       this.lastMotionAt = t;
@@ -55,6 +57,7 @@ export class ServerRules {
   onEngineLost(): void {
     this.presence = null;
     this.presentSince = null;
+    this.lastMotionAt = null;
     this.alerts.clearServer("long_inactivity", "sensor stopped reporting");
     this.alerts.clearServer("after_hours_occupancy", "sensor stopped reporting");
   }

@@ -46,12 +46,15 @@ export function useAck() {
   return { ack, busy, error };
 }
 
-/** Open alerts as one situation: the newest leads, the level is the highest, the clock runs from the first. */
+const RANK: Record<Alert["level"], number> = { high: 0, medium: 1, low: 2 };
+
+/** Open alerts as one situation: the most severe leads (newest among equals), the clock runs from the first. */
 export function situation(open: Alert[]) {
-  const lead = open[0];
+  const ordered = [...open].sort((a, b) => RANK[a.level] - RANK[b.level] || b.created_at - a.created_at);
+  const lead = ordered[0];
   const level: Alert["level"] = open.some((a) => a.level === "high") ? "high" : open.some((a) => a.level === "medium") ? "medium" : "low";
   const since = Math.min(...open.map((a) => a.opened_at ?? a.created_at));
-  return { lead, level, since, others: open.slice(1) };
+  return { lead, level, since, others: ordered.slice(1) };
 }
 
 const FILL: Record<Alert["level"], string> = { high: "bg-alert-high", medium: "bg-alert-medium", low: "bg-alert-low" };

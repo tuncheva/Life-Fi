@@ -97,7 +97,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const refreshAlerts = async () => {
     try {
       const { alerts } = await getAlerts("pending,open,acked");
-      setAlerts(alerts);
+      // A WebSocket transition may have arrived while this request was in flight: keep whichever is newer.
+      const stamp = (a: Alert) => Math.max(a.created_at, a.opened_at ?? 0, a.acked_at ?? 0, a.resolved_at ?? 0, a.escalated_at ?? 0, a.notified_at ?? 0);
+      setAlerts((prev) => {
+        const byId = new Map(alerts.map((a) => [a.id, a]));
+        for (const p of prev) {
+          const s = byId.get(p.id);
+          if (s ? stamp(p) > stamp(s) : p.state !== "resolved" && p.state !== "dropped") byId.set(p.id, p);
+        }
+        return [...byId.values()].filter((a) => a.state === "pending" || a.state === "open" || a.state === "acked").sort((a, b) => b.created_at - a.created_at);
+      });
     } catch {
       /* server unreachable; the ws state shows it */
     }
@@ -148,7 +157,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             setPresenceSince({ state: p.state, since: p.since, atLeast: p.at_least });
           }
         } else if (m.type === "alert") {
-          if (m.alert.state === "resolved") setCleared((prev) => [m.alert, ...prev.filter((a) => a.id !== m.alert.id)].slice(0, 5));
+          // "All clear" only when the condition really ended, not when the engine or sensor went away.
+          const closedBy = String(m.alert.data.closed_by ?? "");
+          if (m.alert.state === "resolved" && !/restart|stopped reporting/.test(closedBy)) setCleared((prev) => [m.alert, ...prev.filter((a) => a.id !== m.alert.id)].slice(0, 5));
           setAlerts((prev) => {
             const next = prev.filter((a) => a.id !== m.alert.id);
             if (m.alert.state === "pending" || m.alert.state === "open" || m.alert.state === "acked") next.unshift(m.alert);

@@ -1,4 +1,5 @@
 // Life-Fi server: engine client, REST + WebSocket, alerts, history, ntfy, watchdog.
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
@@ -27,6 +28,8 @@ async function main() {
 
   const profiles = loadProfiles(config.profilesPath);
   const settings = new SettingsStore(config.dataDir, { pin: config.pin, profiles });
+  // The saved time zone wins over profiles.yml for after-hours and night windows.
+  profiles.zone = settings.value.zone;
   const state: AppState = {
     startedAt: Date.now(),
     latest: null,
@@ -55,6 +58,7 @@ async function main() {
   const watchdog = new Watchdog({
     raise: (reason) => {
       log.warn({ reason }, "sensor offline");
+      rules.onEngineLost();
       alerts.raiseServer("sensor_offline", { reason });
       hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
     },
@@ -66,7 +70,8 @@ async function main() {
   });
   const engine = new EngineClient(config.engineHost, config.enginePort, log);
 
-  const ctx: AppContext = { log, engine, alerts, watchdog, history, settings, profiles, state, hub, version: config.version, dev: config.devCors };
+  const ackTokens = new Map<string, string>();
+  const ctx: AppContext = { log, ackTokens, engine, alerts, watchdog, history, settings, profiles, state, hub, version: config.version, dev: config.devCors };
 
   // ---- engine events --------------------------------------------------------
   let statusPoll: NodeJS.Timeout | null = null;
@@ -122,11 +127,17 @@ async function main() {
   engine.on("unknown", (msg) => log.debug({ type: msg.type }, "unknown engine message"));
 
   alerts.on("alert", (a) => {
+    if (a.state === "resolved" || a.state === "dropped") ackTokens.delete(a.id);
     log.info({ id: a.id, type: a.type, state: a.state, level: a.level }, "alert");
     hub.broadcast({ type: "alert", alert: a });
   });
   alerts.on("notify", (a, kind) => {
-    void notifyPhone(a, kind, settings.value, log).then((r) => alerts.setNotifyOutcome(a.id, r.ok ? "sent" : r.error === "ntfy topic not set" ? "not_configured" : "failed", r.ok ? null : r.error));
+    let token = ackTokens.get(a.id);
+    if (!token) {
+      token = randomBytes(16).toString("hex");
+      ackTokens.set(a.id, token);
+    }
+    void notifyPhone(a, kind, settings.value, log, token).then((r) => alerts.setNotifyOutcome(a.id, r.ok ? "sent" : r.error === "ntfy topic not set" ? "not_configured" : "failed", r.ok ? null : r.error));
   });
 
   // ---- http -------------------------------------------------------------------

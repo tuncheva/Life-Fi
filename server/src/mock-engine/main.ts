@@ -44,12 +44,11 @@ function handle(cmd: Record<string, unknown>): string {
       const duration = typeof cmd.duration_s === "number" ? cmd.duration_s : 120;
       if (kind === "empty" && sim.currentMotion() > 0.1) return ack(id, false, {}, "motion seen during calibration");
       // The real engine acks when the calibration finishes. We do the same.
-      sim.startCalibration(now, duration);
       log("calibration started", { kind, duration_s: duration });
-      setTimeout(() => {
-        if (client) client.write(ack(id, true, { id: sim.calibration.id }));
-        log("calibration finished", { id: sim.calibration.id });
-      }, duration * 1000);
+      void sim.startCalibration(now, duration).then((r) => {
+        if (client) client.write(r.ok ? ack(id, true, { id: r.id }) : ack(id, false, {}, r.error));
+        log("calibration finished", r);
+      });
       return ""; // deferred
     }
     case "record_start": {

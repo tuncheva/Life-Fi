@@ -89,11 +89,24 @@ export class Simulator {
     this.posture = null;
   }
 
-  startCalibration(now: number, durationS: number): void {
+  private calMotionSeen = false;
+
+  /** Resolves when the calibration ends: ok with the new id, or the refusal reason. */
+  startCalibration(now: number, durationS: number): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+    const previous = this.calibration;
     this.calibration = { state: "running", id: null, at: now };
-    setTimeout(() => {
-      this.calibration = { state: "ok", id: `cal-${String(this.calSeq++).padStart(4, "0")}`, at: Date.now() };
-    }, durationS * 1000);
+    this.calMotionSeen = false;
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        if (this.calMotionSeen) {
+          this.calibration = previous.state === "ok" ? previous : { state: "none", id: null, at: null };
+          resolve({ ok: false, error: "motion seen during calibration" });
+          return;
+        }
+        this.calibration = { state: "ok", id: `cal-${String(this.calSeq++).padStart(4, "0")}`, at: Date.now() };
+        resolve({ ok: true, id: this.calibration.id! });
+      }, durationS * 1000);
+    });
   }
 
   /** Current motion level, used to refuse an empty calibration when someone moves. */
@@ -165,6 +178,7 @@ export class Simulator {
 
     // numbers
     const motion = clamp(scene.motion * (0.85 + 0.3 * Math.random()) + 0.004 * Math.abs(randn()), 0, 1);
+    if (this.calibration.state === "running" && motion > 0.1) this.calMotionSeen = true;
     const breathingValid = scene.breathing !== null && motion < 0.25 && !warmup;
     const bpm = scene.breathing;
     const wave: number[] = [];

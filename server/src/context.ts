@@ -67,6 +67,8 @@ export interface AppState {
 
 export interface AppContext {
   log: FastifyBaseLogger;
+  /** One-time acknowledge tokens for phone notifications, by alert id (never the PIN). */
+  ackTokens: Map<string, string>;
   engine: EngineClient;
   alerts: AlertManager;
   watchdog: Watchdog;

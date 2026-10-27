@@ -58,11 +58,21 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
     return { alerts: ctx.alerts.list(states as AlertState[]) };
   });
 
-  app.post("/api/v1/alerts/:id/ack", write, async (req, reply) => {
+  // Acknowledge: with the PIN (dashboard) or with the one-time token from the phone notification.
+  const pinOrAckToken = async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const token = (req.query as Record<string, string | undefined>).token;
+    if (token && ctx.ackTokens.get(id) === token) return;
+    return requirePin(req, reply);
+  };
+  app.post("/api/v1/alerts/:id/ack", { preHandler: pinOrAckToken }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as Body;
-    const by = typeof body.by === "string" && body.by.trim() ? body.by.trim().slice(0, 40) : null;
+    const token = (req.query as Record<string, string | undefined>).token;
+    const viaPhone = !!token && ctx.ackTokens.get(id) === token;
+    const by = typeof body.by === "string" && body.by.trim() ? body.by.trim().slice(0, 40) : viaPhone ? "phone notification" : null;
     const r = ctx.alerts.ack(id, by);
+    if (viaPhone && r) ctx.ackTokens.delete(id);
     if (r === null) return fail(reply, 404, "not_found", `no alert '${id}'`);
     if (r === false) return fail(reply, 409, "conflict", "alert is not open");
     return r;
@@ -289,6 +299,7 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
         return fail(reply, 400, "bad_request", `unknown time zone '${body.zone}'`);
       }
       patch.zone = body.zone;
+      ctx.profiles.zone = body.zone;
     }
     if (typeof body.dashboard_url === "string") patch.dashboard_url = body.dashboard_url.trim();
     if (typeof body.room_name === "string" && body.room_name.trim()) patch.room_name = body.room_name.trim().slice(0, 40);

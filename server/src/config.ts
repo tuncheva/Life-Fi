@@ -23,7 +23,11 @@ export const config = {
   dbPath: env("LIFEFI_DB", join(env("LIFEFI_DATA_DIR", join(repoRoot, "data")), "lifefi.sqlite")),
   profilesPath: resolve(env("LIFEFI_PROFILES", join(repoRoot, "contracts", "profiles.yml"))),
   uiDir: resolve(env("LIFEFI_UI_DIR", join(repoRoot, "ui", "out"))),
-  /** Allow CORS from the Next.js dev server. */
-  devCors: env("NODE_ENV", "development") !== "production",
+  /**
+   * Development mode: CORS for the Next.js dev server on :3000 and the mock
+   * scenario endpoints. On when running from source (tsx) or LIFEFI_DEV=1;
+   * off for `node dist/main.js` even when NODE_ENV is unset.
+   */
+  devCors: env("LIFEFI_DEV", import.meta.url.endsWith(".ts") ? "1" : "0") === "1",
   version: "0.1.0",
 } as const;

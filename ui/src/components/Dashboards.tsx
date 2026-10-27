@@ -56,10 +56,10 @@ export function ClinicDashboard() {
 
 export function SchoolDashboard() {
   const view = useProfileView();
+  const { status } = useLive();
   const now = useNow(30_000);
   const after = view?.profiles.school.occupancy?.after_hours;
-  const d = new Date(now);
-  const inAfterHours = after ? inside(after.from, after.to, d.getHours() * 60 + d.getMinutes()) : false;
+  const inAfterHours = after ? inside(after.from, after.to, minutesOfDayIn(status?.server.time_zone, now)) : false;
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="lg:col-span-3">
@@ -69,6 +69,19 @@ export function SchoolDashboard() {
       <Details />
     </div>
   );
+}
+
+/** Minutes since midnight in the room's time zone (falls back to the browser's). */
+function minutesOfDayIn(zone: string | undefined, at: number): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date(at));
+    const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0) % 24;
+    const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+    return h * 60 + m;
+  } catch {
+    const d = new Date(at);
+    return d.getHours() * 60 + d.getMinutes();
+  }
 }
 
 function inside(from: string, to: string, minutes: number): boolean {
