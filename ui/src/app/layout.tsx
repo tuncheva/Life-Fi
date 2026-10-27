@@ -26,7 +26,9 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+// Explicit props rather than Next's generated `LayoutProps`, so `tsc --noEmit`
+// also passes on a fresh checkout where `.next/types` has not been generated yet.
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <head>

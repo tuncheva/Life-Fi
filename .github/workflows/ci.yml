@@ -26,8 +26,9 @@ jobs:
         run: |
           npm run lint -w server
           npm test -w server
-      - name: UI lint + typecheck + static export
+      - name: UI lint + static export + typecheck
+        # build first: it generates .next/types, which the typecheck relies on
         run: |
           npm run lint -w ui
-          npm run typecheck -w ui
           npm run build -w ui
+          npm run typecheck -w ui
