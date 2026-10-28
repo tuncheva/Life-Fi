@@ -56,11 +56,11 @@ def _segments(t):
     return list(zip(np.r_[0, cuts + 1], np.r_[cuts + 1, len(t)]))
 
 
-def _resample(t, x, t0, t1):
-    """Box average over +-0.5/FS around each grid point; interpolate empty bins."""
-    grid = np.arange(t0, t1, 1.0 / FS)
-    lo = np.searchsorted(t, grid - 0.5 / FS)
-    hi = np.searchsorted(t, grid + 0.5 / FS)
+def _resample(t, x, t0, t1, fs=FS):
+    """Box average over +-0.5/fs around each grid point; interpolate empty bins."""
+    grid = np.arange(t0, t1, 1.0 / fs)
+    lo = np.searchsorted(t, grid - 0.5 / fs)
+    hi = np.searchsorted(t, grid + 0.5 / fs)
     cum = np.vstack([np.zeros((1, x.shape[1])), np.cumsum(x, axis=0)])
     count = (hi - lo)[:, None]
     out = np.full((len(grid), x.shape[1]), np.nan)
@@ -80,10 +80,10 @@ def _detrend(x):
     return x - (np.outer(n, a[0]) + a[1])
 
 
-def _fft_peak(sig, band):
+def _fft_peak(sig, band, fs=FS):
     n = 8 * len(sig)
     spec = np.abs(np.fft.rfft(sig * np.hanning(len(sig)), n=n)) ** 2
-    f = np.fft.rfftfreq(n, 1.0 / FS)
+    f = np.fft.rfftfreq(n, 1.0 / fs)
     b = np.where((f >= band[0]) & (f <= band[1]))[0]
     i = b[np.argmax(spec[b])]
     if 0 < i < len(spec) - 1:   # parabolic interpolation on the log magnitude

@@ -56,23 +56,23 @@ export interface BreathSummary {
   consistent: boolean;
 }
 
-/** numpy.fft.rfftfreq(n, 1 / FS)[k] */
-function freq(k: number, n: number): number {
-  return k * (1.0 / (n * (1.0 / FS)));
+/** numpy.fft.rfftfreq(n, 1 / fs)[k] */
+export function freq(k: number, n: number, fs = FS): number {
+  return k * (1.0 / (n * (1.0 / fs)));
 }
 
 /** Bins k (of an n-point rfft) whose frequency lies in [lo, hi]. */
-function bins(n: number, [lo, hi]: [number, number]): number[] {
+export function bins(n: number, [lo, hi]: [number, number], fs = FS): number[] {
   const out: number[] = [];
   for (let k = 0; k <= n / 2; k++) {
-    const f = freq(k, n);
+    const f = freq(k, n, fs);
     if (f >= lo && f <= hi) out.push(k);
   }
   return out;
 }
 
 /** numpy.hanning(m) */
-function hanning(m: number): Float64Array {
+export function hanning(m: number): Float64Array {
   const w = new Float64Array(m);
   for (let i = 0; i < m; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (m - 1));
   return w;
@@ -96,7 +96,7 @@ function power(x: ArrayLike<number>, k: number, n: number): number {
 }
 
 /** Gain-free amplitude features [n][52] in dB, row-major. */
-function features(csi: CsiMatrix): Float64Array {
+export function features(csi: CsiMatrix): Float64Array {
   const x = new Float64Array(csi.n * N_SUB);
   for (let r = 0; r < csi.n; r++) {
     let mean = 0;
@@ -111,7 +111,7 @@ function features(csi: CsiMatrix): Float64Array {
   return x;
 }
 
-function segments(t: Float64Array): [number, number][] {
+export function segments(t: Float64Array): [number, number][] {
   const out: [number, number][] = [];
   let s = 0;
   for (let i = 1; i < t.length; i++) {
@@ -136,13 +136,13 @@ function searchsorted(t: Float64Array, s: number, e: number, v: number): number 
   return lo - s;
 }
 
-/** Box average over +-0.5/FS around each grid point; interpolate empty bins. Columns [52][grid]. */
-function resample(t: Float64Array, x: Float64Array, s: number, e: number): { grid: Float64Array; y: Float64Array[] } | null {
+/** Box average over +-0.5/fs around each grid point; interpolate empty bins. Columns [52][grid]. */
+export function resample(t: Float64Array, x: Float64Array, s: number, e: number, fs = FS): { grid: Float64Array; y: Float64Array[] } | null {
   const t0 = t[s];
   const t1 = t[e - 1];
-  const len = Math.ceil((t1 - t0) / (1.0 / FS));
+  const len = Math.ceil((t1 - t0) / (1.0 / fs));
   const grid = new Float64Array(len);
-  for (let g = 0; g < len; g++) grid[g] = t0 + g * (1.0 / FS);
+  for (let g = 0; g < len; g++) grid[g] = t0 + g * (1.0 / fs);
   const n = e - s;
   const cum = new Float64Array((n + 1) * N_SUB);
   for (let r = 0; r < n; r++) {
@@ -150,8 +150,8 @@ function resample(t: Float64Array, x: Float64Array, s: number, e: number): { gri
   }
   const y = Array.from({ length: N_SUB }, () => new Float64Array(len).fill(NaN));
   for (let g = 0; g < len; g++) {
-    const lo = searchsorted(t, s, e, grid[g] - 0.5 / FS);
-    const hi = searchsorted(t, s, e, grid[g] + 0.5 / FS);
+    const lo = searchsorted(t, s, e, grid[g] - 0.5 / fs);
+    const hi = searchsorted(t, s, e, grid[g] + 0.5 / fs);
     if (hi <= lo) continue;
     for (let c = 0; c < N_SUB; c++) y[c][g] = (cum[hi * N_SUB + c] - cum[lo * N_SUB + c]) / (hi - lo);
   }
@@ -175,7 +175,7 @@ function resample(t: Float64Array, x: Float64Array, s: number, e: number): { gri
   return { grid, y };
 }
 
-function detrend(x: Float64Array): Float64Array {
+export function detrend(x: Float64Array): Float64Array {
   const n = x.length;
   const xm = (n - 1) / 2;
   let ym = 0;
@@ -192,7 +192,7 @@ function detrend(x: Float64Array): Float64Array {
 }
 
 /** Eigenvector of the largest eigenvalue of a symmetric matrix (cyclic Jacobi). */
-function topEigenvector(a: number[][]): number[] {
+export function topEigenvector(a: number[][]): number[] {
   const m = a.length;
   const A = a.map((row) => row.slice());
   const V: number[][] = A.map((_, i) => A.map((_, j) => (i === j ? 1 : 0)));
@@ -233,11 +233,11 @@ function topEigenvector(a: number[][]): number[] {
   return V.map((row) => row[best]);
 }
 
-function fftPeak(sig: Float64Array): [number, number] {
+export function fftPeak(sig: Float64Array, band: [number, number] = BAND, fs = FS): [number, number] {
   const n = PAD * sig.length;
   const w = hanning(sig.length);
   const xw = sig.map((v, i) => v * w[i]);
-  const b = bins(n, BAND);
+  const b = bins(n, band, fs);
   const spec = new Map<number, number>();
   for (let k = b[0] - 1; k <= b[b.length - 1] + 1; k++) spec.set(k, power(xw, k, n));
   let i = b[0];
@@ -246,12 +246,12 @@ function fftPeak(sig: Float64Array): [number, number] {
   const [y0, y1, y2] = [i - 1, i, i + 1].map((k) => Math.log(spec.get(k)! + 1e-30));
   const den = y0 - 2 * y1 + y2;
   const shift = den !== 0 ? (0.5 * (y0 - y2)) / den : 0.0;
-  const peak = freq(i, n) + shift * (freq(1, n) - freq(0, n));
+  const peak = freq(i, n, fs) + shift * (freq(1, n, fs) - freq(0, n, fs));
   let near = 0;
   let total = 0;
   for (const k of b) {
     total += spec.get(k)!;
-    if (Math.abs(freq(k, n) - peak) <= 0.02) near += spec.get(k)!;
+    if (Math.abs(freq(k, n, fs) - peak) <= 0.02) near += spec.get(k)!;
   }
   return [peak, near / (total + 1e-30)];
 }
