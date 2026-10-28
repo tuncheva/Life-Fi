@@ -5,13 +5,19 @@
 #include "esp_system.h"
 #include "estimator.h"
 #include "host_test.h"
+#include "stream.h"
 #include "wifi_link.h"
 
 static float s_profile[LIFEFI_NSC];
 
 /* ---- stubs for the Wi-Fi side ------------------------------------------- */
 
-static int s_saves, s_restarts;
+static int s_saves, s_restarts, s_usb_keepalives;
+
+void stream_usb_keepalive(void)
+{
+    s_usb_keepalives++;
+}
 static char s_saved_ssid[40], s_saved_pass[80];
 
 esp_err_t wifi_link_save_credentials(const char *ssid, const char *password)
@@ -123,6 +129,11 @@ int main(int argc, char **argv)
           "wifi clear erases and restarts");
     type("wifi \"clear\" password1");
     CHECK(strcmp(s_saved_ssid, "clear") == 0, "a network literally named \"clear\" can be quoted");
+
+    printf("== usbstream\n");
+    type("usbstream");
+    type("USBSTREAM\r");
+    CHECK(s_usb_keepalives == 2, "usbstream keeps the USB stream alive (%d)", s_usb_keepalives);
 
     return host_finish("test_commands");
 }

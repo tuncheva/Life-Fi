@@ -7,7 +7,8 @@ from; where any other document disagrees with it, plan-v2 wins.
 
 | Folder | What it is |
 |---|---|
-| [firmware/](firmware/README.md) | ESP32 / ESP32-S3 firmware: CSI capture, presence and people-count estimate on the serial console (first hardware milestone) |
+| [firmware/](firmware/README.md) | ESP32 / ESP32-S3 firmware: CSI capture, presence and people-count estimate on the serial console, raw CSI stream + recorder |
+| [engine/](engine/README.md) | PC processing of recordings: breathing rate (first piece of plan-v2's engine) |
 
 ## docs/plan/ — current, build from these
 
@@ -16,6 +17,7 @@ from; where any other document disagrees with it, plan-v2 wins.
 | [plan-v2.md](docs/plan/plan-v2.md) | **The master plan.** Whole system (firmware, engine, detectors, models, server, dashboard, profiles), decisions, phases and checklists |
 | [csi-for-models.md](docs/plan/csi-for-models.md) | Companion to plan-v2: what the models and detectors need from ESP32 CSI — radio config, buffer layout, preprocessing, quality gates, recordings |
 | [model-scope-and-phases.md](docs/plan/model-scope-and-phases.md) | Model side of plan-v2: which components learn weights, how much data they need, phases and gates |
+| [upgrade-roadmap.md](docs/plan/upgrade-roadmap.md) | Where the hardware stands, upgrades for accuracy (transmitter, more receivers, models), what 3D pose and vital signs realistically need, RuView compared |
 
 ## docs/research/ — evidence the plan is based on
 

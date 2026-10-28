@@ -29,7 +29,7 @@ if ($Clear) {
 }
 
 # DTR/RTS stay low so opening the port does not reset the board
-$sp = New-Object System.IO.Ports.SerialPort $Port, 115200
+$sp = New-Object System.IO.Ports.SerialPort $Port, 921600
 $sp.DtrEnable = $false
 $sp.RtsEnable = $false
 $sp.ReadTimeout = 200

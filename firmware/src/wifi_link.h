@@ -6,6 +6,7 @@
  * strongest access point and take CSI from its beacons and traffic. */
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include "esp_err.h"
 
@@ -13,6 +14,9 @@ typedef enum { LINK_STATION, LINK_SNIFFER } link_mode_t;
 
 /* Blocks until the CSI source is chosen (connected, or AP locked). */
 esp_err_t wifi_link_start(void);
+
+/* True in station mode (connected to a router, with an IP address). */
+bool wifi_link_connected(void);
 
 /* One-line description for the periodic health log. */
 void wifi_link_describe(char *buf, size_t len);

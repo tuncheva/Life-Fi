@@ -14,10 +14,10 @@ void csi_lltf_amplitudes(const csi_packet_t *p, float out[LIFEFI_NSC])
 {
     int o = 0;
     for (int j = 38; j < 64; j++) {   /* k = -26..-1 */
-        out[o++] = sc_amp(p->lltf, j);
+        out[o++] = sc_amp(p->buf, j);
     }
     for (int j = 1; j <= 26; j++) {   /* k = +1..+26 */
-        out[o++] = sc_amp(p->lltf, j);
+        out[o++] = sc_amp(p->buf, j);
     }
     if (p->first_word_invalid) {      /* bytes 0..3 (DC and k = +1) are garbage */
         out[26] = out[27];

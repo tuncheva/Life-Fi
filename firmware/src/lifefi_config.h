@@ -25,6 +25,12 @@
 #define LIFEFI_COUNTRY "BG"             /* Wi-Fi regulatory domain: channels 1-13 */
 #endif
 #define LIFEFI_CONNECT_TIMEOUT_MS 20000 /* then fall back to sniffer mode */
+
+/* ---- Raw CSI stream (stream.c) ---------------------------------------- */
+
+#define LIFEFI_NODE_ID            1
+#define LIFEFI_STREAM_PORT        5006   /* board listens here for "LFSUB" */
+#define LIFEFI_STREAM_TIMEOUT_MS  5000   /* stop streaming without a fresh LFSUB */
 #define LIFEFI_PING_INTERVAL_MS   10    /* router replies = CSI samples, ~100 Hz */
 
 /* ---- Signal processing ------------------------------------------------ */

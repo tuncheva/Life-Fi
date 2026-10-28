@@ -264,6 +264,11 @@ esp_err_t wifi_link_start(void)
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20));
     /* Power save makes the station sleep and the CSI rate collapse */
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_ps(WIFI_PS_NONE));
+    /* 11b rates stay enabled on purpose. On a weak link (RSSI around -70) the
+     * router falls back to 802.11b, which carries no CSI: pings get through
+     * but CSI pauses for seconds. Disabling 11b
+     * (esp_wifi_config_11b_rate) was tried on 2026-10-28 and made the link
+     * itself drop. The fix is a stronger link: see firmware/README.md. */
 
     wifi_config_t wc = { 0 };
     const char *source = load_credentials((char *)wc.sta.ssid, sizeof(wc.sta.ssid),
@@ -343,6 +348,11 @@ esp_err_t wifi_link_save_credentials(const char *ssid, const char *password)
     }
     nvs_close(h);
     return err;
+}
+
+bool wifi_link_connected(void)
+{
+    return s_mode == LINK_STATION;
 }
 
 void wifi_link_describe(char *buf, size_t len)

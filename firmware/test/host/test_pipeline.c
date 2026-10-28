@@ -110,14 +110,14 @@ static void make_packet(csi_packet_t *p)
         double re, im;
         channel(k, &re, &im);
         int j = k >= 0 ? k : k + 64;
-        p->lltf[2 * j] = q8(gain * im);
-        p->lltf[2 * j + 1] = q8(gain * re);
+        p->buf[2 * j] = q8(gain * im);
+        p->buf[2 * j + 1] = q8(gain * re);
     }
     p->rssi = -50;
     p->first_word_invalid = host_frand() < 0.3f;
     if (p->first_word_invalid) {   /* the hardware leaves garbage there */
-        p->lltf[2] = (int8_t)(host_frand() * 200 - 100);
-        p->lltf[3] = (int8_t)(host_frand() * 200 - 100);
+        p->buf[2] = (int8_t)(host_frand() * 200 - 100);
+        p->buf[3] = (int8_t)(host_frand() * 200 - 100);
     }
 }
 

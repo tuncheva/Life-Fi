@@ -47,6 +47,7 @@ $tests = [ordered]@{
     'test_estimator'  = @("$src/estimator.c")
     'test_commands'   = @("$src/commands.c", "$src/estimator.c")
     'test_pipeline'   = @("$src/csi_window.c", "$src/estimator.c")
+    'test_csi_frame'  = @("$src/csi_frame.c")
 }
 
 # Native tools write warnings to stderr; judge them by exit code only
@@ -72,6 +73,13 @@ foreach ($name in $tests.Keys) {
     if ($LASTEXITCODE -ne 0) {
         $failed++
     }
+}
+
+# The Python side of the stream contract must parse what the C side wrote
+Write-Host '########## check_csi_frame.py'
+& python check_csi_frame.py
+if ($LASTEXITCODE -ne 0) {
+    $failed++
 }
 
 Write-Host ''

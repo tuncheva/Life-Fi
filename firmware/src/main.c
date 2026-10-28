@@ -12,6 +12,7 @@
 #include "csi_window.h"
 #include "estimator.h"
 #include "lifefi_config.h"
+#include "stream.h"
 #include "wifi_link.h"
 
 static const char *TAG = "main";
@@ -21,12 +22,14 @@ static const char *TAG = "main";
 static void log_health(void)
 {
     char link[128];
+    char stream[128];
     csi_counters_t c;
     wifi_link_describe(link, sizeof(link));
+    stream_describe(stream, sizeof(stream));
     csi_capture_counters(&c);
-    ESP_LOGI(TAG, "wifi %s | csi %lu, other tx %lu, rejected %lu, queue drops %lu | heap %lu",
+    ESP_LOGI(TAG, "wifi %s | csi %lu, other tx %lu, rejected %lu, queue drops %lu | %s | heap %lu",
              link, (unsigned long)c.received, (unsigned long)c.other_mac,
-             (unsigned long)c.rejected, (unsigned long)c.queue_drops,
+             (unsigned long)c.rejected, (unsigned long)c.queue_drops, stream,
              (unsigned long)esp_get_free_heap_size());
 }
 
@@ -43,14 +46,20 @@ static void csi_task(void *arg)
 
     csi_packet_t p;
     int64_t win_start = esp_timer_get_time();
+    int64_t last_poll = 0;
     uint32_t windows = 0;
 
     for (;;) {
         if (xQueueReceive(q, &p, pdMS_TO_TICKS(50)) == pdTRUE) {
             csi_window_add(acc, &p);
+            stream_send(&p);
         }
 
         int64_t now = esp_timer_get_time();
+        if (now - last_poll >= 100000) {
+            stream_poll();
+            last_poll = now;
+        }
         if (now - win_start >= LIFEFI_WINDOW_MS * 1000LL) {
             csi_window_close(acc, now - win_start, w);
             win_start = now;
@@ -75,5 +84,8 @@ void app_main(void)
     estimator_init();
     commands_start();
     ESP_ERROR_CHECK(wifi_link_start());
+    if (wifi_link_connected()) {
+        stream_start();
+    }
     xTaskCreate(csi_task, "csi", 4096, NULL, 5, NULL);
 }

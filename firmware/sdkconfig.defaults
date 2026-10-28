@@ -9,3 +9,10 @@ CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
 CONFIG_FREERTOS_HZ=1000
 
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# Raw CSI over USB (`usbstream`) needs ~35 KB/s; 115200 baud is ~11.5 KB/s.
+# The baud rate is only configurable with a "custom" console UART (same UART0
+# and default pins).
+CONFIG_ESP_CONSOLE_UART_CUSTOM=y
+CONFIG_ESP_CONSOLE_UART_CUSTOM_NUM_0=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600

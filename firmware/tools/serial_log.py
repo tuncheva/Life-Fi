@@ -22,7 +22,7 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("port", help="serial port, e.g. COM5 or /dev/ttyUSB0")
-    ap.add_argument("--baud", type=int, default=115200)
+    ap.add_argument("--baud", type=int, default=921600)
     ap.add_argument("--seconds", type=float, default=0, help="stop after this long (0 = until Ctrl+C)")
     ap.add_argument("--reset", action="store_true", help="reset the board on open (EN via RTS)")
     ap.add_argument("--send", action="append", default=[], help="command to type into the console")

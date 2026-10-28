@@ -7,12 +7,25 @@
 #include "estimator.h"
 #include "lifefi_config.h"
 
+#define CSI_BUF_MAX 256       /* LLTF + HT-LTF, 20 MHz, no STBC */
+
 typedef struct {
     int64_t ts_us;            /* esp_timer_get_time() at the callback */
+    uint8_t mac[6];           /* transmitter */
     int8_t rssi;
+    int8_t noise_floor;
     uint8_t sig_mode;         /* 0 non-HT, 1 HT */
+    uint8_t mcs;
+    uint8_t cwb;              /* 0 = 20 MHz */
+    uint8_t stbc;
+    uint8_t channel;
+    uint8_t secondary_channel;
     bool first_word_invalid;
-    int8_t lltf[128];         /* 64 x [imag, real], subcarriers 0..31 then -32..-1 */
+    uint16_t rx_seq;          /* 802.11 sequence number */
+    uint16_t len;             /* valid bytes in buf */
+    /* 64 x [imag, real] per LTF, subcarriers 0..31 then -32..-1:
+     * bytes 0..127 LLTF, then 128..255 HT-LTF on HT frames */
+    int8_t buf[CSI_BUF_MAX];
 } csi_packet_t;
 
 /* Sums of (normalised amplitude - 1): the offset keeps float variance exact */

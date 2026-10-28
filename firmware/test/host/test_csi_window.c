@@ -9,8 +9,8 @@
 static void set_sc(csi_packet_t *p, int k, int re, int im)
 {
     int j = k >= 0 ? k : k + 64;
-    p->lltf[2 * j] = (int8_t)im;
-    p->lltf[2 * j + 1] = (int8_t)re;
+    p->buf[2 * j] = (int8_t)im;
+    p->buf[2 * j + 1] = (int8_t)re;
 }
 
 /* Subcarrier number of output column i: -26..-1, +1..+26 */

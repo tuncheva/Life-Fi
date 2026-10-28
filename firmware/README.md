@@ -2,9 +2,11 @@
 
 First hardware milestone: an ESP32 reads Wi-Fi Channel State Information
 (CSI), works out on the chip whether anyone is in the room and roughly how
-many, and logs it to the serial console once per second. The web dashboard,
-UDP streaming and the Python engine of [plan-v2](../docs/plan/plan-v2.md)
-come later. This firmware is the first piece of its `firmware/` component.
+many, and logs it to the serial console once per second. In station mode it
+also streams every raw CSI packet to the PC over UDP for recording and
+analysis. The web dashboard and the Python engine of
+[plan-v2](../docs/plan/plan-v2.md) come later; what to upgrade next is in
+[upgrade-roadmap.md](../docs/plan/upgrade-roadmap.md).
 
 Background on how CSI sensing and counting work:
 [docs/research/csi-people-counting.md](../docs/research/csi-people-counting.md).
@@ -20,8 +22,10 @@ Background on how CSI sensing and counting work:
 | 5 | Presence state machine + people-count estimate, logged to the console | done |
 | 6 | Serial commands: recalibrate, learn real head counts (saved in flash) | done |
 | 6b | Host tests: CSI parsing, estimator, commands, end-to-end on simulated raw CSI (`test/host`) | done, all passing |
-| 7 | Flash a real board, check the rate and tune thresholds on real data | needs the board |
-| Later | UDP `csi_frame_hdr_t` v2 stream to the engine, dashboard, models (plan-v2 §4, §9) | — |
+| 7 | Flash a real board, check the rate | done: ESP32 dev board, ~100–180 Hz in station mode |
+| 8 | Raw CSI stream over UDP (`csi_frame_hdr_t` v2) + PC recorder (`.csirec`) | done: 1,586 frames / 20 s, 2 lost |
+| 8b | Same stream over USB serial (921600 baud), independent of the Wi-Fi network | done: 1,719 frames / 30 s, 0 lost |
+| Next | Breathing on the PC, dedicated transmitter, more receivers ([roadmap](../docs/plan/upgrade-roadmap.md)) | — |
 
 ## Build, flash, watch
 
@@ -34,8 +38,10 @@ $pio = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
 & $pio run -e esp32dev -t upload -t monitor     # classic ESP32; -e esp32s3 for an ESP32-S3
 ```
 
-The monitor runs at 115200 baud: type commands and press Enter, Ctrl+C to
-quit. To open it again later: `& $pio device monitor`.
+The monitor runs at **921600 baud**, fast enough for the USB CSI stream:
+type commands and press Enter, Ctrl+C to quit. To open it again later:
+`& $pio device monitor`. The chip's ROM boot messages (the first few lines
+after a reset) are at 115200 and show as garbage at this speed; that's normal.
 
 Run `pio` from the `firmware` folder, or add `-d firmware`. Anywhere else
 it can't see `platformio.ini`, falls back to 9600 baud and shows garbled
@@ -53,6 +59,58 @@ symbols.
 - On an ESP32-S3 DevKitC, plug into the **UART** USB connector, not the
   native "USB" one. The native port shows the logs but can't read typed
   commands.
+
+### Record the raw CSI stream on the PC
+
+The board streams every CSI packet (plan-v2 §4.1 header, then LLTF and
+HT-LTF bytes, which carry amplitude and phase) to whoever asks. The
+recorder asks once a second; the board stops 5 s after it stops asking.
+Both ways write the same `.csirec` format:
+
+| Way | When | Command (from the repo root) |
+|---|---|---|
+| **USB** | Always works: the board can be on any Wi-Fi network, even in sniffer mode. Close serial monitors first (one program per port) | `& "$env:USERPROFILE\.platformio\penv\Scripts\python.exe" firmware\tools\csi_recorder.py --serial COM3 --seconds 60` |
+| Wi-Fi (UDP) | Board in station mode **on the PC's network**; its IP is in the serial log (`sta ip: ...`) | `python firmware\tools\csi_recorder.py --esp 192.168.100.111 --seconds 60` |
+
+USB mode needs pyserial, which PlatformIO's Python already has. It sends
+the `usbstream` command; each frame comes back as one `@CSI <base64>` text
+line between the normal log lines. Measured: 1,719 frames in 30 s, 0 lost,
+0 corrupt. Wi-Fi mode: on first run Windows may ask whether Python can use
+the network; allow it on private networks.
+
+The recorder prints frames/s, RSSI and lost frames each second, and saves
+`firmware\recordings\<time>.csirec` (git-ignored). To analyse a recording in
+Python (needs numpy):
+
+```python
+import sys; sys.path.insert(0, r"firmware\tools")
+from csi_recorder import load_csirec
+d = load_csirec(r"firmware\recordings\....csirec")
+amp = abs(d["csi"])          # [N, 52] amplitude per subcarrier, k = -26..-1, +1..+26
+```
+
+Phase (`numpy.angle(d["csi"])`) has a random offset and slope per packet on
+a single antenna; sanitise it before use. Frames lost on the board (`stream
+... errors` in the health line) happen while the Wi-Fi link pauses.
+
+### Placement and CSI pauses
+
+On a weak link the stream pauses for seconds at a time. Measured on
+2026-10-28 at RSSI −70: during a pause the board still answered pings, but
+the Wi-Fi driver produced no CSI. The router falls back to 802.11b rates,
+which have no OFDM training field and therefore no CSI. Forbidding 11b on
+the board (`esp_wifi_config_11b_rate`) made the link itself drop, so the fix
+is a stronger signal. Check a placement with:
+
+```powershell
+python firmware\tools\link_check.py --esp 192.168.100.111 --seconds 60
+```
+
+Move the board closer to the router, about 1 m high, with a clear line of
+sight, until it reports `GOOD placement` (RSSI better than about −62 dBm,
+0 pauses). Breathing needs unbroken 30 s stretches. If no placement works,
+use a dedicated ESP32 transmitter
+([upgrade-roadmap.md](../docs/plan/upgrade-roadmap.md), upgrade 2).
 
 ### ESP32-CAM (AI Thinker)
 

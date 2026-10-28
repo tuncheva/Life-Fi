@@ -63,10 +63,19 @@ static void csi_rx_cb(void *ctx, wifi_csi_info_t *info)
 
     csi_packet_t p;
     p.ts_us = esp_timer_get_time();
+    memcpy(p.mac, info->mac, sizeof(p.mac));
     p.rssi = info->rx_ctrl.rssi;
+    p.noise_floor = info->rx_ctrl.noise_floor;
     p.sig_mode = info->rx_ctrl.sig_mode;
+    p.mcs = info->rx_ctrl.mcs;
+    p.cwb = info->rx_ctrl.cwb;
+    p.stbc = info->rx_ctrl.stbc;
+    p.channel = info->rx_ctrl.channel;
+    p.secondary_channel = info->rx_ctrl.secondary_channel;
     p.first_word_invalid = info->first_word_invalid;
-    memcpy(p.lltf, info->buf, sizeof(p.lltf));
+    p.rx_seq = info->rx_seq;
+    p.len = info->len < CSI_BUF_MAX ? info->len : CSI_BUF_MAX;
+    memcpy(p.buf, info->buf, p.len);
 
     s_cnt.received++;
     if (xQueueSend(s_queue, &p, 0) != pdTRUE) {
@@ -81,12 +90,13 @@ esp_err_t csi_capture_start(void)
         ESP_RETURN_ON_FALSE(s_queue != NULL, ESP_ERR_NO_MEM, TAG, "csi queue");
     }
 
-    /* LLTF only, unmerged and unfiltered so subcarriers stay independent
+    /* LLTF for every frame, plus HT-LTF on HT frames for the raw stream;
+     * unmerged and unfiltered so subcarriers stay independent
      * (docs/plan/csi-for-models.md §2.1). Auto-scaling stays on: its
      * per-packet gain is cancelled by normalising every packet. */
     wifi_csi_config_t cfg = {
         .lltf_en = true,
-        .htltf_en = false,
+        .htltf_en = true,
         .stbc_htltf2_en = false,
         .ltf_merge_en = false,
         .channel_filter_en = false,

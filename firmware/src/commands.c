@@ -11,11 +11,17 @@
 #include "sdkconfig.h"
 #include "estimator.h"
 #include "lifefi_config.h"
+#include "stream.h"
 #include "wifi_link.h"
 
 #if CONFIG_ESP_CONSOLE_UART
 #include "driver/uart.h"
+#include "driver/uart_vfs.h"
 #endif
+
+/* Console output is buffered by the UART driver so a burst of USB CSI lines
+ * doesn't stall the CSI task; ~0.4 s at 921600 baud */
+#define CONSOLE_TX_BUFFER 8192
 
 static const char *TAG = "cmd";
 
@@ -24,7 +30,7 @@ static const char *TAG = "cmd";
 static void print_help(void)
 {
     ESP_LOGI(TAG, "commands: cal | learn N (1-%d) | forget | status | wifi <ssid> <password> | "
-                  "wifi clear | help", LIFEFI_MAX_COUNT);
+                  "wifi clear | usbstream | help", LIFEFI_MAX_COUNT);
 }
 
 static void wifi_usage(void)
@@ -133,6 +139,8 @@ void commands_handle_line(char *line)
         estimator_request_status();
     } else if (strcmp(line, "wifi") == 0) {
         cmd_wifi(args);
+    } else if (strcmp(line, "usbstream") == 0) {
+        stream_usb_keepalive();   /* silent: the recorder repeats it every second */
     } else {
         ESP_LOGW(TAG, "unknown command \"%s\"", line);
         print_help();
@@ -167,11 +175,13 @@ static void cmd_task(void *arg)
 void commands_start(void)
 {
 #if CONFIG_ESP_CONSOLE_UART
-    esp_err_t err = uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0);
+    esp_err_t err = uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, CONSOLE_TX_BUFFER, 0,
+                                        NULL, 0);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "serial commands disabled: %s", esp_err_to_name(err));
         return;
     }
+    uart_vfs_dev_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
     xTaskCreate(cmd_task, "cmd", 3072, NULL, 3, NULL);
     print_help();
 #else

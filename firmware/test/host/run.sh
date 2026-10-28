@@ -18,12 +18,15 @@ build test_csi_window "$SRC/csi_window.c"
 build test_estimator "$SRC/estimator.c"
 build test_commands "$SRC/commands.c" "$SRC/estimator.c"
 build test_pipeline "$SRC/csi_window.c" "$SRC/estimator.c"
+build test_csi_frame "$SRC/csi_frame.c"
 
 failed=0
-for t in test_csi_window test_estimator test_commands test_pipeline; do
+for t in test_csi_window test_estimator test_commands test_pipeline test_csi_frame; do
     echo "########## $t"
     ./"$t.exe" "$@" || failed=$((failed + 1))
 done
+echo "########## check_csi_frame.py"
+python3 check_csi_frame.py || python check_csi_frame.py || failed=$((failed + 1))
 echo
 if [ "$failed" -eq 0 ]; then
     echo "ALL HOST TESTS PASSED"
