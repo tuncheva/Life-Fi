@@ -14,6 +14,12 @@ data/
 *.sqlite-journal
 *.log
 
+# public datasets: ~10 GB, re-download with datasets/download.sh
+# (docs/plan/dataset-preparation.md §4.2)
+datasets/raw/
+datasets/interim/
+datasets/processed/
+
 # env
 .env
 .env.*
