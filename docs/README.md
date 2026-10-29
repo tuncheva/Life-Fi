@@ -10,6 +10,7 @@ from; where any other document disagrees with it, plan-v2 wins.
 | [plan-v2.md](plan/plan-v2.md) | **The master plan.** Whole system (firmware, engine, detectors, models, server, dashboard, profiles), decisions, phases and checklists |
 | [csi-for-models.md](plan/csi-for-models.md) | Companion to plan-v2: what the models and detectors need from ESP32 CSI — radio config, buffer layout, preprocessing, quality gates, recordings |
 | [model-scope-and-phases.md](plan/model-scope-and-phases.md) | Model side of plan-v2: which components learn weights, how much data they need, phases and gates |
+| [portal-plan.md](plan/portal-plan.md) | Portal side of plan-v2 (server + dashboard): decisions that differ from plan-v2, mock-data approach, work list |
 | [data-and-recording-guide.md](plan/data-and-recording-guide.md) | What every part (trained or rule) needs, where it comes from (ESP, public data, own recordings), a to-do per part, a Minimum and a Full recording track, and a step-by-step recording tutorial |
 | [dataset-preparation.md](plan/dataset-preparation.md) | What the downloaded public datasets really contain, which model each one feeds, and the cleaning/conversion plan |
 

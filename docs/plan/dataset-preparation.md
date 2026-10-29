@@ -131,7 +131,7 @@ datasets/
   readers/    one module per dataset + shared qc.py (in git)
 ```
 
-Add `datasets/interim/` and `datasets/processed/` to `.gitignore`.
+`raw/`, `interim/` and `processed/` are in the root `.gitignore`.
 
 ### 4.3 Interim format (reader output)
 

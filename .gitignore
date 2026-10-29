@@ -1,2 +1,41 @@
-# Public datasets: ~10 GB, re-download with datasets/download.sh
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# runtime data (recordings, databases, logs)
+data/
+*.csirec
+*.sqlite
+*.sqlite-journal
+*.log
+
+# public datasets: ~10 GB, re-download with datasets/download.sh
+# (docs/plan/dataset-preparation.md §4.2)
 datasets/raw/
+datasets/interim/
+datasets/processed/
+
+# env
+.env
+.env.*
+!.env.example
+!.env.development
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# python (engine / ml, owned by other teammates)
+__pycache__/
+*.pyc
+.venv/
+
+# claude code local settings (launch.json is shared)
+.claude/settings.local.json

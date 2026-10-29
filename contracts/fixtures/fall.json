@@ -1,0 +1,18 @@
+{
+  "type": "result", "v": 2,
+  "ts": 1767225800123, "t_rx_last_us": 1767225800118000,
+  "node": 1, "boot_id": 2913411, "source": "live",
+  "config_hash": "9f3a1c", "pipeline_version": 2,
+  "health": {"rate_hz": 87.5, "loss_udp": 0.005, "loss_air": 0.03,
+             "invalid_ratio": 0.0, "rejected": {"layout": 0, "gain_invalid": 0},
+             "warmup": false},
+  "calibration": {"state": "ok", "id": "cal-0007", "age_s": 512},
+  "presence": {"value": true, "state": "present", "S": 0.55, "B": 0.10, "M": 0.02},
+  "motion": 0.02,
+  "posture": {"label": "unknown", "since": 1767225800000, "src": "transitions"},
+  "count": null,
+  "breathing": {"bpm": null, "confidence": 0.1, "valid": false, "wave": []},
+  "csi": [],
+  "events": [{"id": 42, "type": "fall", "state": "active", "t": 1767225800100, "data": {"peak": 0.93}}],
+  "active": [42]
+}

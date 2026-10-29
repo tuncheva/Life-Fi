@@ -78,7 +78,7 @@ own setup).
 
 | Source | What it gives | What it can never give |
 |---|---|---|
-| **The ESP** | The Wi-Fi signal: 52 measurement points about 88 times per second, with exact timing. Every detector and model reads only this | What actually happened in the room |
+| **The ESP** | The Wi-Fi signal: 52 measurement points about 100 times per second, with exact timing (the current board on the team router gives 100–180 per second, with pauses on a weak link: [upgrade-roadmap](upgrade-roadmap.md)). Every detector and model reads only this | What actually happened in the room |
 | **A person** (button presses) | What happened and when: "sit-down at 12:03:41", "room empty from … to …" | — |
 | **A phone on the chest** (or a breathing belt) | The true breathing, to check our breathing numbers against | — |
 | **Public datasets** | Other people's ESP signal *with* their labels, from other rooms | Our room, our router, our setup, our final results |
@@ -152,7 +152,7 @@ Columns:
 | **Several rooms** | ✅ ≥ 2 | ✅ | ✅ | presence | — | E8 (4), E7 (3), E3 (4), E5 (5) | ≥ 2 rooms | Min |
 | **Several people** | ✅ | ✅ | ✅ | breathing | — | E1 (22), E8 (8), E7 (8) | 2–3 volunteers | Min |
 | **Locked test sessions** | ✅ | ✅ | ✅ | all evaluations | — | never public data | 1–2 sessions, one from an unseen room | Min |
-| **1 person and 2 people, moving** | — | — | ✅ | breathing (turns off with 2+) | ❌ label | none | 5 min per session | Full |
+| **1 person and 2 people, moving** | — | — | ✅ | breathing (turns off with 2+) | ❌ label | WiCount, not checked yet (§4.3) | 5 min per session | Full |
 | **2 people sitting still** | — | — | ✅ | — | ❌ label | none | 3 min per session | Full |
 | **Bed empty / in bed / getting out** | — | — | — | bed exit | ❌ label | none | 2 min, 5 min, 10 exits (Clinic only) | Full |
 | **Normal lesson vs empty classroom** | — | — | — | occupancy | ❌ label | none | one lesson (School only) | Full |
@@ -265,8 +265,14 @@ offset (§5.6).
   only about a third of its files match it. Good for developing code, never
   for proving accuracy.
 
+**Already there:** the estimator itself, `engine/lifefi/breathing.py`
+(with a TypeScript port). Synthetic tests pass, and the first counted
+recording gave 9.2 /min against 10 counted
+([engine README](../../engine/README.md)). Until the phone side exists,
+counting breaths for a minute is the rough reference.
+
 **To do**
-- [ ] [Min] Develop the breathing code on the E1 breathing files that pass
+- [ ] [Min] Run the breathing code on the E1 breathing files that pass
       the quality screen ([dataset-preparation §5](dataset-preparation.md))
       (Phase 3).
 - [ ] [Min] Install phyphox on a phone; check that a chest pocket or snug
@@ -511,11 +517,17 @@ it would be a mix of both.
 like one. It only really works **while people move**.
 
 **Data.** 5 min of 2 people moving and 3 min of 2 people sitting still per
-session, at least 4 sessions with different pairs. **No public data** (the
-ESP32 counting datasets are paid or on request).
+session, at least 4 sessions with different pairs. **Public data:** one
+open candidate, WiCount (ESP32-S3, 52 LLTF subcarriers, ~100 Hz, labels
+0–3, cited in [csi-people-counting.md](../research/csi-people-counting.md)),
+not downloaded or checked yet. The other ESP32 counting datasets are paid
+or on request.
 
 **To do**
 - [ ] [Full] Only if the School page is in the demo and T1 is done.
+- [ ] [Full] Download WiCount and check its format and licence
+      ([dataset-preparation](dataset-preparation.md) style: open the
+      files, not just the page).
 - [ ] [Full] Record the two-people block (§5.8) in every session.
 - [ ] [Full] Train; check it beats guessing while people move.
 
@@ -526,13 +538,14 @@ ESP32 counting datasets are paid or on request).
 ### 5.0 What must exist first
 
 Until these parts of the plan are built, work with the public datasets.
+Status as of 2026-10-29:
 
-| Needed | Plan step |
-|---|---|
-| ESP firmware streaming the signal, laptop saving it to `.csirec` files | plan-v2 Phase 2 |
-| Measurement checklist done (rate ≥ 80 Hz, loss < 5 %, settings frozen) | [csi-for-models §8](csi-for-models.md) |
-| A way to press label buttons: the `label-cli` (Phase 3) or the labelling page (Phase 5) | plan-v2 Phases 3, 5 |
-| `check_session` (checks labels and snaps marks) | plan-v2 Phase 5 |
+| Needed | Plan step | Status |
+|---|---|---|
+| ESP firmware streaming the signal, laptop saving it to `.csirec` files | plan-v2 Phase 2 | **Done**: `firmware/tools/csi_recorder.py` (USB or Wi-Fi) |
+| Measurement checklist done (rate ≥ 80 Hz, loss < 5 %, settings frozen) | [csi-for-models §8](csi-for-models.md) | **Not done.** On a weak link (RSSI around −70) the stream pauses for seconds; check the placement with `firmware/tools/link_check.py` until RSSI is better than −60 and there are 0 pauses |
+| A way to press label buttons: the `label-cli` (Phase 3) or the labelling page (Phase 5) | plan-v2 Phases 3, 5 | **Labelling page done** (`/label` in the dashboard; writes `session.json` and `labels.jsonl`). It records through the engine's `record_start`, so real labelled sessions need the real engine on port 6000; today only the mock engine answers it. `label-cli` not built |
+| `check_session` (checks labels and snaps marks) | plan-v2 Phase 5 | Not built |
 
 **Do not change any ESP or router setting once recording has started.**
 Data recorded with different settings can't simply be mixed.
@@ -541,7 +554,7 @@ Data recorded with different settings can't simply be mixed.
 
 | Item | Why |
 |---|---|
-| ESP32-S3 + our router, fixed channel, settings from csi-for-models §2 | the signal |
+| ESP32 + our router, fixed channel, settings from csi-for-models §2 (today a classic ESP32; plan-v2 assumes an ESP32-S3, and the firmware builds for both) | the signal |
 | Laptop running the recorder and label buttons | saving and labelling |
 | Tape measure, masking tape, phone camera | mark and photograph the placement |
 | **Thick mat** (gym or crash mat) | falls |
@@ -577,12 +590,16 @@ better with a separate operator.
       them crossing where people will sit and lie (for a bed session, the
       line crosses the bed).
 - [ ] Mark both positions with tape; measure distance and height.
+- [ ] Run `firmware/tools/link_check.py` for 60 s: RSSI better than −60
+      and 0 pauses. Otherwise move the board (closer, higher, clear line of
+      sight) and run it again.
 - [ ] Photograph the setup.
-- [ ] Fill in `session.json`: session id, room, placement, distance and
-      height, photo name, code names present, firmware version, ESP
-      settings, router model and channel.
-- [ ] Start the recorder; check on the dashboard the rate is ≥ 80 per
-      second.
+- [ ] Start the session on the labelling page. It writes
+      `data/sessions/<id>/session.json` with session id, room, distance,
+      height, code names present and notes, and adds the firmware and
+      engine versions itself. Put the photo name, ESP settings, router
+      model and channel in the notes.
+- [ ] Check on the dashboard the rate is ≥ 80 per second.
 - [ ] **Don't move anything** until the session ends.
 
 ### 5.4 How labelling works
@@ -592,7 +609,11 @@ There are two kinds of labels:
 | Kind | When | How | Examples |
 |---|---|---|---|
 | **Mark** | an instant event | press the button **when it happens** | `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `breath_hold_start`, `breath_hold_end`, `hard_negative_sit`, `hard_negative_drop`, `hard_negative_liedown` |
-| **Segment** | a state that lasts | press **start** and **stop** | `empty`, `standing`, `sitting`, `lying`, `walking`, `in_bed`, `bed_empty`, `paced_breathing_15`, `breath_hold` (with `count` for 2 people) |
+| **Segment** | a state that lasts | press **start** and **stop** | `empty`, `standing`, `sitting`, `lying`, `walking`, `normal_activity`, `in_bed`, `bed_empty`, `paced_breathing_15`, `breath_hold` (with `count` for 2 people) |
+
+These are the names the labelling page and the recordings API use
+(`contracts/api.md`). Segments never overlap: starting one ends the open
+one.
 
 Tips for the operator:
 - Press at the **moment of the movement** (the body landing on the chair),
@@ -727,10 +748,12 @@ once in a room you've never used.
       segments, every mark snapped to a movement peak. Review the marks it
       lists.
 - [ ] Fix labels while you still remember the session.
-- [ ] Copy the session (`.csirec`, `session.json`, `labels.jsonl`, photo,
-      phone file) to the backup drive.
+- [ ] Copy the session folder `data/sessions/<id>/` (`.csirec`,
+      `session.json`, `labels.jsonl`) plus the photo and phone file to the
+      backup drive.
 - [ ] Add one line to `data/README.md`: session id, date, room, people
-      (code names), blocks done, anything unusual.
+      (code names), blocks done, anything unusual. `data/` is gitignored,
+      so this log is not in git: back it up with the sessions.
 
 ### 5.13 Suggested schedule
 
@@ -758,20 +781,24 @@ once in a room you've never used.
 Everything from §3–§5 in one list, by plan-v2 phase. **R** = a recording
 step.
 
-**Now (no hardware yet)**
+**Now (public data, in parallel with the hardware work)**
 - [ ] [Min] Prepare E1, E4, E8 (dataset-preparation §7).
 - [ ] [Min] Dry runs on public data: transition model on E1, fall features
       on E1 + E8, presence on E4.
 - [ ] [Min] Consent forms, code names, fall technique (§5.2).
 
 **Phase 2: real signal**
-- [ ] [Min] Firmware streaming; measurement checklist done; settings
-      frozen.
+- [x] [Min] Firmware streaming to `.csirec` (`firmware/tools/csi_recorder.py`).
+- [ ] [Min] A placement with no pauses (`link_check.py`); measurement
+      checklist done; settings frozen.
 - [ ] [Min] **R:** start long normal-day runs with a note (§5.9).
 
 **Phase 3: presence, motion, breathing**
-- [ ] [Min] Presence, motion and breathing code, developed on public data.
-- [ ] [Min] `label-cli` for button presses.
+- [ ] [Min] Presence and motion code, developed on public data.
+- [x] [Min] Breathing estimator (`engine/lifefi/breathing.py`); still to
+      run on screened E1 files.
+- [ ] [Min] `label-cli` for button presses (fallback; the labelling page
+      exists).
 - [ ] [Min] Phone side of breathing: phyphox export reader, filter + FFT,
       tap sync.
 - [ ] [Min] **R:** empty room, static states, breathing with the phone,
@@ -788,7 +815,9 @@ step.
       never fainted for lying in bed.
 
 **Phase 5: labelling pipeline**
-- [ ] [Min] Labelling page (or keep `label-cli`), `check_session`.
+- [x] [Min] Labelling page (needs the real engine to record real
+      sessions).
+- [ ] [Min] `check_session`.
 - [ ] [Min] Lock the test sessions in the split config.
 - [ ] [Min] **R:** sessions A1, A2 (Evening 2) and B1 (Evening 3).
 
