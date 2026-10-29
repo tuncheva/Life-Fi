@@ -1,62 +1,43 @@
-# Life-Fi
+# Life-Fi Docs
 
-Camera-free presence, breathing and fall alerts from the Wi-Fi already in the
-room: an ESP32-S3 reads channel state information (CSI), a Python engine turns
-it into conditions, a server turns conditions into alerts, and a dashboard and
-a phone show them.
+Start with [docs/plan/plan-v2.md](docs/plan/plan-v2.md). It is the single plan to build
+from; where any other document disagrees with it, plan-v2 wins.
 
-The plan is [docs/plan/plan-v2.md](docs/plan/plan-v2.md). The docs index is
-[docs/README.md](docs/README.md).
+## firmware/ — code
 
-## Layout
+| Folder | What it is |
+|---|---|
+| [firmware/](firmware/README.md) | ESP32 / ESP32-S3 firmware: CSI capture, presence and people-count estimate on the serial console, raw CSI stream + recorder |
+| [engine/](engine/README.md) | PC processing of recordings: breathing rate (first piece of plan-v2's engine) |
 
-| Folder | What | Status |
-|---|---|---|
-| `contracts/` | The interfaces between components: result schema, control protocol, HTTP/WS API, profiles, fixtures | done, v2 |
-| `server/` | TypeScript (Node 24, Fastify): engine client, REST + WebSocket, alert state machine, watchdog, ntfy, history. Includes a **mock engine** | skeleton running |
-| `ui/` | Next.js 16 dashboard, static export served by the server | skeleton running |
-| `firmware/` | ESP32-S3 CSI capture (C, ESP-IDF) | not started |
-| `engine/` | Python DSP, detectors, models, recording and replay | not started |
-| `ml/` | Training and evaluation | not started |
-| `docs/` | Plans and research | — |
+## docs/plan/ — current, build from these
 
-## Run the portal on mock data
+| Document | What it is for |
+|---|---|
+| [plan-v2.md](docs/plan/plan-v2.md) | **The master plan.** Whole system (firmware, engine, detectors, models, server, dashboard, profiles), decisions, phases and checklists |
+| [csi-for-models.md](docs/plan/csi-for-models.md) | Companion to plan-v2: what the models and detectors need from ESP32 CSI — radio config, buffer layout, preprocessing, quality gates, recordings |
+| [model-scope-and-phases.md](docs/plan/model-scope-and-phases.md) | Model side of plan-v2: which components learn weights, how much data they need, phases and gates |
+| [upgrade-roadmap.md](docs/plan/upgrade-roadmap.md) | Where the hardware stands, upgrades for accuracy (transmitter, more receivers, models), what 3D pose and vital signs realistically need, RuView compared |
 
-Requirements: Node ≥ 22.13 (24 recommended; the server uses the built-in
-`node:sqlite`) and npm. No Python or Java needed for the portal.
+## docs/research/ — evidence the plan is based on
 
-```bash
-npm install
-npm run dev
-```
+| Document | What it is for |
+|---|---|
+| [csi-sufficiency-research.md](docs/research/csi-sufficiency-research.md) | Is ESP32-S3 CSI enough? Hardware limits, model feasibility, audit of the older docs |
+| [training-data-sources.md](docs/research/training-data-sources.md) | Public CSI datasets, rated by fit, mapped to each detector/model |
+| [csi-people-counting.md](docs/research/csi-people-counting.md) | How CSI sensing works, what one ESP32 link can say about head count, and how the firmware estimates it |
 
-That starts three processes: the mock engine on TCP 127.0.0.1:6000, the
-server on http://localhost:8080 and the dashboard dev server on
-http://localhost:3000. Open the dashboard; the `mock:` button bottom-right
-switches scenarios (fall, breath hold, sensor offline, ...).
+## docs/archive/ — superseded by plan-v2, kept as background
 
-Useful on their own:
+| Document | What it was |
+|---|---|
+| [implementation-plan.md](docs/archive/implementation-plan.md) | First code plan (v1): components, data formats, build order |
+| [plan-audit-and-model-research.md](docs/archive/plan-audit-and-model-research.md) | Audit of v1 and first model research |
+| [build-guide.md](docs/archive/build-guide.md) | How each part is built, with parameters, plus a gap list against v1 |
 
-```bash
-npm run dev:mock-engine        # only the mock engine (MOCK_SCENARIO=fall to start in a scenario)
-npm run dev:server             # only the server
-npm run dev:ui                 # only the dashboard
-npm run check:contracts        # fixtures validate against the schema
-npm test                       # server unit tests
-npm run build                  # server to server/dist, dashboard to ui/out
-```
+## Reading order
 
-Production-style: `npm run build`, then `npm start -w server` serves the
-dashboard and the API from one port (8080).
-
-The dashboard PIN for writes defaults to `1234` (`LIFEFI_PIN` or
-`data/settings.json`). Phone notifications need an ntfy topic, set on the
-Settings page. History and alerts live in `data/lifefi.sqlite` (one row per
-5 s, no raw CSI, purged after `retention_days`); recordings and labels go to
-`data/sessions/<id>/`.
-
-## Where the real engine plugs in
-
-The mock engine speaks exactly `contracts/control.md` on TCP 127.0.0.1:6000
-and emits `contracts/results.schema.json`. When the Python engine exists it
-takes that port and nothing in `server/` or `ui/` changes.
+1. `docs/plan/plan-v2.md`
+2. `docs/plan/csi-for-models.md` and `docs/plan/model-scope-and-phases.md` when working on firmware/engine or models
+3. `docs/research/` when you need to know *why* a number or decision is what it is
+4. `docs/archive/` only for history
