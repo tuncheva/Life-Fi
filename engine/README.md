@@ -9,25 +9,52 @@ mock engine in `server/src/mock-engine/`.
 
 ## Run it
 
-```powershell
-.venv\Scripts\pip install -r engine\requirements.txt      # once (ml\requirements.txt has it all)
-.venv\Scripts\python engine\run.py --serial COM3           # the board over USB
-.venv\Scripts\python engine\run.py --esp 192.168.100.111   # the board over Wi-Fi
-.venv\Scripts\python engine\run.py --replay data\demo\fall.csirec   # a recording
-npm run dev:server                                         # then the server and the dashboard,
-npm run dev:ui                                             # NOT `npm run dev` (that starts the mock)
-```
-
-Then, with nobody in the room, start the 2-minute calibration from the
-dashboard (Setup → calibrate). Until it is done, presence only counts
-motion, and the fall rule uses a provisional quiet level.
-
-To try it without the board, make a synthetic recording and replay it
-(the calibration must start within its first ~10 s of empty room):
+One command starts the engine, the server and the dashboard together
+(`scripts/engine.mjs` finds the `.venv` Python):
 
 ```powershell
-.venv\Scripts\python engine\tools\fakesensor.py fall data\demo\fall.csirec   # empty, sitting, fall, breath_hold, leave
+.venv\Scripts\pip install -r engine\requirements.txt   # once (ml\requirements.txt has it all)
+npm run dev:real      # the board on USB: its port is found by itself
+npm run dev:replay    # no board: the synthetic fall recording, looped
+npm run dev           # the mock engine (made-up numbers), as before
 ```
+
+Then open http://localhost:3000.
+
+- **The board:** with nobody in the room, start the 2-minute calibration
+  from the dashboard (Setup → Calibration). Until then presence only counts
+  motion and the fall rule uses a provisional quiet level. The calibration
+  is saved to `data/calibration.json` and used again at the next start
+  (reported as `stale` after 24 h). If the board is unplugged, the
+  dashboard says "Can't read the sensor board" and the engine retries every
+  2 s; plugging it back in recovers.
+- **The replay:** `data/demo/fall.csirec` is made by
+  `engine/tools/fakesensor.py` the first time. The engine calibrates by
+  itself on its first 2 minutes (an empty room), then someone walks in,
+  sits breathing 15 /min, falls at about 3:20 and lies still: the "Possible
+  fall" alarm, then "No movement after a possible fall" 20 s later.
+- **Port 8080 taken** (on the dev PC Apache/httpd uses it): run the server
+  on another port and point the dashboard at it, e.g. in PowerShell
+  `$env:LIFEFI_PORT="8081"; $env:NEXT_PUBLIC_API_URL="http://localhost:8081"; npm run dev:replay`.
+  The `mock`, `replay` and `real` entries in `.claude/launch.json` do this.
+- **Alarm sound:** the dashboard asks once per browser whether it may beep.
+  Urgent alarms then beep every 2 s until someone acknowledges them or
+  presses "Silence beep"; change it under Setup → Alarm sound.
+
+By hand, the engine alone:
+
+```powershell
+.venv\Scripts\python engine\run.py                          # the board over USB, port found by itself
+.venv\Scripts\python engine\run.py --serial COM3            # this port
+.venv\Scripts\python engine\run.py --esp 192.168.100.111    # over Wi-Fi (--esp alone: broadcast)
+.venv\Scripts\python engine\run.py --replay data\demo\fall.csirec --loop --calibrate-at-start
+.venv\Scripts\python engine\tools\fakesensor.py fall data\demo\fall.csirec   # scenarios: empty, sitting, fall, breath_hold, leave
+```
+
+The dashboard's technical section ("Sensor details") also shows the
+movement model's guess (walking, sitting down, …), marked experimental: it
+does worse than a constant guess on people it was not trained on, and no
+alarm uses it.
 
 ## What runs, and where the numbers come from
 
