@@ -101,11 +101,11 @@ class Events:
             self.changes.append({**ev, "state": "active"})
         elif not on and ev is not None:
             del self.active[kind]
-            self.changes.append({"id": ev["id"], "type": kind, "state": "cleared", "t": t_ms, "data": {}})
+            self.changes.append({"id": ev["id"], "type": kind, "state": "cleared", "t": t_ms, "data": data or {}})
 
-    def clear_all(self, t_ms):
+    def clear_all(self, t_ms, data=None):
         for kind in list(self.active):
-            self.set(kind, False, t_ms)
+            self.set(kind, False, t_ms, data)
 
     def pop(self):
         out, self.changes = self.changes, []
@@ -516,7 +516,8 @@ class Engine:
                     return ack(False, error="speed must be > 0")
                 if self.source_hook is not None:
                     self.source_hook(mode, cmd.get("file"), speed, bool(cmd.get("loop")))
-                self.events.clear_all(int(round(now * 1000)))   # they belonged to the old signal
+                # they belonged to the old signal; the reason keeps the dashboard from calling it "all clear"
+                self.events.clear_all(int(round(now * 1000)), {"reason": "source changed"})
                 self.mode = mode
                 self._reset_signal()
                 self.rx.clear()

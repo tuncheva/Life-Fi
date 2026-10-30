@@ -134,7 +134,8 @@ export function roomStatus(input: {
         : status?.server.sensor_offline
           ? (WATCHDOG_TEXT[status.server.sensor_offline] ?? "The sensor is not reporting.")
           : "The sensor is not reporting.";
-    const forHow = age !== null ? ` Last reading ${duration(age)} ago.` : "";
+    // with the board unreadable the engine still ticks, so "last reading" would say "0 s ago"
+    const forHow = age !== null && status?.source.state !== "error" ? ` Last reading ${duration(age)} ago.` : "";
     return { tone: "offline", headline: "We cannot see the room right now", detail: `${why}${forHow} Check the sensor is plugged in.`, ...none };
   }
   if (!result) {

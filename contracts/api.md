@@ -105,7 +105,9 @@ and `error`.
 `notify` is the outcome of the last phone notification attempt (`notified_at`
 is when it was attempted). `data.closed_by` is written on every resolve or
 drop: `cleared by the engine`, `no longer reported by the engine`,
-`engine restarted`, `server restart`, or for server rules `movement seen`,
+`engine restarted`, `source changed` (the engine switched between live and
+replay: the condition is not over, so the dashboard shows no "all clear"),
+`server restart`, or for server rules `movement seen`,
 `room is empty`, `outside the after-hours window`, `sensor stopped reporting`.
 
 Server-emitted events: `sensor_offline` (watchdog: engine disconnected for

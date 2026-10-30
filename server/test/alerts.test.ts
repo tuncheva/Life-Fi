@@ -232,6 +232,13 @@ describe("AlertManager", () => {
     expect(mgr.list()).toHaveLength(1);
   });
 
+  it("an event cleared by a source switch closes as 'source changed', not as an all clear", () => {
+    mgr.onResult(mkResult({ events: [activeEv(1, "fall", T0)], active: [1] }));
+    advance(1000);
+    mgr.onResult(mkResult({ ts: now, events: [{ id: 1, type: "fall", state: "cleared", t: now, data: { reason: "source changed" } }], active: [] }));
+    expect(mgr.get("a-0001")!).toMatchObject({ state: "resolved", data: { closed_by: "source changed" } });
+  });
+
   it("a board reboot (new boot_id) keeps every alert open", () => {
     mgr.onResult(mkResult({ events: [activeEv(1, "fall", T0)], active: [1] }));
     advance(1000);

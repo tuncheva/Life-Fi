@@ -139,7 +139,8 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     for (const ev of r.events) {
       const key: ConditionKey = `e:${ev.id}`;
       if (ev.state === "active") this.raise(key, ev.type, ev.id, ev.t, ev.data);
-      else this.clear(key, ev.t, "cleared by the engine");
+      // a source switch ends the old signal's conditions without them being over: not an "all clear"
+      else this.clear(key, ev.t, (ev.data as { reason?: unknown }).reason === "source changed" ? "source changed" : "cleared by the engine");
     }
     const active = new Set(r.active.map((id) => `e:${id}`));
     for (const [key] of this.byKey) {

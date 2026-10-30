@@ -132,9 +132,9 @@ if "fall" in wanted:
     check(acks and not acks[-1]["ok"], f"speed 0 refused ({acks and acks[-1]['error']})")
     eng.handle({"type": "set_source", "id": 10, "mode": "replay"}, acks.append, now)
     r = eng.tick(now + 0.5)
-    cleared = {e["type"] for e in r["events"] if e["state"] == "cleared"}
+    cleared = {e["type"] for e in r["events"] if e["state"] == "cleared" and e["data"] == {"reason": "source changed"}}
     check(acks[-1]["ok"] and cleared == {"fall", "fainted_suspected"} and r["active"] == [],
-          f"fall and fainted cleared with the old signal ({sorted(cleared)}, active {r['active']})")
+          f"fall and fainted cleared with the old signal, reason given ({sorted(cleared)}, active {r['active']})")
     try:
         for k in range(120):                      # 60 s without frames: used to crash on fall_t = None
             eng.tick(now + 1.0 + 0.5 * k)

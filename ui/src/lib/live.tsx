@@ -170,7 +170,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         } else if (m.type === "alert") {
           // "All clear" only when the condition really ended, not when the engine or sensor went away.
           const closedBy = String(m.alert.data.closed_by ?? "");
-          if (m.alert.state === "resolved" && !/restart|stopped reporting/.test(closedBy)) setCleared((prev) => [m.alert, ...prev.filter((a) => a.id !== m.alert.id)].slice(0, 5));
+          if (m.alert.state === "resolved" && !/restart|stopped reporting|source changed/.test(closedBy)) setCleared((prev) => [m.alert, ...prev.filter((a) => a.id !== m.alert.id)].slice(0, 5));
           setAlerts((prev) => {
             const next = prev.filter((a) => a.id !== m.alert.id);
             if (m.alert.state === "pending" || m.alert.state === "open" || m.alert.state === "acked") next.unshift(m.alert);
