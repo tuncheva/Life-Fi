@@ -17,7 +17,7 @@ def block(cin, cout, k, dilation=1):
 
 
 class CsiNet(nn.Module):
-    def __init__(self, n_classes=7, n_sub=52, width=64):
+    def __init__(self, n_classes=6, n_sub=52, width=64):
         super().__init__()
         self.features = nn.Sequential(
             block(n_sub, 32, 1),                       # mix subcarriers into 32 "virtual paths"

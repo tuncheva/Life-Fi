@@ -130,19 +130,15 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
     const mode = body.mode;
     if (mode !== "live" && mode !== "replay") return fail(reply, 400, "bad_request", "mode must be live or replay");
     if (mode === "replay" && typeof body.file !== "string") return fail(reply, 400, "bad_request", "replay needs a file");
+    const speed = typeof body.speed === "number" ? body.speed : 1;
+    const loop = body.loop === true;
     try {
-      await ctx.engine.send("set_source", { mode });
+      // the engine plays the replay file itself (contracts/control.md set_source)
+      await ctx.engine.send("set_source", mode === "replay" ? { mode, file: body.file, speed, loop } : { mode });
     } catch (err) {
       return engineFail(reply, err);
     }
-    ctx.state.source = {
-      mode,
-      file: mode === "replay" ? (body.file as string) : null,
-      speed: typeof body.speed === "number" ? body.speed : 1,
-      loop: body.loop === true,
-      state: "running",
-    };
-    // TODO(phase 5): start/stop engine/tools/replay here (plan-v2 §7.1 Replay).
+    ctx.state.source = { mode, file: mode === "replay" ? (body.file as string) : null, speed, loop, state: "running" };
     ctx.hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
     return ctx.state.source;
   });

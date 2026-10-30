@@ -1,5 +1,9 @@
 """Adapt CsiNet to a new room (the venue): model-training-plan §6, plan-v2 §6.11.
 
+Not part of the demo (decision 2026-10-30, model-training-plan §0): no own
+recordings, posture is hidden, and the venue setup is the 2-min empty
+calibration only. Kept for the day own recordings exist.
+
     .venv/Scripts/python ml/adapt.py --model ml/models/csinet.pt \
         --free venue/free.csirec \
         [--guided venue/guided.csirec --guided-labels venue/guided_labels.jsonl] \

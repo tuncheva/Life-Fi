@@ -6,6 +6,9 @@ value per subcarrier: which subcarrier moves is a property of the room
 
 Input: model view x [B, 52, 150] (mean removed per subcarrier) and the raw
 window F [B, 52, 150] in dB (for turbulence only).
+
+Training (ml/train_gbm.py) and the live engine import this one file, so
+the GBM sees the same features in both (model-audit B.7).
 """
 
 import numpy as np
@@ -13,6 +16,11 @@ import numpy as np
 FS = 50
 BANDS = [(0.3, 0.7), (0.7, 2.0), (2.0, 10.0), (10.0, 25.0)]
 ENV_BINS = 12
+
+
+def model_view(x):
+    """plan-v2 §5.6: per window, subtract each subcarrier's mean, clip to +-10 dB."""
+    return np.clip(x - x.mean(axis=-1, keepdims=True), -10, 10)
 
 
 def _kurt(a, axis=-1):

@@ -1,16 +1,25 @@
 {
   "windows": 4987,
-  "macro_f1": 0.37276701961943765,
+  "macro_f1": 0.37472584360042466,
+  "transition_f1": 0.13000712671117584,
   "per_class_f1": {
-    "none": 0.927,
-    "walking": 0.884,
-    "sit_down": 0.1,
-    "lie_down": 0.149,
-    "get_up": 0.136,
-    "fall": 0.041
+    "none": 0.926,
+    "walking": 0.882,
+    "sit_down": 0.116,
+    "lie_down": 0.163,
+    "rise": 0.112,
+    "fall": 0.05
   },
   "event_clips": 137,
-  "event_found": 0.139,
+  "event_found": 0.102,
+  "event_top1": 0.168,
+  "event_constant": 0.27,
+  "event_found_per_class": {
+    "fall": 0.0,
+    "lie_down": 0.139,
+    "rise": 0.108,
+    "sit_down": 0.156
+  },
   "quiet_clips": 45,
   "false_event_share": 0.133
 }

@@ -21,11 +21,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import data  # noqa: E402
 import evaluate  # noqa: E402
-from features import window_features  # noqa: E402
+from lifefi.features import window_features  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
 RESULTS = HERE / "results"
 CACHE = data.ROOT / "datasets" / "processed" / "gbm_features.npz"
+FEATURES_PY = data.ROOT / "engine" / "lifefi" / "features.py"
 PARAMS = {"objective": "multiclass", "num_class": len(data.CLASSES), "learning_rate": 0.05,
           "num_leaves": 31, "min_data_in_leaf": 40, "feature_fraction": 0.8, "bagging_fraction": 0.8,
           "bagging_freq": 1, "lambda_l2": 1.0, "verbose": -1}
@@ -35,7 +36,7 @@ ROUNDS = 400
 def _cache_key(d):
     """Changes when the windows, the feature code or the signal pipeline change."""
     h = hashlib.sha256()
-    for f in (HERE / "features.py", HERE / "data.py", data.ROOT / "engine" / "lifefi" / "dsp.py"):
+    for f in (FEATURES_PY, HERE / "data.py", data.ROOT / "engine" / "lifefi" / "dsp.py"):
         h.update(f.read_bytes())
     h.update(np.ascontiguousarray(d["X"][::997]).tobytes())
     h.update(str((len(d["y"]), data.common.dsp.PIPELINE_VERSION)).encode())
@@ -66,6 +67,7 @@ def class_weights(y):
 
 def final(d, X, names, splits):
     """Train on all non-locked windows, score the locked subjects once, save .txt + .onnx."""
+    import onnx
     import onnxmltools
     import onnxruntime as ort
     from onnxmltools.convert.common.data_types import FloatTensorType
@@ -80,6 +82,12 @@ def final(d, X, names, splits):
     model.save_model(str(out / "gbm.txt"))
     onx = onnxmltools.convert_lightgbm(model, initial_types=[("features", FloatTensorType([None, X.shape[1]]))],
                                        zipmap=False, target_opset=15)
+    # plan-v2 §4.6: the engine checks these before it runs the model
+    onnx.helper.set_model_props(onx, {"labels": json.dumps(data.CLASSES), "input_kind": "features",
+                                      "feature_names": json.dumps(names), "window": str(data.WIN),
+                                      "rate_hz": str(data.FS),
+                                      "pipeline_version": str(data.common.dsp.PIPELINE_VERSION),
+                                      "trained_on": json.dumps(["e1", "e8"])})
     (out / "gbm.onnx").write_bytes(onx.SerializeToString())
     sess = ort.InferenceSession(str(out / "gbm.onnx"), providers=["CPUExecutionProvider"])
     probe = X[::997].astype(np.float32)

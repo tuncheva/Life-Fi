@@ -317,9 +317,15 @@ without that comparison.
 | C.13 cache | feature cache keyed on a hash of the code and windows | — |
 | D.15 / D.16 | `ml/models/` gitignored, `weights_only=True`, `ml/requirements.txt`, Python tests in CI | — |
 | D.17 / D.18 | `docs/models.md`: attribution, limits, consent and data rules | consent form text |
-| A.2, A.3, B.5 | plan §6, §9 wording corrected | need rooms A and B |
-| B.7 GBM port | `ml/gbm_vectors.py` → `ml/models/gbm_vectors.json` (12 windows: F, 53 features, probabilities) | the engine port itself |
+| A.2, A.3, B.5 | plan §6, §9 wording corrected | **not done: decision 2026-10-30** (no rooms A / B). Posture is hidden; venue = calibration only |
+| B.7 GBM port | `ml/gbm_vectors.py` → `ml/models/gbm_vectors.json`; the engine is Python and imports the same `engine/lifefi/features.py` (`test_features_vectors.py`, 1e-7) | **closed** (2026-10-30) |
+| A.4 fall rule (update) | public-data thresholds in `rules.yaml` (`ml/tune_fall.py`): a false-alarm guard; no public fall passes the full rule | **not validated**; the team chose no board test for now |
 | C.11, C.14 | — | C.11 needs the paper; C.14 not worth it |
+
+Update 2026-10-30: the team decided to use only the downloaded data
+(model-training-plan §0). Everything in this audit that waits on rooms A
+/ B or own recordings (A.2, A.3, A.4's recall, B.5's fix, B.6's real
+label file, C.9's chest reference) stays open by that decision.
 
 ## Fix order for the 7 days left
 

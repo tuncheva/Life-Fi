@@ -11,19 +11,27 @@ happens in the engine's state machine, not here.
 The five stage-1 numbers of plan-v2 §6.5 are returned with every candidate
 so a verifier (T2) can be trained on them later.
 
-The default thresholds are placeholders [H]. Public data cannot set them
-(checked 2026-10-29, ml/tune_fall.py, ml/results/fall_stage1.json):
-- E8 fall impacts (45-170x the quiet level) overlap walking and jumping
-  (up to ~230x): with <= 10 % of other clips flagged, stage 1 alone finds
-  ~7 % of the falls; and E8 subjects move again right after falling, so
-  stage 2 (stillness) cannot be tested on it;
-- E1 falls are gentler than E1's own sit-downs.
-What separates a fall is impact *then lying still*, which only our mat
-falls show. Set t_fall = P99.9 of M / baseline over our walking and
-sit-downs (plan-v2 §6.5), and t_still from the stillness after our falls:
-ml/tune_fall_own.py does both. Until then the defaults below are guesses,
-and the best E8 setting caught 36 % of falls with 19 % of other clips
-flagged (ml/results/fall_rule.json): do not demo the rule as tested.
+The defaults come from the downloaded data only (decision 2026-10-30, no
+own mat falls; ml/tune_fall.py, ml/results/fall_rule.json), and **no
+public fall set shows that they work**:
+- the impact size in units of the quiet level depends on the dataset
+  (median fall peak 187x in E8, 31x in E15, 7x in E1, 3x in E9), and
+  inside E9 (ESP32-S3) it barely separates falls from other movement;
+- in no public set do people lie still after falling, so stage 2 is
+  never met by their falls (E8 2.5 %, E9 0 %, E15 0 % of falls pass the
+  full rule).
+So T_FALL guards against false alarms instead: P95 of the impact peak of
+E1's sit-downs, lie-downs, get-ups and walks (ESP32, HT20, 50 Hz: the
+set closest to our chain); the full rule fires on 0.4 % of those clips,
+but on 30 % of E8's ordinary movements (more often than on E8's falls),
+so how often it false-alarms depends on the set too.
+T_STILL is from E4: P95 of M / baseline while a person sits or lies
+still, x 1.2, so lying still after a fall passes. A staged fall on our
+board must exceed T_FALL x the empty room's quiet level and then stay
+still for STILL_S; whether a real one does is untested. A hard sit-down
+followed by sitting still can still fire it (plan-v2 §6.5). Say "demo"
+when showing it. ml/tune_fall_own.py sets both from own recordings, if
+any are ever made.
 """
 
 from dataclasses import dataclass
@@ -33,9 +41,9 @@ import numpy as np
 from . import motion as motion_mod
 
 FS = motion_mod.FS
-T_FALL = 80.0        # [H] placeholder, NOT tuned: E8 cannot set it (module doc); set from ml/tune_fall_own.py
+T_FALL = 40.0        # P95 of E1 non-fall impact peaks (module doc); a false-alarm guard, recall unknown
 RATIO = 4.0          # plan-v2
-T_STILL = 10.0       # [H] placeholder, NOT tuned; set from ml/tune_fall_own.py
+T_STILL = 4.5        # E4: P95 of a still person's M / baseline (3.75) x 1.2
 STILL_S = 3.0        # plan-v2
 BURST_S = (0.3, 2.0)
 
@@ -58,8 +66,9 @@ def baseline_quiet(M):
     return max(float(np.percentile(M[int(FS):], 10)), 1e-6)
 
 
-def detect(F, baseline, t_fall=T_FALL, ratio=RATIO, t_still=T_STILL, still_s=STILL_S):
-    M = motion_mod.motion(F) / baseline
+def detect(F, baseline, t_fall=T_FALL, ratio=RATIO, t_still=T_STILL, still_s=STILL_S, M=None):
+    """Candidates in one continuous segment F [T, 52]; M = lifefi.motion.motion(F) if already computed."""
+    M = (motion_mod.motion(F) if M is None else M) / baseline
     n = len(M)
     out = []
     i = int(FS)

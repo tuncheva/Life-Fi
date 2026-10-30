@@ -1,6 +1,7 @@
 """Convert public datasets into the processed store (datasets/processed/<id>.npz).
 
-    python datasets/readers/build.py e1 e8
+    python datasets/readers/build.py e1 e8          # movement model
+    python datasets/readers/build.py e15 e9         # fall rule (e9: evaluation only, needs h5py)
 
 Prints a QC summary per dataset; every dropped recording is listed with
 its reason in datasets/manifest/<id>.csv.
@@ -15,8 +16,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import common  # noqa: E402
 import e1  # noqa: E402
 import e8  # noqa: E402
+import e9  # noqa: E402
+import e15  # noqa: E402
 
-READERS = {"e1": e1, "e8": e8}
+READERS = {"e1": e1, "e8": e8, "e9": e9, "e15": e15}
 
 
 def main():

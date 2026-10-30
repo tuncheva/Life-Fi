@@ -42,6 +42,8 @@ function handle(cmd: Record<string, unknown>): string {
     case "calibrate": {
       const kind = cmd.kind ?? "empty";
       const duration = typeof cmd.duration_s === "number" ? cmd.duration_s : 120;
+      // as the real engine (engine/lifefi/calibration.py MIN_S)
+      if (duration < 60) return ack(id, false, {}, `calibration needs at least 60 s, got ${duration}`);
       if (kind === "empty" && sim.currentMotion() > 0.1) return ack(id, false, {}, "motion seen during calibration");
       // The real engine acks when the calibration finishes. We do the same.
       log("calibration started", { kind, duration_s: duration });

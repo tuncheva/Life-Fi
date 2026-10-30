@@ -10,10 +10,10 @@ import { friendlyError, usePin } from "@/lib/pin";
 import { calibrationText, clock } from "@/lib/words";
 import { Card, Icon, Notice, Pill, btn } from "@/components/ui";
 
+// The engine refuses anything shorter than 60 s (engine/lifefi/calibration.py MIN_S).
 const DURATIONS = [
   { s: 120, label: "2 min", note: "the real one" },
-  { s: 30, label: "30 s", note: "quick check" },
-  { s: 10, label: "10 s", note: "demo only" },
+  { s: 60, label: "1 min", note: "quick check" },
 ];
 
 function Step({ n, done, children }: { n: number; done?: boolean; children: React.ReactNode }) {

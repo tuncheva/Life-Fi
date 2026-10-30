@@ -1,8 +1,57 @@
 # Life-Fi engine (PC side)
 
-Processing of raw CSI recordings on the PC. This is the start of plan-v2's
-`engine/` component (§3.1). Recordings come from
-`firmware/tools/csi_recorder.py` (`.csirec`). Needs Python 3 and numpy.
+The engine reads the board's CSI live (or replays a `.csirec`), turns it
+into the same 50 Hz signal the models were trained on, runs the rules and
+the movement model every 0.5 s, and sends one result to the server on TCP
+127.0.0.1:6000 ([contracts/control.md](../contracts/control.md),
+[results.schema.json](../contracts/results.schema.json)). It replaces the
+mock engine in `server/src/mock-engine/`.
+
+## Run it
+
+```powershell
+.venv\Scripts\pip install -r engine\requirements.txt      # once (ml\requirements.txt has it all)
+.venv\Scripts\python engine\run.py --serial COM3           # the board over USB
+.venv\Scripts\python engine\run.py --esp 192.168.100.111   # the board over Wi-Fi
+.venv\Scripts\python engine\run.py --replay data\demo\fall.csirec   # a recording
+npm run dev:server                                         # then the server and the dashboard,
+npm run dev:ui                                             # NOT `npm run dev` (that starts the mock)
+```
+
+Then, with nobody in the room, start the 2-minute calibration from the
+dashboard (Setup → calibrate). Until it is done, presence only counts
+motion, and the fall rule uses a provisional quiet level.
+
+To try it without the board, make a synthetic recording and replay it
+(the calibration must start within its first ~10 s of empty room):
+
+```powershell
+.venv\Scripts\python engine\tools\fakesensor.py fall data\demo\fall.csirec   # empty, sitting, fall, breath_hold, leave
+```
+
+## What runs, and where the numbers come from
+
+Every threshold is in [config/rules.yaml](config/rules.yaml), with where
+it comes from next to it. All of them are set from downloaded public data
+only (decision 2026-10-30, [docs/models.md](../docs/models.md)).
+
+| Output | Code | State |
+|---|---|---|
+| Signal F (50 Hz, dB) | [lifefi/live.py](lifefi/live.py) on [lifefi/dsp.py](lifefi/dsp.py) | the training pipeline's code; live F equals an offline run (`tests/test_live.py`) |
+| Motion 0-1 | [lifefi/motion.py](lifefi/motion.py), `presence.motion_level` | 0.1 = presence's "someone moved" = the server's `MOTION_ON` |
+| Presence | [lifefi/presence.py](lifefi/presence.py), [lifefi/calibration.py](lifefi/calibration.py) | checked on E4; leaving the room only on synthetic data |
+| Breathing rate | [lifefi/breathing.py](lifefi/breathing.py) | gates checked on E1 |
+| Breathing stopped | [lifefi/apnea.py](lifefi/apnea.py) | 0 false alerts on E1; latency from synthetic holds only |
+| Fall → fainted | [lifefi/fall.py](lifefi/fall.py) | **not validated**: no public fall passes it; thresholds are a false-alarm guard |
+| Movement model, posture | [lifefi/models.py](lifefi/models.py), [lifefi/posture.py](lifefi/posture.py) | runs, but posture is hidden (`posture.publish: false`) |
+
+Tests (no board, no datasets): `tests/test_live.py`, `test_presence.py`,
+`test_apnea.py`, `test_posture.py`, `test_engine.py` (the whole engine on
+the five synthetic scenarios, every result checked against the schema),
+`test_control.py` (the TCP protocol). `test_features_vectors.py` needs
+`ml/models/`.
+
+## Offline tools
 
 | Path | What |
 |---|---|

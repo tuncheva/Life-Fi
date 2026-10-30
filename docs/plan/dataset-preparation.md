@@ -330,7 +330,7 @@ postures from their motion energy before they are labelled `stand_up`
 | 6.1 | **E8 activity numbering**: README (1 run, 2 fall, …) vs model code (… 7 fall) vs CSV `taget` tags | Read the paper (Wen et al., Ad Hoc Networks 2026); check the fall clips have a burst then stillness (`M` profile per Z); if still unclear, email the authors | All E8 use |
 | 6.2 | **E3 per-chip bin order** (s3/esp32 raw vs c3/c5/c6 centred) | Read the ESPectre firmware/collector source on GitHub (not in the sparse checkout); confirm with the null pattern | E3 |
 | 6.3 | **52-sc order** in E2/E7/E8 (idx 0…25 = k −26…−1?) | ESP-IDF docs for 104-byte exports; check the DC dip/decorrelation between idx 25 and 26 on all three | E2, E7, E8 |
-| 6.4 | **E9 sampling rate** | CSI-Bench paper/README (the files have no time) | E9 |
+| 6.4 | **E9 sampling rate** — **settled 2026-10-30**: 100 Hz, 5 s samples (CSI-Bench paper, arXiv 2505.21866 §3.2, §4.2); `datasets/readers/e9.py` | CSI-Bench paper/README (the files have no time) | E9 |
 | 6.5 | E2 *stand* and E7 *standing*: transition or posture? | `M` profile per clip | Label map |
 | 6.6 | E1 breathing: how many files pass the screen | §5 E1 step 6 | Breathing tuning |
 

@@ -3,7 +3,8 @@
     .venv/Scripts/python ml/gbm_vectors.py          # -> ml/models/gbm_vectors.json
 
 gbm.onnx takes 53 features, not F: an engine that computes them itself
-must reproduce ml/features.py. This writes N windows from the processed
+must reproduce engine/lifefi/features.py (the Python engine imports it,
+so this is its regression test). This writes N windows from the processed
 public data (one per class where possible) with, for each, the raw window
 F [52][150] (dB), the 53 features and the class probabilities of
 gbm.txt. A port is right when it gives the same features (|diff| <= 1e-3
@@ -21,7 +22,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import data  # noqa: E402
-from features import window_features  # noqa: E402
+from lifefi.features import window_features  # noqa: E402
 
 N_PER_CLASS = 2
 

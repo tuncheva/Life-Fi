@@ -11,3 +11,6 @@ onnx==1.23.2
 onnxmltools==1.16.0
 onnxruntime==1.31.1
 PyYAML==6.0.3
+h5py==3.16.0          # datasets/readers/e9.py (CSI-Bench .h5)
+pyserial==3.5         # engine/run.py --serial
+jsonschema==4.26.0    # engine/tests

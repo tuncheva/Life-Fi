@@ -13,7 +13,9 @@ from; where any other document disagrees with it, plan-v2 wins.
 | [portal-plan.md](plan/portal-plan.md) | Portal side of plan-v2 (server + dashboard): decisions that differ from plan-v2, mock-data approach, work list |
 | [data-and-recording-guide.md](plan/data-and-recording-guide.md) | What every part (trained or rule) needs, where it comes from (ESP, public data, own recordings), a to-do per part, a Minimum and a Full recording track, and a step-by-step recording tutorial |
 | [dataset-preparation.md](plan/dataset-preparation.md) | What the downloaded public datasets really contain, which model each one feeds, and the cleaning/conversion plan |
-| [model-training-plan.md](plan/model-training-plan.md) | The one-week cut for demo day: model code status, networks, room generalisation, what to record before and at the venue, day plan |
+| [model-training-plan.md](plan/model-training-plan.md) | The one-week cut for demo day. §0: the 2026-10-30 decision (downloaded data only); §10: what was built and measured under it |
+| [model-audit.md](plan/model-audit.md) | Audit of the model and dataset work (2026-10-29), with the status of each finding |
+| [models.md](models.md) (in `docs/`) | **Model card**: the trained models and the engine's rules, the data and licences behind them, the numbers, and the limits |
 
 ## research/ — evidence the plan is based on
 

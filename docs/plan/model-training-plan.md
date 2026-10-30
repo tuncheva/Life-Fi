@@ -21,6 +21,27 @@ Tags: **[V]** checked in the files or the code on 2026-10-29,
 
 ---
 
+## 0. Decision 2026-10-30: downloaded data only
+
+The team decided the models use **only the downloaded public datasets**.
+No own recording sessions (R1–R7, rooms A / B) will be made. What follows
+from it, also decided that day:
+
+| Topic | Before | Now |
+|---|---|---|
+| `stand_up` | learned from our R4 sessions | merged with `get_up` into one class `rise` (§2.3 fallback) |
+| Posture in the demo | only if room B (R6) beats a constant guess | **hidden**: the engine runs it, results carry `posture: null` (`rules.yaml` `posture.publish`) |
+| Venue setup (§6) | calibration + free movement + guided reps + check run | **the 2-min empty calibration only**; `ml/adapt.py` is not used |
+| Fall thresholds | from our mat falls (R5) | from public data: a false-alarm guard, **not validated** (§10.2); no board test for now |
+| `no_breathing` | tuned on our breath-holds (R3) | plan-v2 rule, settings moved to cut false alerts on E1 (§10.3) |
+| Presence thresholds | from our empty / still sessions (R1) | multipliers from E4, absolute levels from the venue calibration (§10.3) |
+
+So §5 (own recordings), §6 steps 3–5 and the day plan in §7 are
+**superseded**; they stay below for the record. §10 has what was built
+and measured under the decision. docs/models.md is the short version.
+
+---
+
 ## 1. Where the code is today
 
 | Piece | Needed for models | State [V] |
@@ -366,6 +387,8 @@ weak T1 in the new room can never block a fall or breathing alert.
 
 ## 5. What we record ourselves before the event
 
+> **Superseded (§0):** no own recordings will be made.
+
 Real sessions need our hardware in a usable state first: RSSI better than
 −60 and 0 pauses in `link_check.py`, ≥ 80 Hz. Until the real engine
 exists, record with `csi_recorder.py` and write labels with a tiny script
@@ -408,6 +431,12 @@ it is a real preview of the venue.
 
 ## 6. At the venue: what we record and how
 
+> **Changed (§0):** the venue setup is steps 0–2 (router, placement,
+> 2-min empty calibration from the dashboard) plus a short live check
+> that presence and breathing respond. Steps 3–5 (AdaBN, guided reps,
+> check run) are dropped with posture. Nothing at the venue tunes a
+> threshold.
+
 The demo room is new to the models. The protocol turns it into a known
 room in **~15 minutes**, before the audience arrives. Everything here uses
 code that must be ready and rehearsed by Wed 2026-11-04.
@@ -445,6 +474,9 @@ show it (model-audit A.3). Skip step 3 if time is short, never step 4.
 ---
 
 ## 7. Day plan
+
+> **Superseded (§0):** the recording evenings are gone; §10.5 has what is
+> left before 11-05.
 
 | Day | Model / data work | Recording |
 |---|---|---|
@@ -490,7 +522,7 @@ re-runs in seconds to minutes.
 | Fixed splits (written before training) | `datasets/manifest/splits.yml` | — |
 | Windows, labels, folds | `ml/data.py` | — |
 | Simple model (LightGBM) | `ml/features.py`, `ml/train_gbm.py` | `.venv/Scripts/python ml/train_gbm.py [--final]` |
-| Neural network (CsiNet, 58,535 weights) | `ml/model.py`, `ml/train_cnn.py` | `.venv/Scripts/python ml/train_cnn.py [--final]` |
+| Neural network (CsiNet, 58,406 weights) | `ml/model.py`, `ml/train_cnn.py` | `.venv/Scripts/python ml/train_cnn.py [--final]` |
 | ONNX export (model view + softmax inside the graph) | `ml/export.py` | `.venv/Scripts/python ml/export.py ml/models/csinet.pt` |
 | Our recordings → windows (marks snapped ± 1.5 s) | `ml/own.py` | used by `adapt.py` |
 | Venue adaptation (AdaBN, head fine-tune, keep/reject, export) | `ml/adapt.py` | see its docstring; **not run on real data yet** |
@@ -574,6 +606,8 @@ that is a suggestion until rooms A and B test it on transitions.
 
 ### 9.5 What tomorrow's recordings must cover first
 
+> **Superseded (§0):** no recordings; §10 replaces this list.
+
 1. **Mat falls with 10 s lying still** + hard sit-downs / dropped bag: the
    only data that can set the fall rule.
 2. **Transition reps in rooms A and B**, especially `stand_up` (no public
@@ -585,3 +619,82 @@ that is a suggestion until rooms A and B test it on transitions.
 
 Then: `python engine/tools/inventory.py` on the files, label them, and
 re-run `ml/train_gbm.py` / `ml/train_cnn.py` with our sessions added.
+
+---
+
+## 10. Built and measured under the decision (2026-10-30)
+
+Everything here uses the downloaded data only (§0). Development numbers
+on other people's data, never Life-Fi accuracy.
+
+### 10.1 What was built
+
+| Piece | File | Check |
+|---|---|---|
+| `rise` class, retrained GBM + CNN, ONNX with metadata | `ml/data.py`, `ml/evaluate.py`, `ml/export.py`, `ml/train_gbm.py` | `ml/results/gbm*.json`, `cnn*.json` |
+| GBM features shared by training and engine | `engine/lifefi/features.py` (moved from `ml/`) | `engine/tests/test_features_vectors.py` (1e-7) |
+| Readers for the fall sets | `datasets/readers/e15.py`, `e9.py` (E9: needs h5py, eval only) | `datasets/manifest/e15*.csv`, `e9*.csv`: 25 / 494 files kept |
+| Fall-rule thresholds | `ml/tune_fall.py` → `engine/config/rules.yaml` | `ml/results/fall_rule.json` |
+| Presence, calibration, motion 0-1 | `engine/lifefi/presence.py`, `calibration.py` | `ml/check_presence.py` → `presence_e4.json`; `engine/tests/test_presence.py` |
+| `no_breathing` | `engine/lifefi/apnea.py` | `ml/check_apnea.py` → `apnea_e1.json`; `engine/tests/test_apnea.py` |
+| Posture | `engine/lifefi/posture.py` (hidden) | `engine/tests/test_posture.py` |
+| **The engine** (replaces the mock on TCP 6000) | `engine/run.py`, `engine/lifefi/{live,engine,control,sources,models}.py`, `engine/config/rules.yaml` | `test_live.py` (live F = offline F), `test_engine.py` (5 synthetic scenarios, every result against the schema), `test_control.py` (TCP) |
+| Synthetic recordings | `engine/tools/fakesensor.py` (`lifefi/synth.py`) | used by the tests and for dashboard dry runs; never for training |
+
+### 10.2 Fall rule
+
+| | E8 | E15 | E1 | E9 (held out) |
+|---|---|---|---|---|
+| Median fall peak / quiet level | 187× | 31× | 7× (FA) | 3× |
+| Full rule fires on falls | 2.5 % | 0 % | — | 0 % |
+| Full rule fires on other movement | 30 % | 0 % | **0.4 %** | 0.5 % |
+
+The impact size depends on each set's noise floor, and no public set
+shows people lying still after a fall. So nothing public can set the rule
+for our board. Chosen: `t_fall` 40× = P95 of E1's ordinary movements (a
+false-alarm guard), `ratio` 4 (plan-v2), `t_still` 4.5 = P95 of E4's still
+people × 1.2. The team decided not to test it on the board for now; it is
+shown as a demo, untested.
+
+### 10.3 Presence, breathing stopped
+
+- **Presence** (E4, `presence_e4.json`): the fall baseline (P10 of M) of a
+  still person is 0.7–1.7× the empty calibration's, so clip-tuned
+  thresholds carry over. From a 2-min calibration, breathing energy finds
+  a still person in 67–76 % of 30 s windows, 0–2.6 % of empty windows
+  flagged (held-out days). Replay of the state machine over all of E4:
+  empty recordings never PRESENT, people PRESENT ~2 s after walking in
+  and to the end. Changes from plan-v2 §6.1: B can start presence; S is
+  not used; the exit needs B low on 90 % (not 100 %) of the 60 s after a
+  walk-out (an empty room is above its own P95 5 % of the time).
+- **Motion 0-1**: 0.1 at presence's motion threshold (the server's
+  `MOTION_ON`), 0.9 at 50× it. E4: empty and still read 0, walking peaks
+  at 0.65–0.72.
+- **`no_breathing`** (`apnea_e1.json`): the rule was armed (able to fire)
+  for 0.47 h of E1's 3.3 h of normal breathing, in 22 of 66 files. There
+  plan-v2's 12 s / prominence 0.4 gave 2 false alerts (4.3 per armed hour);
+  15 s / 0.25 gave 0 and still caught every synthetic 25 s hold ~15 s after the last
+  breath (picked and scored on the same files). It is armed only by
+  breathing seen since the person last moved, so walking out is not a
+  breath-hold (found by the engine's "leave" scenario).
+
+### 10.4 Engine on synthetic scenarios (`engine/tests/test_engine.py`)
+
+| Scenario | Result |
+|---|---|
+| empty | EMPTY throughout, motion < 0.1, no events |
+| sitting | PRESENT 1.5 s after walking in; breathing 15 /min shown |
+| fall (impact at 200 s) | `fall` at 205 s, `fainted_suspected` at 224.5 s |
+| breath_hold (200–225 s) | `no_breathing` at 214.5 s, cleared after breathing resumes |
+| leave (walks out at 205 s) | EMPTY again at 297 s, no events |
+
+Synthetic signals check the logic and the plumbing, not accuracy.
+
+### 10.5 Left before 11-05
+
+1. Run the engine with the board (`engine/run.py --serial COMx`), the
+   server and the dashboard; do the 2-min calibration; check presence and
+   breathing respond.
+2. Venue rehearsal with the reduced §6 protocol, with a stopwatch.
+3. Pitch wording: "demo, not a medical device" for fall / fainted /
+   breathing stopped; no public-data number as Life-Fi accuracy.

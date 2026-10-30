@@ -18,7 +18,7 @@ Assumes one person, still, near the link (plan-v2 §13). Not a medical
 device.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -43,6 +43,8 @@ class BreathWindow:
     acf_bpm: float
     valid: bool
     reason: str           # why not valid ("" when valid)
+    top: tuple = ()       # the TOP_SUBCARRIERS used
+    v: np.ndarray = field(default=None, repr=False)   # [52] PC1 direction, zero outside `top` (lifefi.apnea freezes it)
 
 
 def _features(csi):
@@ -162,8 +164,10 @@ def estimate_breathing(ts_us, csi):
                 reasons.append("FFT/ACF disagree")
             if _drift_at_edge(seg[:, top] @ vt[0], peak):
                 reasons.append("drift at band edge")
+            v = np.zeros(x.shape[1])
+            v[top] = vt[0]
             out.append(BreathWindow(float(grid[w0]), bpm, conf, band_ratio, acf_bpm,
-                                    not reasons, "; ".join(reasons)))
+                                    not reasons, "; ".join(reasons), tuple(int(i) for i in top), v))
     return out
 
 

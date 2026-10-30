@@ -68,8 +68,9 @@ def _segment_bounds(t):
     return list(zip(np.r_[0, cuts + 1], np.r_[cuts + 1, len(t)]))
 
 
-def _resample(t, L):
-    grid = np.arange(t[0], t[-1], 1.0 / GRID_HZ)
+def _resample(t, L, origin=None):
+    start = t[0] if origin is None else origin + np.ceil((t[0] - origin) * FS - 1e-9) / FS
+    grid = np.arange(start, t[-1], 1.0 / GRID_HZ)
     X = np.empty((len(grid), L.shape[1]), dtype=np.float64)
     for i in range(L.shape[1]):
         X[:, i] = np.interp(grid, t, L[:, i])
@@ -82,8 +83,13 @@ def _resample(t, L):
     return grid, X.astype(np.float32), valid
 
 
-def to_features(t_s, amp):
-    """List of Segments (>= MIN_SEGMENT_S each) from times [N] s and linear amplitude [N, 52]."""
+def to_features(t_s, amp, origin=None):
+    """List of Segments (>= MIN_SEGMENT_S each) from times [N] s and linear amplitude [N, 52].
+
+    origin=None starts each segment's grid at its first packet (training, the
+    processed store). With an origin, the 50 Hz grid sits on origin + k / FS,
+    so the live engine (lifefi.live), which re-runs this on a sliding buffer,
+    gets the same sample times on every call."""
     t_s = np.asarray(t_s, dtype=np.float64)
     order = np.argsort(t_s, kind="stable")
     t_s, amp = t_s[order], np.asarray(amp)[order]
@@ -93,6 +99,6 @@ def to_features(t_s, amp):
     for a, b in _segment_bounds(t_s):
         if t_s[b - 1] - t_s[a] < MIN_SEGMENT_S:
             continue
-        grid, F, valid = _resample(t_s[a:b], L[a:b])
+        grid, F, valid = _resample(t_s[a:b], L[a:b], origin)
         out.append(Segment(grid, F, valid))
     return out

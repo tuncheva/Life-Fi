@@ -6,10 +6,15 @@ The data lives in `raw/` (about 10 GB unpacked) and is **gitignored**.
 To get it again on another machine, run `bash datasets/download.sh`, then
 `python datasets/fetch_csibench_esp32.py` for E9 (needs a Kaggle token).
 
-IDs (E1, E2, …) match the summary table in the research doc. None of these
-replaces our own recordings: use them for pretraining, dry runs and
-threshold starting points, and never report their accuracy as Life-Fi
-accuracy.
+IDs (E1, E2, …) match the summary table in the research doc. Since
+2026-10-30 these are the **only** data the models and thresholds use (no
+own recordings: model-training-plan §0; which set feeds what is in
+[docs/models.md](../docs/models.md)). They are still not our board or our
+rooms: never report their accuracy as Life-Fi accuracy.
+
+The processed stores in `processed/` are rebuilt with
+`python datasets/readers/build.py e1 e8` (movement model) and
+`build.py e15 e9` (fall-rule check; E9 needs h5py and is evaluation only).
 
 What the files really contain, the cleaning plan and the splits are in
 [dataset-preparation.md](../docs/plan/dataset-preparation.md). Where that

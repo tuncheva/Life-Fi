@@ -10,7 +10,8 @@ event time the public data uses (ml.data). A mark with no clear peak
 nearby is reported and its windows are ignored.
 
 Window labels:
-- marks sit_down, stand_up, lie_down, get_up, fall -> that class;
+- marks sit_down, lie_down, fall -> that class; stand_up and get_up ->
+  `rise` (one model class, ml.data);
   hard_negative_sit -> sit_down, hard_negative_liedown -> lie_down (they
   *are* those transitions; they are negatives for the fall rule only);
   hard_negative_drop and other hard negatives -> none;
@@ -40,7 +41,7 @@ from csi_recorder import load_csirec  # noqa: E402
 
 dsp = data.common.dsp
 SNAP_S = 1.5
-MARK_CLASS = {"sit_down": "sit_down", "stand_up": "stand_up", "lie_down": "lie_down", "get_up": "get_up",
+MARK_CLASS = {"sit_down": "sit_down", "stand_up": "rise", "lie_down": "lie_down", "get_up": "rise",
               "fall": "fall", "hard_negative_sit": "sit_down", "hard_negative_liedown": "lie_down"}
 SEGMENT_CLASS = {"walking": "walking", "empty": "none", "standing": "none", "sitting": "none", "lying": "none",
                  "normal_activity": "none", "in_bed": "none", "bed_empty": "none"}

@@ -1,8 +1,8 @@
 """Scores for one test fold, shared by the GBM and the CNN.
 
 - window macro-F1 over the classes that occur in the fold's test windows,
-  and `transition_f1`: the same over sit_down / stand_up / lie_down /
-  get_up only (None when the fold has none, e.g. the E8 rooms). Choose
+  and `transition_f1`: the same over sit_down / lie_down / rise only
+  (None when the fold has none, e.g. the E8 rooms). Choose
   the transition model on `transition_f1`, never on `macro_f1`, which in
   the E8 rooms is only none / walking / fall (model-audit A.1);
 - clip-level: an event clip (located) is `event_found` when its most
@@ -25,8 +25,8 @@ from sklearn.metrics import f1_score
 
 from data import CLASSES, IGNORE
 
-EVENT = [CLASSES.index(c) for c in ("sit_down", "stand_up", "lie_down", "get_up", "fall")]
-TRANSITION = [CLASSES.index(c) for c in ("sit_down", "stand_up", "lie_down", "get_up")]
+EVENT = [CLASSES.index(c) for c in ("sit_down", "lie_down", "rise", "fall")]
+TRANSITION = [CLASSES.index(c) for c in ("sit_down", "lie_down", "rise")]
 EVENT_P = 0.5
 
 

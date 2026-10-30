@@ -1,0 +1,54 @@
+# Every threshold the engine's rules use (plan-v2 design rule 6). The engine
+# reads this file at start and on `reload_rules`; its hash, together with
+# contracts/profiles.yml, is the `config_hash` in every result. Where a value
+# comes from is written next to it; [H] = a starting value nobody has measured.
+# All of them are set from downloaded public data only (decision 2026-10-30).
+
+tick_s: 0.5                 # one result every 0.5 s (contracts/control.md)
+warmup_s: 3.0               # no event can start for this long after a new boot or a gap (plan-v2 §5.4)
+
+calibration:
+  default_s: 120            # `calibrate kind=empty` without duration_s (plan-v2 §6.6)
+
+movement_model: gbm         # gbm | cnn | none. gbm: better transition F1 on unseen E1 people (docs/models.md)
+
+presence:                   # lifefi.presence (plan-v2 §6.1, E4 deviation in its docstring)
+  m_on_x: 2.0               # motion threshold = 2 x empty-room P99 of M (plan-v2: 1.5-2 x)
+  m_off_x: 1.0
+  b_on_x: 1.0               # breathing energy, x a 2-min calibration's P99 (E4, ml/check_presence.py)
+  b_off_x: 1.0              # x its P95 (plan-v2); E4: ~95 % of still windows stay above 0.82 x it
+  exit_share: 0.9           # [H] someone left when B is below b_off on 90 % of the exit window (lifefi.presence)
+  use_static: false         # S drifts as much as a still person changes it (E4): reported, not used
+  enter_motion_s: 1.0
+  b_hold_s: 5.0
+  exit_quiet_s: 60.0
+  uncertain_after_s: 600.0
+  nocal_m_on_x: 10.0        # no calibration yet: motion only, against a provisional quiet level
+  motion_span: 50.0         # motion 0-1: 0.1 at the motion threshold, 0.9 at 50 x it
+
+breathing:
+  low_motion_s: 20.0        # breathing is shown only after this long without motion (plan-v2 §6.3)
+
+apnea:                      # lifefi.apnea, `no_breathing` (plan-v2 §6.4)
+  hold_s: 15.0              # plan-v2 12 s gave 2 false alerts in 0.47 armed h on E1; 15 s: 0 (ml/check_apnea.py)
+  prominence_x: 0.25        # plan-v2 0.4
+  min_gap_s: 1.5
+  valid_within_s: 60.0
+  clear_breaths: 2
+  clear_within_s: 10.0
+
+fall:                       # lifefi.fall (plan-v2 §6.5); NOT validated: no public fall passes it (ml/tune_fall.py)
+  t_fall: 40.0              # x the empty room's quiet level: P95 of E1's ordinary movements (a false-alarm guard)
+  ratio: 4.0                # plan-v2
+  t_still: 4.5              # E4: P95 of a still person's M / baseline, x 1.2
+  still_s: 3.0              # plan-v2
+  fainted_after_s: 20.0     # plan-v2: 20-30 s more stillness -> fainted_suspected
+  clear_motion_s: 3.0       # [H] this long above the motion threshold clears fall / fainted
+  window_s: 40.0            # how much F the streaming detector looks at
+
+posture:                    # lifefi.posture (plan-v2 §6.7)
+  publish: false            # hidden in the demo (decision 2026-10-30): results carry posture: null
+  theta: 0.5
+  smooth: 3
+  refractory_s: 3.0
+  walking_theta: 0.5

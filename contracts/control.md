@@ -28,8 +28,8 @@ command out after 3 s.
 
 | Command | Arguments | Effect | `data` in the ack |
 |---|---|---|---|
-| `calibrate` | `kind`: `empty` / `bed_empty` / `bed_occupied`, `duration_s` (default 120) | Builds that profile. `empty` is refused if motion is seen during it | `{"id": "cal-0007"}` on completion |
-| `set_source` | `mode`: `live` / `replay` | The engine accepts only frames with that `source` | `{}` |
+| `calibrate` | `kind`: `empty` / `bed_empty` / `bed_occupied`, `duration_s` (default 120, at least 60) | Builds that profile. `empty` is refused if motion is seen during it, or right away when `duration_s` < 60 | `{"id": "cal-0007"}` on completion |
+| `set_source` | `mode`: `live` / `replay`; for `replay`: `file` (a `.csirec` path), optional `speed` (default 1), `loop` (default false) | The engine accepts only frames with that `source`; on `replay` it plays `file` itself, re-stamped with the current time. Refused (`ok: false`) when the file is missing | `{}` |
 | `record_start` | `session`, `path`, `meta` (object, becomes `session.json`) | Writes `.csirec` + `session.json` (live only) | `{}` |
 | `record_stop` | — | Stops the recording | `{"frames": 12345, "t_start_us": …, "t_end_us": …}` |
 | `reload_models` | — | Reloads the model files | `{}` |
