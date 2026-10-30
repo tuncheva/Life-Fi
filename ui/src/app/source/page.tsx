@@ -66,6 +66,12 @@ export default function SourcePage() {
         {replay && (
           <p className="mt-2 font-mono text-sm text-muted">
             {source?.file} · {source?.speed}×{source?.loop ? " · loop" : ""}
+            {source?.state === "stopped" ? " · finished" : ""}
+          </p>
+        )}
+        {source?.state === "error" && (
+          <p className="mt-2 text-sm font-medium text-danger" role="alert">
+            Can&apos;t read the sensor board: {source.error ?? "unknown error"}. The engine keeps trying; check the USB cable.
           </p>
         )}
         <p className="mt-3 text-sm text-muted">While a replay runs, the purple banner stays on every page and cannot be closed, so nobody mistakes it for the live room.</p>

@@ -33,7 +33,9 @@ export interface SourceState {
   file: string | null;
   speed: number;
   loop: boolean;
-  state: "running" | "stopped";
+  state: "running" | "stopped" | "error";
+  /** Why the engine cannot read its source (e.g. no USB serial port found), else null. */
+  error?: string | null;
 }
 
 export interface DeviceStatus {
@@ -65,6 +67,10 @@ export interface EngineStatus {
   models: { name: string; loaded: boolean; pipeline_version: number }[];
   calibration: { state: "none" | "running" | "ok" | "stale"; id: string | null; age_s: number | null };
   recording: unknown;
+  /** What the engine is reading (contracts/control.md source_info). */
+  source_info?: { name: string | null; state: "running" | "finished" | "error" | "none"; file: string | null; speed: number; loop: boolean; error: string | null };
+  /** Which optional result fields the engine fills; missing from older engines (then: all). */
+  outputs?: { posture: boolean; count: boolean; activity: boolean };
   mock?: { scenario: string; phase: string };
 }
 
@@ -224,7 +230,7 @@ export const testNotification = () => api<{ sent: boolean }>("/settings/test-not
 export const getHistory = (from: number, to: number, fields?: string) =>
   api<{ rows: HistoryRow[] }>(`/history?from=${from}&to=${to}${fields ? `&fields=${fields}` : ""}`);
 export const getSource = () => api<SourceState>("/source");
-export const setSource = (s: Omit<SourceState, "state">) => api<SourceState>("/source", { method: "PUT", body: JSON.stringify(s), pin: true });
+export const setSource = (s: Omit<SourceState, "state" | "error">) => api<SourceState>("/source", { method: "PUT", body: JSON.stringify(s), pin: true });
 export const getRecordings = () =>
   api<{ recordings: RecordingInfo[]; recording: RecordingState | null; vocabulary: { segments: string[]; marks: string[] } }>("/recordings");
 export const getLabels = (session?: string) => api<{ session: string; labels: LabelLine[]; open_segment: OpenSegment | null }>(`/recordings/labels${session ? `?session=${session}` : ""}`);

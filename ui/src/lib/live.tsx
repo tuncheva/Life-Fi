@@ -9,6 +9,7 @@ import type { Result } from "./contracts.gen";
 import type { PresenceSince } from "./words";
 
 export const WAVE_HZ = 10;
+const TICK_S = 0.5; // one result per 0.5 s (contracts/control.md)
 export const WAVE_SECONDS = 300; // ring buffer length; the chart shows 30 s or 5 min of it
 export const CSI_ROWS = 300; // ~30 s at 5 rows per 0.5 s
 
@@ -41,7 +42,8 @@ export class RingBuffer<T> {
 }
 
 export interface LiveBuffers {
-  wave: RingBuffer<number>;
+  /** null = no sample for that moment (the engine had no breathing window): drawn as a gap. */
+  wave: RingBuffer<number | null>;
   csi: RingBuffer<number[]>;
   /** Bumped on every result; canvases compare it to skip redraws. */
   version: number;
@@ -93,6 +95,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // A stable mutable object (not React state): canvases read it on rAF, React never re-renders on it.
   const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), version: 0 }));
   const lastBoot = useRef<number | null>(null);
+  const lastSource = useRef<Result["source"] | null>(null);
 
   const refreshAlerts = async () => {
     try {
@@ -128,14 +131,22 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         getStatus().then(setStatus).catch(() => {});
       };
       ws.onmessage = (ev) => {
-        const m = JSON.parse(ev.data as string) as WsMessage;
+        let m: WsMessage;
+        try {
+          m = JSON.parse(ev.data as string) as WsMessage;
+        } catch {
+          return; // one broken frame must not stop the dashboard
+        }
         if (m.type === "result") {
-          if (lastBoot.current !== null && lastBoot.current !== m.boot_id) {
+          // a new board boot or a switch between live and replay: the old signal is not this one
+          if ((lastBoot.current !== null && lastBoot.current !== m.boot_id) || (lastSource.current !== null && lastSource.current !== m.source)) {
             buffers.wave.clear();
             buffers.csi.clear();
           }
           lastBoot.current = m.boot_id;
-          for (const v of m.breathing.wave) buffers.wave.push(v);
+          lastSource.current = m.source;
+          if (m.breathing.wave.length) for (const v of m.breathing.wave) buffers.wave.push(v);
+          else for (let i = 0; i < WAVE_HZ * TICK_S; i++) buffers.wave.push(null); // keep the time axis true
           for (const row of m.csi) buffers.csi.push(row);
           buffers.version++;
           const ps = m.presence.state;
@@ -197,6 +208,13 @@ export function useLive(): LiveState {
   const v = useContext(LiveContext);
   if (!v) throw new Error("useLive must be used inside <LiveProvider>");
   return v;
+}
+
+/** Which optional outputs the engine publishes (get_status outputs); all of them when it does not say. */
+export function usePublished(): { posture: boolean; count: boolean; activity: boolean } {
+  const { status } = useLive();
+  const o = status?.engine.status?.outputs;
+  return { posture: o?.posture ?? true, count: o?.count ?? true, activity: o?.activity ?? true };
 }
 
 /** True when the last result is older than `staleMs`. Re-evaluated on a timer so it flips without new data. */

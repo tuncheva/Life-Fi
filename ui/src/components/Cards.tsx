@@ -7,8 +7,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { getAlerts, type Alert, type ProfileName } from "@/lib/api";
 import type { Result } from "@/lib/contracts.gen";
-import { useLive, useNow, useStale } from "@/lib/live";
+import { useLive, useNow, usePublished, useStale } from "@/lib/live";
 import {
+  ACTIVITY_LABELS,
+  ACTIVITY_TEXT,
   PROFILE_TEXT,
   roomName,
   activityText,
@@ -112,7 +114,9 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
   const t = TONE_CLASS[head.tone];
   const cal = calibrationText(result?.calibration ?? status?.engine.status?.calibration ?? null);
   const showFacts = !s.blind && result && result.presence.state !== "empty";
-  const posture = result ? postureText(result.posture) : null;
+  const published = usePublished();
+  // posture is hidden when the engine does not publish it (rules.yaml posture.publish)
+  const posture = result && published.posture ? postureText(result.posture) : null;
   const breathing = result ? breathingText(result) : null;
   const last = today[0];
 
@@ -277,15 +281,45 @@ export function HealthCard() {
         <Row k="Device uptime" v={d ? fmtUptime(d.uptime_s) : "—"} tone="neutral" />
         <Row k="Warm-up" v={h?.warmup ? "yes" : "no"} tone={h?.warmup ? "warn" : "neutral"} />
         <Row k="Calibration" v={cal ? `${cal.state}${cal.id ? ` · ${cal.id}` : ""}` : "—"} tone={cal?.state === "ok" ? "ok" : "warn"} />
-        <Row k="Source" v={result?.source ?? status?.source.mode ?? "—"} tone={result?.source === "replay" ? "warn" : "neutral"} />
+        <Row
+          k="Source"
+          v={`${result?.source ?? status?.source.mode ?? "—"}${status?.source.error ? ` · ${status.source.error}` : status?.source.state === "stopped" ? " · finished" : ""}`}
+          tone={status?.source.state === "error" ? "danger" : result?.source === "replay" ? "warn" : "neutral"}
+        />
         <Row k="Config" v={result ? `${result.config_hash} · pipeline v${result.pipeline_version}` : "—"} tone="neutral" />
       </dl>
     </div>
   );
 }
 
+/** The movement model's guess, every class as a bar. Experimental: shown here only, never on the room card. */
+function ActivityGuess({ a }: { a: NonNullable<Result["activity"]> }) {
+  return (
+    <div>
+      <div className="font-medium">
+        {ACTIVITY_TEXT[a.label]} <span className="text-muted">· {(a.p * 100).toFixed(0)} %</span>
+      </div>
+      <div className="mt-1 grid grid-cols-[auto_1fr_auto] items-center gap-x-2 gap-y-0.5 text-xs">
+        {ACTIVITY_LABELS.map((l) => {
+          const p = a.probs[l] ?? 0;
+          return (
+            <div key={l} className="contents">
+              <span className={l === a.label ? "font-semibold" : "text-muted"}>{ACTIVITY_TEXT[l]}</span>
+              <span className="h-1.5 overflow-hidden rounded-full bg-surface-2">
+                <span className="block h-full bg-chart-activity" style={{ width: `${Math.round(p * 100)}%` }} />
+              </span>
+              <span className="tabular-nums text-muted">{(p * 100).toFixed(0)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function DetectorCard() {
   const { result } = useLive();
+  const published = usePublished();
   const m = result?.motion ?? 0;
   return (
     <div>
@@ -317,6 +351,11 @@ export function DetectorCard() {
           <dd className="font-mono">{result.posture ? `${result.posture.label} (${result.posture.src}) since ${clock(result.posture.since, true)}` : "null"}</dd>
           <dt className="text-muted">count</dt>
           <dd className="font-mono">{result.count ? `${result.count.value === 2 ? "2+" : "1"} · p ${result.count.p.map((x) => x.toFixed(2)).join(" / ")}` : "model not loaded"}</dd>
+          <dt className="text-muted">activity</dt>
+          <dd>
+            <span className="text-xs text-muted">movement model, experimental: often wrong on people it was not trained on; no alarm uses it</span>
+            {result.activity ? <ActivityGuess a={result.activity} /> : <div className="font-mono">{published.activity ? "not enough signal yet" : "model not loaded"}</div>}
+          </dd>
           <dt className="text-muted">breathing</dt>
           <dd className="font-mono">
             {result.breathing.bpm?.toFixed(1) ?? "—"} bpm · conf {(result.breathing.confidence * 100).toFixed(0)} % · {result.breathing.valid ? "valid" : "invalid"}
@@ -363,6 +402,12 @@ export function CsiCanvas({ className = "h-40" }: { className?: string }) {
       if (!c || drawn === buffers.version) return;
       drawn = buffers.version;
       const rows = buffers.csi.toArray();
+      // colour range from what is on screen (2nd-98th percentile): the mock and the real engine use different dB levels
+      const sample: number[] = [];
+      for (let r = 0; r < rows.length; r += 2) for (let k = 0; k < rows[r]!.length; k += 4) sample.push(rows[r]![k]!);
+      sample.sort((a, b) => a - b);
+      const lo = sample.length ? sample[Math.floor(0.02 * (sample.length - 1))]! : 0;
+      const hi = sample.length ? Math.max(lo + 1, sample[Math.floor(0.98 * (sample.length - 1))]!) : 1;
       // time runs left → right (newest at the right), subcarriers bottom → top
       const W = buffers.csi.capacity;
       const H = 52;
@@ -381,7 +426,7 @@ export function CsiCanvas({ className = "h-40" }: { className?: string }) {
             img.data[i + 3] = 0;
             continue;
           }
-          const [r, gg, b] = ramp(((row[H - 1 - y] ?? -42) + 46) / 8);
+          const [r, gg, b] = ramp(((row[H - 1 - y] ?? lo) - lo) / (hi - lo));
           img.data[i] = r;
           img.data[i + 1] = gg;
           img.data[i + 2] = b;
