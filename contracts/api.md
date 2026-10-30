@@ -38,7 +38,9 @@ Writes: every `POST` and `PUT` below.
 | POST | `/recordings/segment` | `{"action":"start","label","count","subject","spot"}` or `{"action":"end"}` | `{"ended": segment \| null, "open_segment"}`; starting a segment ends the open one (segments never overlap) |
 | POST | `/recordings/mark` | `{"event","subject"}` | the written mark line |
 
-`Recording` (also in `Status.recording` while a session runs):
+`Recording` (also in `Status.recording` while a session runs, else `null`; the
+server clears it if the engine reports no recording, e.g. after an engine
+restart):
 `{"session": "s03", "started_us": …, "open_segment": {"t_start_us","label","count","subject","spot"} | null, "labels": 17}`.
 
 Segment labels: `empty`, `standing`, `sitting`, `lying`, `walking`, `normal_activity`, `in_bed`, `bed_empty`, `breath_hold`, `paced_breathing_<bpm>`.
@@ -56,7 +58,8 @@ Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `
   "presence": {"state": "present", "since": 1767225600000, "at_least": false},
   "engine": {"connected": true, "last_result_ms": 1767225600123, "status": { …get_status ack data.engine… }},
   "device": { …get_status ack data.device… } ,
-  "source": {"mode": "live", "file": null, "speed": 1, "loop": false, "state": "running"},
+  "source": {"mode": "live", "file": null, "speed": 1, "loop": false, "state": "running", "error": null},
+  "recording": null,
   "calibration_job": {"kind": "empty", "duration_s": 120, "started_at": 1767225600000, "state": "running" | "ok" | "failed", "id": null, "error": null, "finished_at": null},
   "result": { …latest Result or null… },
   "alerts_open": 0
@@ -66,8 +69,14 @@ Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `
 ### `Source`
 
 ```json
-{"mode": "live" | "replay", "file": "data/s03.csirec" | null, "speed": 1, "loop": false, "state": "running" | "stopped"}
+{"mode": "live" | "replay", "file": "data/s03.csirec" | null, "speed": 1, "loop": false, "state": "running" | "stopped" | "error", "error": null}
 ```
+
+The server keeps `Source` in step with the engine's `get_status`
+`source_info` (control.md): `stopped` when a replay finished or there is no
+source, `error` with the reason when the board cannot be read (for example
+"no USB serial port found"). `PUT /source` takes `Source` without `state`
+and `error`.
 
 ### `Alert`
 
@@ -99,7 +108,9 @@ drop: `cleared by the engine`, `no longer reported by the engine`,
 `engine restarted`, `server restart`, or for server rules `movement seen`,
 `room is empty`, `outside the after-hours window`, `sensor stopped reporting`.
 
-Server-emitted events: `sensor_offline` (watchdog), `long_inactivity` (Home:
+Server-emitted events: `sensor_offline` (watchdog: engine disconnected for
+10 s, no result for 10 s, CSI rate below 50 Hz for 60 s, or no device status
+for 10 s), `long_inactivity` (Home:
 no motion for `inactivity.still_present_max_min`, or none by `no_motion_by`)
 and `after_hours_occupancy` (School: present inside `occupancy.after_hours`).
 

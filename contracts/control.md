@@ -29,10 +29,10 @@ command out after 3 s.
 | Command | Arguments | Effect | `data` in the ack |
 |---|---|---|---|
 | `calibrate` | `kind`: `empty` / `bed_empty` / `bed_occupied`, `duration_s` (default 120, at least 60) | Builds that profile. `empty` is refused if motion is seen during it, or right away when `duration_s` < 60 | `{"id": "cal-0007"}` on completion |
-| `set_source` | `mode`: `live` / `replay`; for `replay`: `file` (a `.csirec` path), optional `speed` (default 1), `loop` (default false) | The engine accepts only frames with that `source`; on `replay` it plays `file` itself, re-stamped with the current time. Refused (`ok: false`) when the file is missing | `{}` |
-| `record_start` | `session`, `path`, `meta` (object, becomes `session.json`) | Writes `.csirec` + `session.json` (live only) | `{}` |
+| `set_source` | `mode`: `live` / `replay`; for `replay`: `file` (a `.csirec` path), optional `speed` (> 0, default 1), `loop` (default false) | The engine accepts only frames with that `source`; on `replay` it plays `file` itself, re-stamped with the current time. Every active event is cleared (it belonged to the old signal). Refused (`ok: false`) when the file is missing, `speed` ≤ 0, or `live` is asked for and the engine has no board configured | `{}` |
+| `record_start` | `session`, `path`, `meta` (object; the **server** writes it to `session.json`) | Writes the `.csirec` (live only) | `{}` |
 | `record_stop` | — | Stops the recording | `{"frames": 12345, "t_start_us": …, "t_end_us": …}` |
-| `reload_models` | — | Reloads the model files | `{}` |
+| `reload_models` | — | Reloads the model files | `{"models": [...]}` (as in `get_status`) |
 | `reload_rules` | — | Reloads `rules.yaml`; the new `config_hash` appears in results | `{"config_hash": "…"}` |
 | `get_status` | — | Engine and device status | see below |
 
@@ -51,7 +51,9 @@ later), so the server must not apply the 3 s timeout to it; it uses
     "models": [{"name": "transitions", "loaded": true, "pipeline_version": 2}],
     "calibration": {"state": "ok", "id": "cal-0007", "age_s": 312},
     "recording": null,
-    "active_events": [{"id": 42, "type": "fall", "t": 1767225600100, "data": {"peak": 0.93}}]
+    "active_events": [{"id": 42, "type": "fall", "t": 1767225600100, "data": {"peak": 0.93}}],
+    "source_info": {"name": "usb COM3", "state": "running", "file": null, "speed": 1, "loop": false, "error": null},
+    "outputs": {"posture": false, "count": false, "activity": true}
   },
   "device": {
     "node": 1, "boot_id": 2913411, "fw_version": "0.1.0",
@@ -65,6 +67,17 @@ later), so the server must not apply the 3 s timeout to it; it uses
 }
 ```
 
+`engine.source_info` is what the engine is reading right now. `state` is
+`running`, `finished` (a replay without `loop` reached its end), `error`
+(the board cannot be read: `error` says why, e.g. no USB serial port found;
+the engine keeps retrying every 2 s) or `none` (no source). `file`, `speed`
+and `loop` are set for a replay, else `null`, 1 and `false`.
+
+`engine.outputs` says which optional result fields the engine fills:
+`posture` (false while `rules.yaml` hides it), `count` and `activity` (the
+movement model's guess; false when no model is loaded). The dashboard hides
+what is not published instead of showing "not known yet" forever.
+
 `engine.active_events` lists every currently active event with its type:
 results carry only ids in `active`, so this is how a server that restarted
 or reconnected recovers an ongoing condition (N8). The server polls
@@ -72,15 +85,23 @@ or reconnected recovers an ongoing condition (N8). The server polls
 
 `device` is `null` while no status packet has ever been received.
 `device.last_status_us` is what the server's watchdog uses for "no status
-packet for 10 s".
+packet for 10 s". The firmware sends no status packet yet, so the Python
+engine builds `device` from the CSI frames: it is `null` until the first
+frame, `last_status_us` is the last frame's time, `fw_version` is
+`"unknown"` and the counters it cannot know are 0.
 
 ## Events
 
 The engine emits: `fall`, `fainted_suspected`, `no_breathing`,
-`presence_uncertain`, `recalibrate_needed`, `bed_exit`.
+`presence_uncertain`. Reserved for the engine but **not emitted yet**:
+`recalibrate_needed`, `bed_exit` (they need the bed calibrations, which are
+not built).
 
-The server emits (never the engine): `sensor_offline`, `long_inactivity`.
+The server emits (never the engine): `sensor_offline`, `long_inactivity`,
+`after_hours_occupancy`.
 
-Each event has an `id` unique per engine boot, appears in `events` with
+Each event has an `id` that is unique per engine run and not reused by the
+next run (the engine starts counting from a number taken from its start
+time). It appears in `events` with
 `state: "active"` when it starts and `state: "cleared"` when it ends, and is
 listed in `active` on every result while it is active.

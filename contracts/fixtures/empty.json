@@ -11,6 +11,7 @@
   "motion": 0.005,
   "posture": null,
   "count": null,
+  "activity": null,
   "breathing": {"bpm": null, "confidence": 0.0, "valid": false, "wave": []},
   "csi": [],
   "events": [],
