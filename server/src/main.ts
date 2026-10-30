@@ -16,6 +16,7 @@ import { loadProfiles } from "./profiles.js";
 import { ServerRules } from "./rules.js";
 import { SettingsStore } from "./settings.js";
 import { Store } from "./store.js";
+import { resultValidator } from "./validate.js";
 import { Watchdog } from "./watchdog.js";
 import { LiveHub } from "./ws.js";
 
@@ -35,7 +36,7 @@ async function main() {
     latest: null,
     lastResultAt: null,
     engineStatus: null,
-    source: { mode: "live", file: null, speed: 1, loop: false, state: "running" },
+    source: { mode: "live", file: null, speed: 1, loop: false, state: "running", error: null },
     calibration: null,
     recording: null,
     presence: null,
@@ -68,15 +69,46 @@ async function main() {
       hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
     },
   });
-  const engine = new EngineClient(config.engineHost, config.enginePort, log);
+  const engine = new EngineClient(config.engineHost, config.enginePort, log, 1000, resultValidator());
 
   const ackTokens = new Map<string, string>();
   const ctx: AppContext = { log, ackTokens, engine, alerts, watchdog, history, settings, profiles, state, hub, version: config.version, dev: config.devCors };
 
   // ---- engine events --------------------------------------------------------
+  /** Runs a listener body; one bad message is logged, never fatal to the server. */
+  const guard = (what: string, fn: () => void) => {
+    try {
+      fn();
+    } catch (err) {
+      log.error({ err: (err as Error).stack ?? String(err) }, `${what} failed`);
+    }
+  };
+
+  /** Keeps Status.source true to what the engine is reading (control.md source_info). */
+  const syncSource = (data: EngineStatus) => {
+    const info = data.engine.source_info;
+    const mode = data.engine.source ?? state.source.mode;
+    if (!info) return;
+    const next = {
+      mode,
+      file: mode === "replay" ? info.file : null,
+      speed: info.speed,
+      loop: info.loop,
+      state: info.state === "error" ? ("error" as const) : info.state === "running" ? ("running" as const) : ("stopped" as const),
+      error: info.error,
+    };
+    const s = state.source;
+    if (s.mode !== next.mode || s.file !== next.file || s.speed !== next.speed || s.loop !== next.loop || s.state !== next.state || s.error !== next.error) {
+      if (next.error && next.error !== s.error) log.warn({ error: next.error }, "engine cannot read its source");
+      state.source = next;
+    }
+  };
+
+  let polling = false;
   let statusPoll: NodeJS.Timeout | null = null;
   const pollStatus = async () => {
-    if (!engine.connected) return;
+    if (!engine.connected || polling) return; // one get_status at a time
+    polling = true;
     try {
       const ack = await engine.send("get_status", {}, 2000);
       const data = ack.data as unknown as EngineStatus;
@@ -86,13 +118,22 @@ async function main() {
         const n = alerts.syncActive(data.engine.active_events);
         if (n) log.info({ raised: n }, "alerts recovered from active engine events");
       }
+      syncSource(data);
+      if (state.recording && data.engine.recording === null) {
+        // the engine restarted mid-recording: it has nothing open, so neither do we
+        log.warn({ session: state.recording.session }, "engine is not recording any more; recording closed");
+        state.recording = null;
+      }
       hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
     } catch (err) {
       log.debug({ err: (err as Error).message }, "get_status failed");
+    } finally {
+      polling = false;
     }
   };
 
   engine.on("connected", () => {
+    alerts.onEngineConnected();
     watchdog.setEngineConnected(true);
     void pollStatus();
     statusPoll = setInterval(() => void pollStatus(), 1000);
@@ -109,28 +150,32 @@ async function main() {
   engine.on("result", (r) => {
     state.latest = r;
     state.lastResultAt = Date.now();
-    if (r.source !== state.source.mode) {
-      state.source = { ...state.source, mode: r.source };
-      hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
-    }
-    if (state.presence?.state !== r.presence.state) {
-      // The first result after a start cannot say when the state began: it is a lower bound.
-      state.presence = { state: r.presence.state, since: r.ts, at_least: state.presence === null };
-      hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
-    }
-    watchdog.onResult(r);
-    alerts.onResult(r);
-    rules.onResult(r);
-    history.add(r, profiles.profiles[settings.value.profile].breathing.store);
-    hub.broadcast(r);
+    guard("result status", () => {
+      if (r.source !== state.source.mode) {
+        state.source = { ...state.source, mode: r.source };
+        hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
+      }
+      if (state.presence?.state !== r.presence.state) {
+        // The first result after a start cannot say when the state began: it is a lower bound.
+        state.presence = { state: r.presence.state, since: r.ts, at_least: state.presence === null };
+        hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
+      }
+    });
+    guard("watchdog", () => watchdog.onResult(r));
+    guard("alerts", () => alerts.onResult(r));
+    guard("server rules", () => rules.onResult(r));
+    guard("history", () => history.add(r, profiles.profiles[settings.value.profile].breathing.store));
+    guard("broadcast", () => hub.broadcast(r));
   });
   engine.on("unknown", (msg) => log.debug({ type: msg.type }, "unknown engine message"));
 
-  alerts.on("alert", (a) => {
-    if (a.state === "resolved" || a.state === "dropped") ackTokens.delete(a.id);
-    log.info({ id: a.id, type: a.type, state: a.state, level: a.level }, "alert");
-    hub.broadcast({ type: "alert", alert: a });
-  });
+  alerts.on("alert", (a) =>
+    guard("alert broadcast", () => {
+      if (a.state === "resolved" || a.state === "dropped") ackTokens.delete(a.id);
+      log.info({ id: a.id, type: a.type, state: a.state, level: a.level }, "alert");
+      hub.broadcast({ type: "alert", alert: a });
+    }),
+  );
   alerts.on("notify", (a, kind) => {
     let token = ackTokens.get(a.id);
     if (!token) {

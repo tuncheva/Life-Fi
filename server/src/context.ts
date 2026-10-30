@@ -14,7 +14,19 @@ export interface SourceState {
   file: string | null;
   speed: number;
   loop: boolean;
-  state: "running" | "stopped";
+  state: "running" | "stopped" | "error";
+  /** Why the engine cannot read its source (e.g. "no USB serial port found"), else null. */
+  error: string | null;
+}
+
+/** get_status `engine.source_info` (contracts/control.md). */
+export interface EngineSourceInfo {
+  name: string | null;
+  state: "running" | "finished" | "error" | "none";
+  file: string | null;
+  speed: number;
+  loop: boolean;
+  error: string | null;
 }
 
 /** `data` of the engine's get_status ack (contracts/control.md). */
@@ -22,6 +34,10 @@ export interface EngineStatus {
   engine: Record<string, unknown> & {
     calibration?: { state: string; id: string | null; age_s: number | null };
     active_events?: { id: number; type: string; t: number; data?: Record<string, unknown> }[];
+    source?: "live" | "replay";
+    source_info?: EngineSourceInfo;
+    recording?: { session: string | null; frames: number } | null;
+    outputs?: { posture: boolean; count: boolean; activity: boolean };
   };
   device: (Record<string, unknown> & { last_status_us?: number }) | null;
 }

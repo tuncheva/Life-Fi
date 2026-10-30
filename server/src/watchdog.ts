@@ -1,6 +1,8 @@
 // Watchdog (plan-v2 §7.1): a silent sensor must never look like "all OK".
-//   no result for > 10 s, or rate_hz < 50 for 60 s, or no device status for 10 s
-//   → sensor_offline in every profile. Cleared when results are healthy for 10 s.
+//   engine disconnected for > 10 s, no result for > 10 s, rate_hz < 50 for 60 s,
+//   or no device status for 10 s → sensor_offline in every profile. Cleared when
+//   results are healthy for 10 s. The 10 s grace on a disconnect means an engine
+//   restart, or the server starting before the engine, does not notify the phone.
 import type { Result } from "./contracts.gen.js";
 
 export interface WatchdogSink {
@@ -14,6 +16,7 @@ export interface WatchdogOptions {
   lowRateForMs?: number;
   noStatusMs?: number;
   healthyForMs?: number;
+  disconnectGraceMs?: number;
 }
 
 export class Watchdog {
@@ -23,6 +26,7 @@ export class Watchdog {
   private healthySince: number | null = null;
   private offline = false;
   private engineConnected = false;
+  private disconnectedSince: number;
   private timer: NodeJS.Timeout | null = null;
   private readonly opt: Required<WatchdogOptions>;
   reason: string | null = null;
@@ -38,7 +42,9 @@ export class Watchdog {
       lowRateForMs: opt.lowRateForMs ?? 60_000,
       noStatusMs: opt.noStatusMs ?? 10_000,
       healthyForMs: opt.healthyForMs ?? 10_000,
+      disconnectGraceMs: opt.disconnectGraceMs ?? 10_000,
     };
+    this.disconnectedSince = this.now();
   }
 
   start(intervalMs = 1000): void {
@@ -50,8 +56,12 @@ export class Watchdog {
   }
 
   setEngineConnected(v: boolean): void {
+    if (v === this.engineConnected) return;
     this.engineConnected = v;
-    if (!v) this.tick();
+    if (!v) {
+      this.disconnectedSince = this.now();
+      this.tick();
+    }
   }
 
   onResult(r: Result): void {
@@ -76,8 +86,13 @@ export class Watchdog {
   tick(): void {
     const t = this.now();
     let reason: string | null = null;
-    if (!this.engineConnected) reason = "engine disconnected";
-    else if (this.lastResultAt === null || t - this.lastResultAt > this.opt.noResultMs) reason = "no result for 10 s";
+    if (!this.engineConnected) {
+      if (t - this.disconnectedSince < this.opt.disconnectGraceMs) {
+        this.healthySince = null; // not healthy, but not offline yet either
+        return;
+      }
+      reason = "engine disconnected";
+    } else if (this.lastResultAt === null || t - this.lastResultAt > this.opt.noResultMs) reason = "no result for 10 s";
     else if (this.lowRateSince !== null && t - this.lowRateSince > this.opt.lowRateForMs) reason = "CSI rate below 50 Hz for 60 s";
     else if (this.lastDeviceStatusAt !== null && t - this.lastDeviceStatusAt > this.opt.noStatusMs) reason = "no device status for 10 s";
 

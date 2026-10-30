@@ -138,7 +138,7 @@ export function registerApi(app: FastifyInstance, ctx: AppContext): void {
     } catch (err) {
       return engineFail(reply, err);
     }
-    ctx.state.source = { mode, file: mode === "replay" ? (body.file as string) : null, speed, loop, state: "running" };
+    ctx.state.source = { mode, file: mode === "replay" ? (body.file as string) : null, speed, loop, state: "running", error: null };
     ctx.hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
     return ctx.state.source;
   });

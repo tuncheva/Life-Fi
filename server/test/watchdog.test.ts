@@ -21,6 +21,7 @@ function mkResult(now: number, o: { rate_hz?: number; warmup?: boolean } = {}): 
     motion: 0.03,
     posture: null,
     count: null,
+    activity: null,
     breathing: { bpm: null, confidence: 0.1, valid: false, wave: [] },
     csi: [],
     events: [],
@@ -64,7 +65,7 @@ describe("Watchdog", () => {
     raised = [];
     cleared = 0;
     sink = { raise: (r) => raised.push(r), clear: () => cleared++ };
-    wd = new Watchdog(sink, () => now);
+    wd = new Watchdog(sink, () => now, { disconnectGraceMs: 0 });
   });
 
   afterEach(() => {
@@ -219,6 +220,35 @@ describe("Watchdog", () => {
     wd.onResult(mkResult(now));
     advance(1000);
     expect(raised).toHaveLength(3);
+    expect(cleared).toBe(0);
+  });
+
+  it("waits 10 s after a disconnect by default (an engine restart is not an outage)", () => {
+    wd.stop();
+    wd = new Watchdog(sink, () => now);
+    wd.start();
+    advance(9000);
+    expect(raised).toEqual([]); // the server started first: no alarm yet
+    wd.setEngineConnected(true);
+    healthyFor(5000);
+    wd.setEngineConnected(false);
+    advance(9000);
+    expect(raised).toEqual([]);
+    advance(2000);
+    expect(raised).toEqual(["engine disconnected"]);
+  });
+
+  it("a reconnect inside the grace raises nothing", () => {
+    wd.stop();
+    wd = new Watchdog(sink, () => now);
+    wd.setEngineConnected(true);
+    wd.start();
+    healthyFor(3000);
+    wd.setEngineConnected(false);
+    advance(5000);
+    wd.setEngineConnected(true);
+    healthyFor(20_000);
+    expect(raised).toEqual([]);
     expect(cleared).toBe(0);
   });
 

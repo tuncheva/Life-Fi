@@ -36,6 +36,7 @@ function mkResult(o: ResultOpts = {}): Result {
     motion: 0.03,
     posture: null,
     count: null,
+    activity: null,
     breathing: { bpm: null, confidence: 0.1, valid: false, wave: [] },
     csi: [],
     events: o.events ?? [],
@@ -203,7 +204,7 @@ describe("AlertManager", () => {
     expect(mgr.isActive("e:2")).toBe(true);
   });
 
-  it("a boot_id change resolves every engine alert but keeps server alerts", () => {
+  it("an engine reconnect closes what the engine no longer has as 'engine restarted', keeps server alerts", () => {
     mgr.onResult(mkResult({ events: [activeEv(1, "fall", T0), activeEv(2, "no_breathing", T0)], active: [1, 2] }));
     mgr.raiseServer("sensor_offline", { reason: "x" });
     expect(mgr.get("a-0001")!.state).toBe("open"); // fall
@@ -211,18 +212,47 @@ describe("AlertManager", () => {
     expect(mgr.get("a-0003")!.state).toBe("open"); // sensor_offline
 
     advance(1000);
-    // engine restarted: new boot_id, new event id 1 that is a different condition
-    mgr.onResult(mkResult({ ts: now, boot_id: BOOT + 1, events: [activeEv(1, "fall", now)], active: [1] }));
+    // the engine restarted: it has none of the old conditions, and a new event with a new id
+    mgr.onEngineConnected();
+    mgr.onResult(mkResult({ ts: now, events: [activeEv(9001, "fall", now)], active: [9001] }));
 
-    expect(mgr.get("a-0001")!.state).toBe("resolved");
-    expect(mgr.get("a-0001")!.resolved_at).toBe(T0 + 1000);
+    expect(mgr.get("a-0001")!).toMatchObject({ state: "resolved", resolved_at: T0 + 1000, data: { closed_by: "engine restarted" } });
     expect(mgr.get("a-0002")!.state).toBe("dropped");
     expect(mgr.get("a-0003")!.state).toBe("open");
     expect(mgr.isActive("s:sensor_offline")).toBe(true);
-    // the new event id 1 produced a fresh alert
-    const fresh = mgr.get("a-0004")!;
-    expect(fresh).toMatchObject({ type: "fall", event_id: 1, state: "open", created_at: T0 + 1000 });
-    expect(mgr.isActive("e:1")).toBe(true);
+    expect(mgr.get("a-0004")!).toMatchObject({ type: "fall", event_id: 9001, state: "open", created_at: T0 + 1000 });
+  });
+
+  it("an engine reconnect keeps the conditions the engine still reports", () => {
+    mgr.onResult(mkResult({ events: [activeEv(1, "fall", T0)], active: [1] }));
+    advance(1000);
+    mgr.onEngineConnected();
+    mgr.onResult(mkResult({ ts: now, active: [1] }));
+    expect(mgr.get("a-0001")!.state).toBe("open");
+    expect(mgr.list()).toHaveLength(1);
+  });
+
+  it("a board reboot (new boot_id) keeps every alert open", () => {
+    mgr.onResult(mkResult({ events: [activeEv(1, "fall", T0)], active: [1] }));
+    advance(1000);
+    mgr.onResult(mkResult({ ts: now, boot_id: BOOT + 1, active: [1] }));
+    expect(mgr.get("a-0001")!.state).toBe("open");
+    expect(mgr.list()).toHaveLength(1);
+    expect(notifies).toHaveLength(1); // the phone is not told twice
+  });
+
+  it("the delay counts from when the condition began", () => {
+    advance(4000);
+    // recovered after a reconnect: no_breathing (delay 5 s) began 4 s ago, so 1 s is left
+    mgr.syncActive([{ id: 5, type: "no_breathing", t: T0 }]);
+    expect(mgr.get("a-0001")!.state).toBe("pending");
+    advance(999);
+    expect(mgr.get("a-0001")!.state).toBe("pending");
+    advance(1);
+    expect(mgr.get("a-0001")!.state).toBe("open");
+    // one that began more than 5 s ago opens at once
+    mgr.syncActive([{ id: 6, type: "no_breathing", t: T0 - 10_000 }]);
+    expect(mgr.get("a-0002")!.state).toBe("open");
   });
 
   it("escalates an open, unacked alert after escalate_after_s and re-notifies", () => {
