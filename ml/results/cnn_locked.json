@@ -1,0 +1,16 @@
+{
+  "windows": 4987,
+  "macro_f1": 0.35308631452889255,
+  "per_class_f1": {
+    "none": 0.795,
+    "walking": 0.879,
+    "sit_down": 0.232,
+    "lie_down": 0.131,
+    "get_up": 0.078,
+    "fall": 0.005
+  },
+  "event_clips": 137,
+  "event_found": 0.197,
+  "quiet_clips": 45,
+  "false_event_share": 0.067
+}

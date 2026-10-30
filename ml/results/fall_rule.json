@@ -1,0 +1,63 @@
+{
+  "folds": {
+    "e8_r1": {
+      "thresholds": {
+        "t_fall": 130,
+        "ratio": 2,
+        "t_still": 40
+      },
+      "recall": 0.287,
+      "false_share": 0.135,
+      "falls": 80,
+      "others": 400
+    },
+    "e8_r2": {
+      "thresholds": {
+        "t_fall": 60,
+        "ratio": 2,
+        "t_still": 40
+      },
+      "recall": 0.062,
+      "false_share": 0.253,
+      "falls": 80,
+      "others": 400
+    },
+    "e8_r3": {
+      "thresholds": {
+        "t_fall": 80,
+        "ratio": 2,
+        "t_still": 40
+      },
+      "recall": 0.338,
+      "false_share": 0.19,
+      "falls": 80,
+      "others": 400
+    },
+    "e8_r4": {
+      "thresholds": {
+        "t_fall": 100,
+        "ratio": 2,
+        "t_still": 40
+      },
+      "recall": 0.263,
+      "false_share": 0.273,
+      "falls": 80,
+      "others": 400
+    }
+  },
+  "chosen": {
+    "t_fall": 100,
+    "ratio": 2,
+    "t_still": 40
+  },
+  "recall": 0.359,
+  "false_share": 0.186,
+  "per_activity": {
+    "arm_wave": 0.059,
+    "fall": 0.359,
+    "jump": 0.316,
+    "squat": 0.134,
+    "turn": 0.184,
+    "walk": 0.234
+  }
+}

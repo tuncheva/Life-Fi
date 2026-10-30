@@ -20,6 +20,10 @@ datasets/raw/
 datasets/interim/
 datasets/processed/
 
+# trained models: ~14 MB, rebuilt in minutes from datasets/processed
+# (ml/train_gbm.py --final, ml/train_cnn.py --final, ml/export.py)
+ml/models/
+
 # env
 .env
 .env.*

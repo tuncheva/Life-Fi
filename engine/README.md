@@ -12,12 +12,14 @@ Processing of raw CSI recordings on the PC. This is the start of plan-v2's
 | [lifefi/heart.py](lifefi/heart.py) | **Experimental** heart rate per 30 s window ([below](#heart-rate-experimental)) |
 | [tools/heart.py](tools/heart.py) | Runs it on a recording and prints every window |
 | [tests/test_heart.py](tests/test_heart.py) | Synthetic pulses between breathing harmonics are found within 2; harmonics alone, noise and motion are never reported |
+| [tools/inventory.py](tools/inventory.py) | One line per recording: length, rate, loss, pauses, RSSI, breathing and heart results, and what it can feed |
 
 ```powershell
 python engine\tools\breathing.py firmware\recordings\<file>.csirec
 python engine\tests\test_breathing.py
 python engine\tools\heart.py firmware\recordings\<file>.csirec
 python engine\tests\test_heart.py
+python engine\tools\inventory.py            # every .csirec in firmware\recordings\
 ```
 
 ### TypeScript version ([ts/](ts/))

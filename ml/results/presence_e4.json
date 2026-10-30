@@ -1,0 +1,131 @@
+{
+  "static_profile": {
+    "d1 same day": {
+      "D": {
+        "t_on": 0.108,
+        "share_above": {
+          "empty (other recordings)": 0.733,
+          "sitting still": 0.847,
+          "lying still": 0.993,
+          "walking": 1.0
+        }
+      },
+      "S": {
+        "t_on": 0.0033,
+        "share_above": {
+          "empty (other recordings)": 0.775,
+          "sitting still": 0.941,
+          "lying still": 1.0,
+          "walking": 1.0
+        }
+      }
+    },
+    "d2 same day": {
+      "D": {
+        "t_on": 0.0384,
+        "share_above": {
+          "empty (other recordings)": 1.0,
+          "sitting still": 1.0,
+          "lying still": 1.0,
+          "walking": 1.0
+        }
+      },
+      "S": {
+        "t_on": 0.0002,
+        "share_above": {
+          "empty (other recordings)": 1.0,
+          "sitting still": 1.0,
+          "lying still": 1.0,
+          "walking": 1.0
+        }
+      }
+    },
+    "d3 same day": {
+      "D": {
+        "t_on": 0.1084,
+        "share_above": {
+          "empty (other recordings)": 0.875,
+          "sitting still": 1.0,
+          "lying still": 0.821,
+          "walking": 1.0
+        }
+      },
+      "S": {
+        "t_on": 0.0036,
+        "share_above": {
+          "empty (other recordings)": 0.908,
+          "sitting still": 1.0,
+          "lying still": 0.905,
+          "walking": 1.0
+        }
+      }
+    },
+    "d1 calibration -> d3 (drift)": {
+      "D": {
+        "t_on": 0.108,
+        "share_above": {
+          "empty (other recordings)": 1.0,
+          "sitting still": 1.0,
+          "lying still": 1.0,
+          "walking": 1.0
+        }
+      },
+      "S": {
+        "t_on": 0.0033,
+        "share_above": {
+          "empty (other recordings)": 1.0,
+          "sitting still": 1.0,
+          "lying still": 1.0,
+          "walking": 1.0
+        }
+      }
+    }
+  },
+  "breathing_energy": {
+    "threshold from d1 -> d1": {
+      "t_on": 0.01912,
+      "still_detected": 0.713,
+      "empty_flagged": 0.017
+    },
+    "threshold from d1 -> d2": {
+      "t_on": 0.01912,
+      "still_detected": 0.711,
+      "empty_flagged": 0.026
+    },
+    "threshold from d1 -> d3": {
+      "t_on": 0.01912,
+      "still_detected": 1.0,
+      "empty_flagged": 0.009
+    },
+    "threshold from d2 -> d1": {
+      "t_on": 0.02545,
+      "still_detected": 0.545,
+      "empty_flagged": 0.0
+    },
+    "threshold from d2 -> d2": {
+      "t_on": 0.02545,
+      "still_detected": 0.572,
+      "empty_flagged": 0.017
+    },
+    "threshold from d2 -> d3": {
+      "t_on": 0.02545,
+      "still_detected": 0.963,
+      "empty_flagged": 0.009
+    },
+    "threshold from d3 -> d1": {
+      "t_on": 0.01901,
+      "still_detected": 0.713,
+      "empty_flagged": 0.017
+    },
+    "threshold from d3 -> d2": {
+      "t_on": 0.01901,
+      "still_detected": 0.711,
+      "empty_flagged": 0.026
+    },
+    "threshold from d3 -> d3": {
+      "t_on": 0.01901,
+      "still_detected": 1.0,
+      "empty_flagged": 0.017
+    }
+  }
+}
