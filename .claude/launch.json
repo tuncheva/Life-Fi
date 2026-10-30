@@ -12,6 +12,27 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "-w", "server"],
       "port": 8080
+    },
+    {
+      "name": "mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "env": { "LIFEFI_PORT": "8081", "NEXT_PUBLIC_API_URL": "http://localhost:8081", "MOCK_SCENARIO": "fall" },
+      "port": 3000
+    },
+    {
+      "name": "replay",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:replay"],
+      "env": { "LIFEFI_PORT": "8081", "NEXT_PUBLIC_API_URL": "http://localhost:8081" },
+      "port": 3000
+    },
+    {
+      "name": "real",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:real"],
+      "env": { "LIFEFI_PORT": "8081", "NEXT_PUBLIC_API_URL": "http://localhost:8081" },
+      "port": 3000
     }
   ]
 }
