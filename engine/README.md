@@ -88,6 +88,7 @@ the five synthetic scenarios, every result checked against the schema),
 | [lifefi/heart.py](lifefi/heart.py) | **Experimental** heart rate per 30 s window ([below](#heart-rate-experimental)) |
 | [tools/heart.py](tools/heart.py) | Runs it on a recording and prints every window |
 | [tests/test_heart.py](tests/test_heart.py) | Synthetic pulses between breathing harmonics are found within 2; harmonics alone, noise and motion are never reported |
+| [viz/position.html](viz/position.html) | **Experimental** 3D view of distance from the ESP32 ([below](#3d-position-view-experimental)) |
 | [tools/inventory.py](tools/inventory.py) | One line per recording: length, rate, loss, pauses, RSSI, breathing and heart results, and what it can feed |
 
 ```powershell
@@ -210,3 +211,42 @@ To give it a real chance:
 - record 2 minutes.
 
 Assistive, not medical (plan-v2 §7.4).
+
+## 3D position view (experimental)
+
+[viz/position.html](viz/position.html) is one self-contained page (three.js
+from a CDN, no build). Drop a `.csirec` on it to see the ESP32, the router,
+the link's first Fresnel zone and a person figure at the estimated distance,
+with playback and a distance/disturbance chart. To load a recording by URL,
+serve the repository and add `?src=`:
+
+```powershell
+python -m http.server 8765
+# http://localhost:8765/engine/viz/position.html?src=/firmware/recordings/<file>.csirec
+```
+
+**What it can and cannot show.** One link and one antenna measure no
+direction, so the page draws a ring of every possible position at distance d.
+The figure stands at an assumed direction, which you can set. Distance is a
+proxy:
+
+- **R:** how strongly the body changes the subcarriers. It is the variance in
+  dB² of 0.25 s means of gain-free dB in a 10 s window, minus the white noise
+  estimated from neighbouring frames. A still, breathing person needs ≥ 10 s;
+  with 4 s windows they sat at the noise level.
+- **Distance:** d = 10^((A − R)/(10·n)), smoothed with a constant-velocity
+  Kalman filter. A = −14 dB and n = 2 are guesses until calibrated. Pause at a
+  known distance and add a point: one point fits A, two or more fit A and n
+  by least squares. It is a 2-parameter regression, not a neural network.
+  There are no labelled recordings to train one on.
+- **Movement raises R as much as closeness does.**
+  - On 2026-10-28, the still recording gave a steady 1.1–1.4 m with the
+    default guesses.
+  - The recordings with movement dropped to the 0.2 m minimum while people
+    moved.
+  - Calibrate sitting still, and read moving stretches as "moving", not
+    "close".
+
+Real position (zone, direction) needs 3–4 links; a pose network needs those
+plus camera labels ([upgrade-roadmap.md](../docs/plan/upgrade-roadmap.md),
+upgrades 3–4).

@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "lifefi-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8765"],
+      "port": 8765
+    },
+    {
       "name": "ui",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "-w", "ui"],

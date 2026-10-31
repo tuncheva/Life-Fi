@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Life-Fi Position View</title>
+<!--
+  Experimental 3D view of how far a person is from the ESP32, from a .csirec
+  recording (firmware/tools/csi_recorder.py). One link measures distance only,
+  as a proxy: how strongly the body disturbs the subcarriers. See
+  engine/README.md, "3D position view".
+
+  Open the file directly and drop a recording on it, or serve the repo and use
+  position.html?src=/firmware/recordings/<file>.csirec
+-->
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1c2129; --muted: #5d6673; --line: #dde1e7;
+    --accent: #2f6fdb; --accent-2: #d9822b; --ok: #2e8b57; --off: #9aa3ae;
+    --scene: #eef1f5; --grid: #c9cfd8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121519; --panel: #1b2027; --text: #e6e9ee; --muted: #9aa3ae; --line: #2c333d;
+      --accent: #6d9cf0; --accent-2: #f0a35e; --ok: #5cc48a; --off: #5d6673;
+      --scene: #161a20; --grid: #39414c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121519; --panel: #1b2027; --text: #e6e9ee; --muted: #9aa3ae; --line: #2c333d;
+    --accent: #6d9cf0; --accent-2: #f0a35e; --ok: #5cc48a; --off: #5d6673;
+    --scene: #161a20; --grid: #39414c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, sans-serif; }
+  header { padding: 14px 16px 6px; }
+  h1 { font-size: 18px; margin: 0; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; padding: 8px 16px 16px; }
+  @media (max-width: 820px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  #stage { position: relative; height: 420px; overflow: hidden; touch-action: none; }
+  #stage canvas { display: block; }
+  .tag { position: absolute; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--panel);
+         border: 1px solid var(--line); pointer-events: none; transform: translate(-50%, -130%); white-space: nowrap; }
+  #drop { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+          padding: 16px; color: var(--muted); }
+  #drop.hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  #note { position: absolute; left: 10px; bottom: 8px; font-size: 12px; color: var(--muted); }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); }
+  .controls input[type=range] { flex: 1 1 160px; min-width: 0; }
+  #chart { display: block; width: 100%; height: 170px; border-top: 1px solid var(--line); cursor: crosshair; }
+  aside { padding: 12px; display: flex; flex-direction: column; gap: 14px; }
+  aside h2 { font-size: 13px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+  dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
+  label.row { display: grid; grid-template-columns: 1fr 80px; gap: 8px; align-items: center; margin: 4px 0; }
+  input[type=number] { width: 100%; }
+  input, button, select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  button { cursor: pointer; } button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .small { font-size: 12px; color: var(--muted); }
+  #presence.on { color: var(--ok); } #presence.off { color: var(--off); }
+  ul#points { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Life-Fi position view <span class="small">(experimental)</span></h1>
+  <p>Distance of a person from the ESP32, from one Wi-Fi link. One link gives distance only, not direction: the ring shows every place the person could be.</p>
+</header>
+<main>
+  <section class="card">
+    <div id="stage">
+      <div id="drop">Drop a <b>&nbsp;.csirec&nbsp;</b> recording here, or choose one below.</div>
+      <div id="note"></div>
+    </div>
+    <div class="controls">
+      <input type="file" id="file" accept=".csirec">
+      <button id="play" class="primary" disabled>Play</button>
+      <input type="range" id="scrub" min="0" max="0" step="1" value="0" disabled aria-label="Time">
+      <select id="speed" aria-label="Speed"><option value="1">1×</option><option value="4" selected>4×</option><option value="16">16×</option></select>
+    </div>
+    <canvas id="chart"></canvas>
+  </section>
+  <aside class="card">
+    <div>
+      <h2>Now</h2>
+      <dl>
+        <dt>Time</dt><dd id="o-t">–</dd>
+        <dt>Distance</dt><dd id="o-d">–</dd>
+        <dt>Disturbance</dt><dd id="o-r">–</dd>
+        <dt>RSSI</dt><dd id="o-rssi">–</dd>
+        <dt>Person</dt><dd id="presence">–</dd>
+      </dl>
+      <p class="small" id="o-file"></p>
+    </div>
+    <div>
+      <h2>Model</h2>
+      <label class="row">Disturbance at 1 m (A, dB) <input type="number" id="pA" step="0.5" value="-14"></label>
+      <label class="row">Fall-off exponent (n) <input type="number" id="pN" step="0.1" min="0.5" value="2"></label>
+      <label class="row">Router distance (m) <input type="number" id="pRouter" step="0.5" min="0.5" value="3"></label>
+      <label class="row">Assumed direction (°) <input type="number" id="pDir" step="5" value="30"></label>
+      <p class="small">d = 10<sup>(A − R)/(10·n)</sup>, where R is how strongly the body changes the subcarriers (dB re 1 dB²). A and n are guesses until you calibrate. Movement also raises R, so moving looks closer: calibrate sitting still.</p>
+      <button id="empty">Floor from an empty-room recording…</button>
+      <input type="file" id="emptyFile" accept=".csirec" hidden>
+      <p class="small" id="o-noise"></p>
+    </div>
+    <div>
+      <h2>Calibrate</h2>
+      <p class="small">Pause where you know the true distance, enter it and add the point. One point fits A; two or more fit A and n.</p>
+      <label class="row">True distance (m) <input type="number" id="calD" step="0.1" min="0.1" value="1"></label>
+      <button id="calAdd" disabled>Add point</button> <button id="calClear">Clear</button>
+      <ul id="points"></ul>
+      <p class="small" id="o-fit"></p>
+    </div>
+  </aside>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+
+// ---------- .csirec reader (port of engine/ts/src/csirec.ts) ----------
+const CSI_MAGIC = 0x31495343, HDR_SIZE = 54, N_SUB = 52;
+const LLTF_PAIRS = [];
+for (let j = 38; j < 64; j++) LLTF_PAIRS.push(j);
+for (let j = 1; j < 27; j++) LLTF_PAIRS.push(j);
+
+/** {t (s from start, host clock), rssi, x (gain-free dB, [n][52])}. */
+function loadCsirec(buf) {
+  const u8 = new Uint8Array(buf), v = new DataView(buf);
+  if (String.fromCharCode(...u8.subarray(0, 4)) !== "CSIR") throw new Error("not a .csirec file");
+  const t = [], rssi = [], rows = [];
+  let p = 8;
+  while (p + 12 <= u8.length) {
+    const len = v.getUint32(p, true), hostUs = Number(v.getBigUint64(p + 4, true));
+    p += 12;
+    if (p + len > u8.length) break;
+    const o = p;
+    p += len;
+    if (len < HDR_SIZE || v.getUint32(o, true) !== CSI_MAGIC || v.getUint16(o + 4, true) !== 2 || v.getUint16(o + 6, true) !== HDR_SIZE) continue;
+    const cwb = v.getUint8(o + 12), fwi = v.getUint8(o + 14), parts = v.getUint8(o + 28), nValues = v.getUint16(o + 52, true);
+    if (!(parts & 1) || cwb !== 0 || len < HDR_SIZE + nValues) continue;
+    const d = new Int8Array(buf, o + HDR_SIZE, nValues);
+    const amp = new Float64Array(N_SUB);
+    LLTF_PAIRS.forEach((j, i) => { amp[i] = Math.hypot(d[2 * j + 1], d[2 * j]); });
+    if (fwi) amp[26] = amp[27];                       // DC and k = +1 are garbage
+    let mean = 0;                                     // as features() in breathing.ts
+    for (let c = 0; c < N_SUB; c++) { amp[c] = 20 * Math.log10(amp[c] + 1); mean += amp[c]; }
+    mean /= N_SUB;
+    for (let c = 0; c < N_SUB; c++) amp[c] -= mean;
+    t.push(hostUs); rssi.push(v.getInt8(o + 18)); rows.push(amp);
+  }
+  const t0 = t.length ? t[0] : 0;
+  return { t: t.map((x) => (x - t0) / 1e6), rssi, rows };
+}
+
+// ---------- disturbance per window ----------
+const WIN_S = 10, STEP_S = 1, BIN_S = 0.25, MAX_GAP_S = 1, MIN_FRAMES = 200;
+
+/**
+ * Per window: P = body disturbance, the variance (dB², mean over subcarriers)
+ * of 0.25 s bin means around a linear trend, minus the white noise N left in
+ * them. null across Wi-Fi pauses. 10 s holds at least one breath: shorter
+ * windows left a still, breathing person at the noise level.
+ */
+function disturbance(rec) {
+  const out = [], { t, rows, rssi } = rec, end = t.length ? t[t.length - 1] : 0;
+  let a = 0;
+  for (let ws = 0; ws + WIN_S <= end + 1e-9; ws += STEP_S) {
+    while (a < t.length && t[a] < ws) a++;
+    let b = a;
+    while (b < t.length && t[b] < ws + WIN_S) b++;
+    const w = { t: ws + WIN_S / 2, P: null, N: null, rssi: null };
+    out.push(w);
+    const n = b - a;
+    if (n < MIN_FRAMES) continue;
+    let gap = 0, rs = 0;
+    for (let i = a + 1; i < b; i++) gap = Math.max(gap, t[i] - t[i - 1]);
+    if (gap > MAX_GAP_S) continue;
+    for (let i = a; i < b; i++) rs += rssi[i];
+    w.rssi = rs / n;
+    // bin means (averages out most white noise), then variance around a linear trend
+    const nb = Math.round(WIN_S / BIN_S), cnt = new Float64Array(nb), mean = new Float64Array(nb * N_SUB);
+    for (let i = a; i < b; i++) {
+      const k = Math.min(nb - 1, Math.floor((t[i] - ws) / BIN_S));
+      cnt[k]++;
+      for (let c = 0; c < N_SUB; c++) mean[k * N_SUB + c] += rows[i][c];
+    }
+    const ks = [];
+    for (let k = 0; k < nb; k++) if (cnt[k]) ks.push(k);
+    const km = ks.reduce((s, k) => s + k, 0) / ks.length, skk = ks.reduce((s, k) => s + (k - km) ** 2, 0);
+    const invCnt = ks.reduce((s, k) => s + 1 / cnt[k], 0) / ks.length;
+    let V = 0, Nv = 0;
+    for (let c = 0; c < N_SUB; c++) {
+      let ym = 0, sky = 0, ss = 0, sd = 0;
+      for (const k of ks) ym += (mean[k * N_SUB + c] /= cnt[k]);
+      ym /= ks.length;
+      for (const k of ks) sky += (k - km) * (mean[k * N_SUB + c] - ym);
+      for (const k of ks) ss += (mean[k * N_SUB + c] - ym - sky / skk * (k - km)) ** 2;
+      V += ss / ks.length;
+      // white noise per frame from neighbour differences (slow body motion cancels), as left in a bin mean
+      for (let i = a + 1; i < b; i++) sd += (rows[i][c] - rows[i - 1][c]) ** 2;
+      Nv += sd / (n - 1) / 2 * invCnt;
+    }
+    w.N = Nv / N_SUB;
+    w.P = Math.max(0, V / N_SUB - w.N);
+  }
+  return out;
+}
+
+function showFloor() {
+  $("o-noise").textContent = state.floorSource === "none"
+    ? "No empty-room floor: only white noise is removed."
+    : `Empty-room floor ${(10 * Math.log10(Math.max(1e-4, state.floor))).toFixed(1)} dB subtracted (${state.floorSource}).`;
+}
+
+function percentile(xs, q) {
+  const s = xs.filter((x) => x !== null).sort((x, y) => x - y);
+  return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : null;
+}
+
+// ---------- model: R (disturbance, dB re 1 dB²) -> distance, Kalman smoothing ----------
+const PRESENT_SNR = 1, D_MIN = 0.2, D_MAX = 8;
+// floor: disturbance of the empty room (flicker, other movers), 0 until an empty-room recording is loaded
+const state = { rec: null, wins: [], floor: 0, floorSource: "none", i: 0, playing: false, file: "" };
+const params = () => ({ A: +$("pA").value, n: Math.max(0.5, +$("pN").value) });
+
+function toDistance(R, { A, n }) {
+  return Math.min(D_MAX, Math.max(D_MIN, 10 ** ((A - R) / (10 * n))));
+}
+
+/** Constant-velocity Kalman filter on d; resets after a pause. */
+function smooth(wins) {
+  let x = null, P = null;
+  const q = 0.05, r = 0.3, dt = STEP_S;
+  for (const w of wins) {
+    if (w.d === null) { x = null; w.ds = null; continue; }
+    if (x === null) { x = [w.d, 0]; P = [[1, 0], [0, 1]]; w.ds = w.d; continue; }
+    x = [x[0] + dt * x[1], x[1]];
+    P = [[P[0][0] + dt * (P[1][0] + P[0][1]) + dt * dt * P[1][1] + q * dt ** 3 / 3, P[0][1] + dt * P[1][1] + q * dt * dt / 2],
+         [P[1][0] + dt * P[1][1] + q * dt * dt / 2, P[1][1] + q * dt]];
+    const k0 = P[0][0] / (P[0][0] + r), k1 = P[1][0] / (P[0][0] + r), y = w.d - x[0];
+    x = [x[0] + k0 * y, x[1] + k1 * y];
+    P = [[(1 - k0) * P[0][0], (1 - k0) * P[0][1]], [P[1][0] - k1 * P[0][0], P[1][1] - k1 * P[0][1]]];
+    w.ds = Math.min(D_MAX, Math.max(D_MIN, x[0]));
+  }
+}
+
+function recompute() {
+  const pr = params();
+  for (const w of state.wins) {
+    const body = w.P === null ? null : Math.max(1e-4, w.P - state.floor);
+    w.R = body === null ? null : 10 * Math.log10(body);
+    w.Rn = w.N === null ? null : 10 * Math.log10(w.N);
+    w.present = body !== null && body >= PRESENT_SNR * w.N;
+    w.d = w.present ? toDistance(w.R, pr) : null;
+  }
+  smooth(state.wins);
+  drawChart();
+  show(state.i);
+}
+
+// ---------- calibration (least squares of R on log10 d) ----------
+const CAL_KEY = "lifefi-position-cal";
+let points = [];
+try { points = JSON.parse(localStorage.getItem(CAL_KEY) || "[]"); } catch { points = []; }
+function savePoints() { try { localStorage.setItem(CAL_KEY, JSON.stringify(points)); } catch { /* private mode */ } }
+
+function fit() {
+  const out = $("o-fit");
+  if (!points.length) { out.textContent = "No points yet: A and n are guesses, distance is relative."; return; }
+  const xs = points.map((p) => Math.log10(p.d)), ys = points.map((p) => p.R);
+  let A = +$("pA").value, n = Math.max(0.5, +$("pN").value), note = "";
+  const xm = mean(xs), ym = mean(ys), sxx = xs.reduce((s, x) => s + (x - xm) ** 2, 0);
+  if (points.length >= 2 && sxx > 1e-4) {
+    const b = xs.reduce((s, x, i) => s + (x - xm) * (ys[i] - ym), 0) / sxx;
+    if (-b / 10 >= 0.5) { n = -b / 10; A = ym - b * xm; }
+    else note = " Disturbance did not fall with distance in these points, so n stays fixed.";
+  }
+  if (points.length === 1 || note) A = mean(ys.map((y, i) => y + 10 * n * xs[i]));
+  const rms = Math.sqrt(mean(ys.map((y, i) => (y - (A - 10 * n * xs[i])) ** 2)));
+  $("pA").value = A.toFixed(1); $("pN").value = n.toFixed(2);
+  out.textContent = `Fit from ${points.length} point(s): A = ${A.toFixed(1)} dB, n = ${n.toFixed(2)}, residual ${rms.toFixed(1)} dB.${note}`;
+}
+
+function renderPoints() {
+  $("points").innerHTML = "";
+  for (const p of points) {
+    const li = document.createElement("li");
+    li.textContent = `${p.d} m ↔ ${p.R.toFixed(1)} dB (${p.file} @ ${p.t.toFixed(1)} s)`;
+    $("points").append(li);
+  }
+}
+
+// ---------- 3D scene ----------
+const $ = (id) => document.getElementById(id);
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const stage = $("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 100);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 0.6);
+sun.position.set(3, 6, 4);
+scene.add(sun);
+
+const H = 1.0;                                        // board and router height (placement guide)
+const mat = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7, ...o });
+const board = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.03, 0.05), mat(0x2f6fdb));
+board.position.set(0, H, 0);
+const stand = (x) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, H), mat(0x888888)); m.position.set(x, H / 2, 0); return m; };
+const boardStand = stand(0);
+const router = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.14), mat(0xd9822b));
+const routerStand = stand(0);
+const fresnel = new THREE.Mesh(new THREE.SphereGeometry(1, 40, 20), mat(0x2f6fdb, { transparent: true, opacity: 0.12, depthWrite: false }));
+const linkLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x2f6fdb }));
+scene.add(board, boardStand, router, routerStand, fresnel, linkLine);
+let grid = null;
+
+const ringPts = [];
+for (let i = 0; i <= 128; i++) ringPts.push(new THREE.Vector3(Math.cos(i / 128 * 2 * Math.PI), 0.005, Math.sin(i / 128 * 2 * Math.PI)));
+const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(ringPts), new THREE.LineBasicMaterial({ color: 0x2e8b57, transparent: true, opacity: 0.8 }));
+scene.add(ring);
+
+const personMat = mat(0x2e8b57);
+const person = new THREE.Group();
+const body = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.15, 1.1, 20), personMat);
+body.position.y = 0.75;
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 20, 14), personMat);
+head.position.y = 1.45;
+const legs = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.1, 0.25, 16), personMat);
+legs.position.y = 0.12;
+person.add(body, head, legs);
+scene.add(person);
+
+const tags = {};
+for (const [k, label] of [["board", "ESP32"], ["router", "Router"], ["person", ""]]) {
+  const el = document.createElement("div");
+  el.className = "tag"; el.textContent = label;
+  stage.append(el); tags[k] = el;
+}
+
+function layoutLink() {
+  const D = Math.max(0.5, +$("pRouter").value);
+  router.position.set(D, H, 0); routerStand.position.x = D;
+  const r1 = Math.sqrt(0.125 * D) / 2;                // first Fresnel zone at mid-link, λ = 12.5 cm
+  fresnel.scale.set(D / 2, r1, r1); fresnel.position.set(D / 2, H, 0);
+  linkLine.geometry.setFromPoints([new THREE.Vector3(0, H, 0), new THREE.Vector3(D, H, 0)]);
+  if (grid) scene.remove(grid);
+  const size = Math.ceil(Math.max(D, D_MAX) * 2);
+  grid = new THREE.GridHelper(size, size, css("--grid"), css("--grid"));
+  scene.add(grid);
+}
+
+function applyTheme() {
+  scene.background = new THREE.Color(css("--scene"));
+  layoutLink();
+  drawChart();
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+
+// orbit: drag to rotate, wheel or pinch to zoom
+const orbit = { theta: -0.9, phi: 1.05, r: 7, target: new THREE.Vector3(1.2, 0.6, 0) };
+const pointers = new Map();
+let pinch = 0;
+stage.addEventListener("pointerdown", (e) => { pointers.set(e.pointerId, e); stage.setPointerCapture(e.pointerId); });
+stage.addEventListener("pointerup", (e) => { pointers.delete(e.pointerId); pinch = 0; });
+stage.addEventListener("pointercancel", (e) => { pointers.delete(e.pointerId); pinch = 0; });
+stage.addEventListener("pointermove", (e) => {
+  if (!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId);
+  pointers.set(e.pointerId, e);
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()], dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    if (pinch) orbit.r = clamp(orbit.r * pinch / dist, 2, 25);
+    pinch = dist;
+    return;
+  }
+  orbit.theta -= (e.clientX - prev.clientX) * 0.008;
+  orbit.phi = clamp(orbit.phi - (e.clientY - prev.clientY) * 0.008, 0.15, 1.5);
+});
+stage.addEventListener("wheel", (e) => { e.preventDefault(); orbit.r = clamp(orbit.r * (1 + Math.sign(e.deltaY) * 0.1), 2, 25); }, { passive: false });
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+  drawChart();
+}
+new ResizeObserver(resize).observe(stage);
+
+function placeTag(el, v) {
+  const p = v.clone().project(camera);
+  el.style.display = p.z < 1 ? "" : "none";
+  el.style.left = `${(p.x + 1) / 2 * stage.clientWidth}px`;
+  el.style.top = `${(1 - p.y) / 2 * stage.clientHeight}px`;
+}
+
+// ---------- playback ----------
+let last = performance.now(), acc = 0;
+function frame(now) {
+  const dt = (now - last) / 1000;
+  last = now;
+  if (state.playing && state.wins.length) {
+    acc += dt * +$("speed").value;
+    while (acc >= STEP_S) {
+      acc -= STEP_S;
+      if (state.i >= state.wins.length - 1) { setPlaying(false); break; }
+      show(state.i + 1);
+    }
+  }
+  camera.position.set(
+    orbit.target.x + orbit.r * Math.sin(orbit.phi) * Math.cos(orbit.theta),
+    orbit.target.y + orbit.r * Math.cos(orbit.phi),
+    orbit.target.z + orbit.r * Math.sin(orbit.phi) * Math.sin(orbit.theta));
+  camera.lookAt(orbit.target);
+  renderer.render(scene, camera);
+  placeTag(tags.board, board.position.clone().add(new THREE.Vector3(0, 0.05, 0)));
+  placeTag(tags.router, router.position.clone().add(new THREE.Vector3(0, 0.05, 0)));
+  if (person.visible) placeTag(tags.person, person.position.clone().add(new THREE.Vector3(0, 1.65, 0)));
+  else tags.person.style.display = "none";
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+function setPlaying(on) {
+  state.playing = on;
+  $("play").textContent = on ? "Pause" : "Play";
+  if (on && state.i >= state.wins.length - 1) show(0);
+}
+
+function show(i) {
+  const w = state.wins[i];
+  state.i = i;
+  $("scrub").value = i;
+  if (!w) { person.visible = ring.visible = false; return; }
+  $("o-t").textContent = `${w.t.toFixed(1)} s`;
+  $("o-rssi").textContent = w.rssi === null ? "–" : `${w.rssi.toFixed(0)} dBm`;
+  $("o-r").textContent = w.R === null ? "–" : `${w.R.toFixed(1)} dB (noise ${w.Rn.toFixed(1)} dB)`;
+  const pres = $("presence");
+  if (w.P === null) {
+    pres.textContent = "no data (Wi-Fi pause)"; pres.className = "off";
+    $("o-d").textContent = "–"; person.visible = ring.visible = false;
+  } else if (!w.present || w.ds === null) {
+    pres.textContent = "nothing above the noise"; pres.className = "off";
+    $("o-d").textContent = "–"; person.visible = ring.visible = false;
+  } else {
+    pres.textContent = "disturbing the link"; pres.className = "on";
+    const d = w.ds, a = +$("pDir").value * Math.PI / 180;
+    $("o-d").textContent = `${d.toFixed(2)} m ${points.length ? "" : "(uncalibrated)"}`;
+    person.visible = ring.visible = true;
+    person.position.set(d * Math.cos(a), 0, d * Math.sin(a));
+    ring.scale.set(d, 1, d);
+    tags.person.textContent = `${d.toFixed(2)} m`;
+  }
+  $("calAdd").disabled = w.R === null;
+  drawChart();
+}
+
+// ---------- chart: distance (top) and disturbance (bottom) ----------
+const chart = $("chart");
+function drawChart() {
+  const dpr = devicePixelRatio || 1, W = chart.clientWidth, Hc = chart.clientHeight;
+  if (!W) return;
+  chart.width = W * dpr; chart.height = Hc * dpr;
+  const g = chart.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, Hc);
+  g.font = "11px system-ui, sans-serif";
+  const wins = state.wins;
+  if (!wins.length) return;
+  const L = 44, Rt = 10, T = 8, mid = Hc / 2, B = Hc - 18;
+  const tMax = wins[wins.length - 1].t + WIN_S / 2;
+  const X = (t) => L + (t / tMax) * (W - L - Rt);
+  const Rs = wins.flatMap((w) => [w.R, w.Rn]).filter((r) => r !== null && r !== undefined);
+  const rLo = Math.floor(Math.min(...Rs)), rHi = Math.ceil(Math.max(...Rs));
+  const panels = [
+    { y0: T, y1: mid - 6, lo: 0, hi: D_MAX, label: "distance m", series: [["d", "--muted", 1], ["ds", "--accent", 2]] },
+    { y0: mid + 6, y1: B, lo: rLo, hi: rHi, label: "R dB", series: [["Rn", "--muted", 1], ["R", "--accent-2", 1.5]] },
+  ];
+  for (const p of panels) {
+    const Y = (v) => p.y1 - (v - p.lo) / (p.hi - p.lo) * (p.y1 - p.y0);
+    g.strokeStyle = css("--line"); g.lineWidth = 1;
+    g.strokeRect(L, p.y0, W - L - Rt, p.y1 - p.y0);
+    g.fillStyle = css("--muted");
+    g.fillText(p.hi.toFixed(0), 4, p.y0 + 9); g.fillText(p.lo.toFixed(0), 4, p.y1);
+    g.fillText(p.label, 4, (p.y0 + p.y1) / 2 + 4);
+    if (p.thresh !== undefined) {
+      g.setLineDash([4, 4]); g.beginPath(); g.moveTo(L, Y(p.thresh)); g.lineTo(W - Rt, Y(p.thresh)); g.stroke(); g.setLineDash([]);
+    }
+    for (const [key, color, lw] of p.series) {
+      g.strokeStyle = css(color); g.lineWidth = lw; g.beginPath();
+      let pen = false;
+      for (const w of wins) {
+        const v = w[key];
+        if (v === null || v === undefined) { pen = false; continue; }
+        const y = Y(Math.min(p.hi, Math.max(p.lo, v)));
+        pen ? g.lineTo(X(w.t), y) : g.moveTo(X(w.t), y);
+        pen = true;
+      }
+      g.stroke();
+    }
+  }
+  g.fillStyle = css("--muted");
+  for (let s = 0; s <= tMax; s += tMax > 90 ? 20 : 10) g.fillText(`${s}s`, X(s) - 8, Hc - 4);
+  const cur = wins[state.i];
+  if (cur) { g.strokeStyle = css("--text"); g.lineWidth = 1; g.beginPath(); g.moveTo(X(cur.t), T); g.lineTo(X(cur.t), B); g.stroke(); }
+}
+chart.addEventListener("click", (e) => {
+  if (!state.wins.length) return;
+  const r = chart.getBoundingClientRect(), tMax = state.wins[state.wins.length - 1].t + WIN_S / 2;
+  const t = (e.clientX - r.left - 44) / (r.width - 54) * tMax;
+  show(clamp(Math.round((t - WIN_S / 2) / STEP_S), 0, state.wins.length - 1));
+});
+
+// ---------- loading ----------
+async function openRecording(buf, name) {
+  const rec = loadCsirec(buf);
+  if (rec.t.length < MIN_FRAMES) throw new Error(`only ${rec.t.length} CSI frames in ${name}`);
+  const wins = disturbance(rec);
+  if (wins.every((w) => w.P === null)) throw new Error(`no ${WIN_S} s stretch without a Wi-Fi pause in ${name}`);
+  state.rec = rec; state.file = name; state.wins = wins;
+  const dur = rec.t[rec.t.length - 1];
+  $("o-file").textContent = `${name}: ${rec.t.length} frames, ${dur.toFixed(1)} s, ${(rec.t.length / dur).toFixed(0)} frames/s`;
+  showFloor();
+  $("drop").style.display = "none";
+  $("note").textContent = "Direction unknown: one link measures distance only. The figure stands at the assumed direction.";
+  $("scrub").max = state.wins.length - 1; $("scrub").disabled = false; $("play").disabled = false;
+  state.i = 0;
+  recompute();
+}
+
+function readFile(f, then) {
+  f.arrayBuffer().then((b) => then(b, f.name)).catch(fail);
+}
+function fail(err) { $("drop").style.display = ""; $("drop").textContent = `Could not read the recording: ${err.message}`; console.error(err); }
+
+$("file").addEventListener("change", (e) => e.target.files[0] && readFile(e.target.files[0], openRecording));
+stage.addEventListener("dragover", (e) => { e.preventDefault(); $("drop").classList.add("hover"); });
+stage.addEventListener("dragleave", () => $("drop").classList.remove("hover"));
+stage.addEventListener("drop", (e) => {
+  e.preventDefault(); $("drop").classList.remove("hover");
+  if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0], openRecording);
+});
+$("empty").addEventListener("click", () => $("emptyFile").click());
+$("emptyFile").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) readFile(f, (buf, name) => {
+    state.floor = percentile(disturbance(loadCsirec(buf)).map((w) => w.P), 0.5);
+    state.floorSource = name;
+    showFloor();
+    recompute();
+  });
+});
+
+$("play").addEventListener("click", () => setPlaying(!state.playing));
+$("scrub").addEventListener("input", (e) => { setPlaying(false); show(+e.target.value); });
+for (const id of ["pA", "pN"]) $(id).addEventListener("change", recompute);
+$("pRouter").addEventListener("change", layoutLink);
+$("pDir").addEventListener("change", () => show(state.i));
+$("calAdd").addEventListener("click", () => {
+  const w = state.wins[state.i], d = +$("calD").value;
+  if (!w || w.R === null || !(d > 0)) return;
+  points.push({ d, R: w.R, t: w.t, file: state.file });
+  savePoints(); renderPoints(); fit(); recompute();
+});
+$("calClear").addEventListener("click", () => { points = []; savePoints(); renderPoints(); fit(); recompute(); });
+
+function mean(xs) { return xs.reduce((s, x) => s + x, 0) / xs.length; }
+function clamp(x, lo, hi) { return Math.min(hi, Math.max(lo, x)); }
+
+applyTheme();
+renderPoints();
+fit();
+const src = new URLSearchParams(location.search).get("src");
+if (src) fetch(src).then((r) => { if (!r.ok) throw new Error(`${r.status} for ${src}`); return r.arrayBuffer(); })
+  .then((b) => openRecording(b, src.split("/").pop())).catch(fail);
+</script>
+</body>
+</html>
