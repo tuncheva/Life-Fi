@@ -7,10 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const schemaPath = join(here, "..", "..", "contracts", "results.schema.json");
-const outPaths = [
-  join(here, "..", "src", "lib", "contracts.gen.ts"),
-  join(here, "..", "..", "server", "src", "contracts.gen.ts"),
-];
+const outPaths = [join(here, "..", "src", "lib", "contracts.gen.ts")];
 
 const schema = JSON.parse(readFileSync(schemaPath, "utf8"));
 const ts = await compile(schema, "Result", {

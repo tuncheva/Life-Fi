@@ -34,6 +34,7 @@ command out after 3 s.
 | `record_stop` | — | Stops the recording | `{"frames": 12345, "t_start_us": …, "t_end_us": …}` |
 | `reload_models` | — | Reloads the model files | `{"models": [...]}` (as in `get_status`) |
 | `reload_rules` | — | Reloads `rules.yaml`; the new `config_hash` appears in results | `{"config_hash": "…"}` |
+| `position_fit` | `d_m` (0.3–8), `seconds` (default 25) | Someone has been moving `d_m` from the board for the last `seconds`: sets the distance scale A of `result.position` from their disturbance and saves it (`data/position.json`, live only). Refused when too little movement above the empty room was seen | `{"A", "n", "R_db", "windows"}` |
 | `get_status` | — | Engine and device status | see below |
 
 `calibrate` acks when the calibration **finishes** (up to `duration_s`

@@ -3,7 +3,6 @@
 // notifications through ntfy, time zone, dashboard URL for the notification's
 // click / acknowledge action, retention, and the PIN itself.
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { API_BASE, getDeviceName, getPin, getSettings, setDeviceName, setPin, setProfile, testNotification, updateSettings, type ProfileName, type PublicSettings } from "@/lib/api";
 import { useLive } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
@@ -235,10 +234,7 @@ export default function SettingsPage() {
           <dd>{status?.engine.status?.models.map((m) => `${m.name}${m.loaded ? "" : " (not loaded)"}`).join(", ") || "—"}</dd>
           <dt className="text-muted">Calibration</dt>
           <dd>
-            {status?.engine.status?.calibration.state ?? "—"} {status?.engine.status?.calibration.id ?? ""} ·{" "}
-            <Link href="/calibrate/" className="font-medium text-link hover:underline">
-              guided calibration →
-            </Link>
+            {status?.engine.status?.calibration.state ?? "—"} {status?.engine.status?.calibration.id ?? ""}
           </dd>
           <dt className="text-muted">Time zone</dt>
           <dd>{status?.server.time_zone ?? "—"}</dd>

@@ -5,10 +5,8 @@
     .venv/Scripts/python engine/run.py --esp 192.168.100.111      # the board over Wi-Fi (UDP; --esp alone: broadcast)
     .venv/Scripts/python engine/run.py --replay f.csirec [--loop]  # a recording, in real time
 
-Usually started for you, with the server and the dashboard, by
-`npm run dev:real` (the board) or `npm run dev:replay` (the demo
-recording). Not together with `npm run dev`: the mock engine uses the
-same port. Do the 2-minute empty-room calibration from the dashboard
+Usually started for you, with the dashboard and its backend, by
+`npm run dev` (the board over USB). Do the 2-minute empty-room calibration from the dashboard
 first; until then presence counts motion only. The live calibration is
 saved (--calibration) and used again at the next start. Thresholds: engine/config/rules.yaml;
 models: ml/models/ (rebuild with ml/train_gbm.py --final if missing; the
@@ -39,7 +37,7 @@ def main():
     ap.add_argument("--loop", action="store_true", help="replay: start again at the end")
     ap.add_argument("--calibrate-at-start", action="store_true",
                     help="start the 2-minute empty-room calibration right away (for a recording that begins "
-                         "with 2 min of empty room, such as engine/tools/fakesensor.py's, at --speed 1)")
+                         "with 2 min of empty room, at --speed 1)")
     ap.add_argument("--host", default="127.0.0.1", help="where the server connects (contracts/control.md)")
     ap.add_argument("--port", type=int, default=6000)
     ap.add_argument("--calibration", default=str(engine_mod.CALIBRATION),

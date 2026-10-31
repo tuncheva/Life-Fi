@@ -155,16 +155,6 @@ export function roomStatus(input: {
     const headline = profile === "school" ? "Room is empty" : "Nobody in the room";
     return { tone: "empty", headline, detail: since, action: null, blind: false };
   }
-  const cal = calibrationText(result.calibration);
-  if (cal.needsAction) {
-    return {
-      tone: "uncertain",
-      headline: "Not sure if anyone is there",
-      detail: "The empty-room calibration is missing or old. Recalibrate while nobody is in the room.",
-      action: { label: "Calibrate", href: "/calibrate/" },
-      blind: false,
-    };
-  }
   return { tone: "uncertain", headline: "Not sure if anyone is there", detail: "Someone may be sitting very still or far from the sensor.", action: null, blind: false };
 }
 
@@ -255,7 +245,7 @@ export function alertAction(type: string, profile: ProfileName): string {
       return "Check who is in the room.";
     case "presence_uncertain":
     case "recalibrate_needed":
-      return "Recalibrate while the room is empty.";
+      return "The room signal changed; it settles by itself.";
     default:
       return "Check on the room.";
   }

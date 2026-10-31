@@ -9,7 +9,10 @@ stores the empty-room levels every rule is scaled by:
 - B (breathing-band energy, lifefi.presence.breath_energy) over 30 s
   windows every 5 s: P95 / P99;
 - S (static deviation) over 10 s windows: P95 / P99, and the empty
-  profile p_empty itself.
+  profile p_empty itself;
+- the body disturbance P of lifefi.position (filled in by the engine,
+  which keeps P per second): P50, subtracted from P before the distance,
+  and P95, the level a person must exceed. None on older calibrations.
 
 It is refused when someone moves during it: any 1 s with mean M above
 MOTION_X x the median (an empty E4 recording passes, walking fails).
@@ -47,10 +50,12 @@ class Calibration:
     s_p95: float
     s_p99: float
     p_empty: np.ndarray = field(repr=False)    # [52] mean-removed dB profile
+    pos_p50: float | None = None               # lifefi.position disturbance P (dB²) of the empty room
+    pos_p95: float | None = None
 
     def to_dict(self):
         d = {k: getattr(self, k) for k in ("id", "at", "seconds", "m_p10", "m_p50", "m_p95", "m_p99",
-                                            "b_p95", "b_p99", "s_p95", "s_p99")}
+                                            "b_p95", "b_p99", "s_p95", "s_p99", "pos_p50", "pos_p95")}
         d["p_empty"] = [round(float(v), 4) for v in self.p_empty]
         return d
 

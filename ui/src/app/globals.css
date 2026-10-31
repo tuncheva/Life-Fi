@@ -63,6 +63,10 @@
   --chart-activity: #7b8794;
   --chart-grid: #e3e7ec;
   --chart-axis: #6a7380;
+  --chart-motion: #c2410c;
+  --chart-deviation: #7c3aed;
+  --chart-rssi: #4d7c0f;
+  --chart-distance: #0d9488;
   --posture-lying: #4f46e5;
   --posture-sitting: #9333ea;
   --posture-standing: #db2777;
@@ -109,6 +113,10 @@
     --chart-activity: #6b7683;
     --chart-grid: #232831;
     --chart-axis: #8a939e;
+    --chart-motion: #fb923c;
+    --chart-deviation: #a78bfa;
+    --chart-rssi: #a3e635;
+    --chart-distance: #2dd4bf;
     --posture-lying: #818cf8;
     --posture-sitting: #c084fc;
     --posture-standing: #f472b6;
@@ -153,6 +161,10 @@
   --chart-activity: #6b7683;
   --chart-grid: #232831;
   --chart-axis: #8a939e;
+  --chart-motion: #fb923c;
+  --chart-deviation: #a78bfa;
+  --chart-rssi: #a3e635;
+  --chart-distance: #2dd4bf;
   --posture-lying: #818cf8;
   --posture-sitting: #c084fc;
   --posture-standing: #f472b6;

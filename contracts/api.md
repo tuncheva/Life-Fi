@@ -1,4 +1,7 @@
-# HTTP + WebSocket API (server → dashboard)
+# HTTP + Server-Sent Events API (backend → dashboard)
+
+Served by the Next.js app in `ui/` (route handlers under `ui/src/app/api/v1`,
+the backend in `ui/src/server`), same origin as the dashboard.
 
 Source: plan-v2 §4.7, §7, §8. This file is the contract. Change it here first.
 
@@ -28,7 +31,7 @@ Writes: every `POST` and `PUT` below.
 | POST | `/alerts/{id}/ack` | `{"by": "Maria's phone"}` (optional, ≤ 40 chars) | `Alert` with `acked_by` |
 | GET | `/profile` | — | `{"active": "home", "profiles": {…}}` (the `profiles` block of `profiles.yml`) |
 | PUT | `/profile` | `{"active": "clinic"}` | same as GET |
-| POST | `/calibrate` | `{"kind": "empty", "duration_s": 120}` | `{"started": true}`; `409` while one is running. Progress and outcome arrive as `status` WS messages: `calibration_job` (below) plus the engine's `calibration.state` in every result |
+| POST | `/calibrate` | `{"kind": "empty", "duration_s": 120}` | `{"started": true}`; `409` while one is running. Progress and outcome arrive as `status` live messages: `calibration_job` (below) plus the engine's `calibration.state` in every result |
 | GET | `/recordings` | — | `{"recordings": [{"session","file","bytes","labels"}], "recording": Recording \| null, "vocabulary": {"segments": [...], "marks": [...]}}` |
 | GET | `/recordings/labels?session=` | — | `{"session", "labels": [lines of labels.jsonl], "open_segment"}`; `session` defaults to the one recording |
 | GET | `/source` | — | `Source` |
@@ -37,6 +40,7 @@ Writes: every `POST` and `PUT` below.
 | POST | `/recordings/stop` | `{}` | `{"session": "s03", "frames": 12345, "labels": 17}`; ends an open segment first |
 | POST | `/recordings/segment` | `{"action":"start","label","count","subject","spot"}` or `{"action":"end"}` | `{"ended": segment \| null, "open_segment"}`; starting a segment ends the open one (segments never overlap) |
 | POST | `/recordings/mark` | `{"event","subject"}` | the written mark line |
+| POST | `/position/fit` | `{"d_m": 2, "seconds": 25}` | engine `position_fit` ack data `{"A","n","R_db","windows"}`; `409` when too little movement was seen |
 
 `Recording` (also in `Status.recording` while a session runs, else `null`; the
 server clears it if the engine reports no recording, e.g. after an engine
@@ -48,7 +52,7 @@ Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `
 | GET | `/settings` | — | `Settings` |
 | PUT | `/settings` | partial `Settings` (+ `pin` to change it, 4–8 digits) | `Settings` |
 | POST | `/settings/test-notification` | `{}` | `{"sent": true}`, or `502` `{"error":"notify"}` when ntfy refused or no topic is set |
-| WS | `/ws/live` | — | messages below |
+| GET | `/live` | — | Server-Sent Events, messages below |
 
 ### `Status`
 
@@ -121,7 +125,7 @@ State machine (plan-v2 §7.2):
 ```
 event active ─▶ pending (delay_s from the profile)
 pending ─cleared before the timer─▶ dropped
-pending ─timer expires (or delay_s = 0)─▶ open ─▶ WebSocket + ntfy
+pending ─timer expires (or delay_s = 0)─▶ open ─▶ live stream + ntfy
 open ─ack─▶ acked ;  open/acked ─cleared─▶ resolved
 open, not acked for escalate_after_s ─▶ re-notify
 ```
@@ -153,9 +157,10 @@ One row per 5 s. Never contains `csi` or `wave`.
 The PIN itself is never returned. Changing it: `PUT /settings` with
 `{"pin": "new"}` and the current PIN in the header.
 
-## WebSocket `/ws/live`
+## Live stream `/api/v1/live` (Server-Sent Events)
 
-Server → client only. Text frames, one JSON object each. On connect the
+Server → client only (`text/event-stream`). Each event's `data:` is one JSON
+object; a `: ping` comment every 15 s keeps the stream open. On connect the
 server first sends one `status` and, if it has one, one `result`.
 
 | `type` | Payload | When |
@@ -164,6 +169,6 @@ server first sends one `status` and, if it has one, one `result`.
 | `alert` | `{"type": "alert", "alert": Alert}` | every alert state transition |
 | `status` | `{"type": "status", "status": Status without result}` | engine connect/disconnect, source change, profile change, calibration change, device status every 1 s |
 
-The client reconnects with exponential backoff capped at 5 s, and shows
-"connection lost" while disconnected. Slow clients are dropped by the server
-when their send queue exceeds 64 KB or 1000 messages.
+The client (`EventSource`) reconnects with exponential backoff capped at 5 s,
+and shows "connection lost" while disconnected. Slow clients are dropped by
+the server when their queue exceeds 64 KB.

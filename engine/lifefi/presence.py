@@ -91,11 +91,10 @@ def motion_level(M, m_on, span=DEFAULTS["motion_span"]):
     """0-1 motion for the dashboard, on a log scale anchored at presence's motion threshold:
     0.1 at m_on, 0.9 at span x m_on.
 
-    The server calls >= 0.1 "motion seen" (`MOTION_ON`, server/src/rules.ts)
+    The server calls >= 0.1 "motion seen" (`MOTION_ON`, ui/src/server/rules.ts)
     and the UI words switch at 0.06 / 0.2 / 0.6, so 0.1 must mean the same
     as presence's "someone moved". On E4 (ml/check_presence.py) an empty
-    room and a still person then read 0 and walking peaks around 0.7, as
-    the mock engine's scenes assume."""
+    room and a still person then read 0 and walking peaks around 0.7."""
     r = np.maximum(np.asarray(M, dtype=np.float64), 1e-12) / max(m_on, 1e-12)
     return np.clip(0.1 + 0.8 * np.log10(r) / np.log10(span), 0.0, 1.0)
 

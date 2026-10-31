@@ -31,6 +31,7 @@ class Server:
         self.dropped = 0
         engine.source_hook = self.set_source
         engine.source_info_hook = self.source_info
+        engine.board_hook = self.board
         self.bound_port = None
         self.last_error_log = -1e9
 
@@ -55,6 +56,10 @@ class Server:
             self.source.stop()
         self.source = new.start()
         self.log(f"source: {new.name}")
+
+    def board(self):
+        """The live board's own presence/people estimate (USB log), or None."""
+        return getattr(self.source, "board", None)
 
     def source_info(self):
         if self.source is None:

@@ -91,6 +91,14 @@ class LiveF:
         n = int(round(seconds * FS))
         return self.t[-n:], self.F[-n:], self.valid[-n:]
 
+    def raw_amp(self, seconds):
+        """(t s [N], |csi| [N, 52]) of the last `seconds` of packets."""
+        if not self.pt:
+            return np.zeros(0), np.zeros((0, 52), np.float32)
+        pt = np.fromiter(self.pt, float, len(self.pt))
+        k = int(np.searchsorted(pt, pt[-1] - seconds))
+        return pt[k:], np.array(list(self.pamp)[k:])
+
     def raw(self, seconds, now=None):
         """(t s [N], csi complex [N, 52]) of the last `seconds` of packets."""
         if not self.pt:

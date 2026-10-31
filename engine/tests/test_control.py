@@ -18,8 +18,8 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "engine"))
-sys.path.insert(0, str(ROOT / "engine" / "tools"))
-import fakesensor  # noqa: E402
+sys.path.insert(0, str(ROOT / "engine" / "tests"))
+import scenarios  # noqa: E402
 from lifefi.control import Server  # noqa: E402
 from lifefi.engine import Engine  # noqa: E402
 
@@ -73,8 +73,8 @@ class Client:
 
 tmp = pathlib.Path(tempfile.mkdtemp())
 rec = tmp / "sitting.csirec"
-ts_us, csi, _ = fakesensor.scenario("sitting")
-fakesensor.write(rec, ts_us[:2000], csi[:2000])            # ~22 s is enough here
+ts_us, csi, _ = scenarios.scenario("sitting")
+scenarios.write(rec, ts_us[:2000], csi[:2000])            # ~22 s is enough here
 
 eng = Engine(mode="replay")
 logs = []

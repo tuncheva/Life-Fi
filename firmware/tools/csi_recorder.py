@@ -163,6 +163,7 @@ class SerialSource:
         self.hint = "right port? board running? try a serial monitor at 921600"
         self.buf = b""
         self.log_lines = self.bad_lines = 0
+        self.on_log = None   # optional callback(text) for the board's own log lines
 
     def request(self):
         self.ser.write(USB_REQUEST)
@@ -183,6 +184,8 @@ class SerialSource:
                 return None
         self.log_lines += 1
         text = line.decode("utf-8", "replace")
+        if self.on_log is not None:
+            self.on_log(text)
         if text.startswith(("E (", "\x1b[0;31mE (")):
             print(f"  board: {text}", file=sys.stderr)
         return None

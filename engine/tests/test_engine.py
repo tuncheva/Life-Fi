@@ -1,4 +1,4 @@
-"""The whole engine on synthetic board recordings (engine/tools/fakesensor.py).
+"""The whole engine on synthetic board recordings (engine/tests/scenarios.py).
 
     python engine/tests/test_engine.py [scenario ...]
 
@@ -17,8 +17,8 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "engine"))
-sys.path.insert(0, str(ROOT / "engine" / "tools"))
-import fakesensor  # noqa: E402
+sys.path.insert(0, str(ROOT / "engine" / "tests"))
+import scenarios  # noqa: E402
 import numpy as np  # noqa: E402
 from lifefi import calibration  # noqa: E402
 from lifefi.engine import Engine  # noqa: E402
@@ -40,8 +40,8 @@ def check(cond, what):
 
 def run(name, tick=0.5, until=None):
     """until(eng, result) -> True stops early and returns (engine, now) instead (the source-switch check)."""
-    ts_us, csi, expect = fakesensor.scenario(name)
-    frames = list(fakesensor.frames(ts_us, csi))
+    ts_us, csi, expect = scenarios.scenario(name)
+    frames = list(scenarios.frames(ts_us, csi))
     eng = Engine()
     acks, results, bad = [], [], []
     t0 = frames[0][0] / 1e6
@@ -76,7 +76,7 @@ def first_state(results, state, after=0.0):
     return next((t for t, r in results if t >= after and r["presence"]["state"] == state), None)
 
 
-wanted = sys.argv[1:] or list(fakesensor.SCENARIOS)
+wanted = sys.argv[1:] or list(scenarios.SCENARIOS)
 for name in wanted:
     print(f"== {name}")
     results, acks, bad, ex = run(name)
@@ -100,8 +100,8 @@ for name in wanted:
     allowed = {"fall": {"fall", "fainted_suspected"}, "breath_hold": {"no_breathing"}}.get(name, set())
     check(set(events(results)) <= allowed, f"no unexpected events ({events(results)})")
     if "present_after" in ex:
-        t = first_state(results, "present", after=fakesensor.ENTER[0] - 1)
-        check(t is not None and t <= ex["present_after"], f"PRESENT {t and t - fakesensor.ENTER[0]:.1f} s after walking in")
+        t = first_state(results, "present", after=scenarios.ENTER[0] - 1)
+        check(t is not None and t <= ex["present_after"], f"PRESENT {t and t - scenarios.ENTER[0]:.1f} s after walking in")
         breathing = [r["breathing"]["bpm"] for t, r in results if 175 < t < 195 and r["breathing"]["valid"]]
         check(len(breathing) > 10 and all(abs(b - 15) <= 1 for b in breathing),
               f"breathing 15 /min shown while sitting ({len(breathing)} results, {sorted(set(breathing))[:4]})")
