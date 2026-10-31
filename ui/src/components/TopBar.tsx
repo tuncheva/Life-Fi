@@ -147,6 +147,9 @@ export function TopBar() {
               </span>
             )}
           </Link>
+          <Link href="/emergency/" className={navCls(path.startsWith("/emergency"))} aria-current={path.startsWith("/emergency") ? "page" : undefined}>
+            Emergency
+          </Link>
           <details ref={menu} className="relative">
             <summary className={navCls(onSetup)} aria-label="Setup menu">
               <Icon name="settings" className="h-4 w-4" />
