@@ -1,0 +1,45 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# runtime data (recordings, databases, logs)
+data/
+*.csirec
+*.sqlite
+*.sqlite-journal
+*.log
+
+# public datasets: ~10 GB, re-download with datasets/download.sh
+# (docs/plan/dataset-preparation.md §4.2)
+datasets/raw/
+datasets/interim/
+datasets/processed/
+
+# trained models: ~14 MB, rebuilt in minutes from datasets/processed
+# (ml/train_gbm.py --final, ml/train_cnn.py --final, ml/export.py)
+ml/models/
+
+# env
+.env
+.env.*
+!.env.example
+!.env.development
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# python (engine / ml, owned by other teammates)
+__pycache__/
+*.pyc
+.venv/
+
+# claude code local settings (launch.json is shared)
+.claude/settings.local.json

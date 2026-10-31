@@ -18,7 +18,7 @@ Assumes one person, still, near the link (plan-v2 §13). Not a medical
 device.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -29,8 +29,8 @@ MAX_GAP_S = 1.0
 BAND = (0.1, 0.5)         # 6-30 breaths/min
 REF_BAND = (0.6, 2.0)     # motion / noise reference
 TOP_SUBCARRIERS = 8
-MIN_CONFIDENCE = 0.35     # [H] share of band power within +-0.02 Hz of the peak
-MIN_BAND_RATIO = 2.0      # [H] breathing band vs 0.6-2 Hz, mean of the top subcarriers
+MIN_CONFIDENCE = 0.40     # [H] share of band power within +-0.02 Hz of the peak; E1 sweep (ml/tune_breathing.py)
+MIN_BAND_RATIO = 2.0      # [H] breathing band vs 0.6-2 Hz, mean of the top subcarriers; 1.5 lets motion through (TS motion test)
 MAX_DISAGREE_BPM = 2.0    # FFT vs autocorrelation
 
 
@@ -43,6 +43,8 @@ class BreathWindow:
     acf_bpm: float
     valid: bool
     reason: str           # why not valid ("" when valid)
+    top: tuple = ()       # the TOP_SUBCARRIERS used
+    v: np.ndarray = field(default=None, repr=False)   # [52] PC1 direction, zero outside `top` (lifefi.apnea freezes it)
 
 
 def _features(csi):
@@ -162,8 +164,10 @@ def estimate_breathing(ts_us, csi):
                 reasons.append("FFT/ACF disagree")
             if _drift_at_edge(seg[:, top] @ vt[0], peak):
                 reasons.append("drift at band edge")
+            v = np.zeros(x.shape[1])
+            v[top] = vt[0]
             out.append(BreathWindow(float(grid[w0]), bpm, conf, band_ratio, acf_bpm,
-                                    not reasons, "; ".join(reasons)))
+                                    not reasons, "; ".join(reasons), tuple(int(i) for i in top), v))
     return out
 
 

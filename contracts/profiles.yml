@@ -1,0 +1,45 @@
+# Profiles (plan-v2 §11). The engine output is identical in every profile.
+# A profile decides which events become alerts, how fast, and what the
+# dashboard shows. The server loads this file; the hash of it travels in
+# config_hash.
+
+profiles:
+  home:
+    title: Home
+    assumption: single occupant
+    alerts:
+      fall:               {level: high,   delay_s: 0}
+      fainted_suspected:  {level: high,   delay_s: 0}
+      no_breathing:       {level: high,   delay_s: 5}
+      long_inactivity:    {level: medium, delay_s: 0}
+      sensor_offline:     {level: medium, delay_s: 0}
+      presence_uncertain: {level: low,    delay_s: 0}
+    inactivity: {still_present_max_min: 120, no_motion_by: "10:00"}
+    breathing: {show: true, store: true}
+    pages: [state, breathing, motion, timeline]
+
+  school:
+    title: School
+    assumption: multiple people normal
+    alerts:
+      fall:               {level: high,   delay_s: 0}
+      fainted_suspected:  {level: high,   delay_s: 0}
+      sensor_offline:     {level: medium, delay_s: 0}
+    occupancy: {after_hours: {from: "18:00", to: "07:00", level: medium, source: presence}}
+    breathing: {show: false, store: false}
+    pages: [occupancy, timeline, alerts]
+
+  clinic:
+    title: Clinic
+    assumption: single patient
+    alerts:
+      fall:               {level: high, delay_s: 0}
+      fainted_suspected:  {level: high, delay_s: 0}
+      no_breathing:       {level: high, delay_s: 0}
+      bed_exit:           {level: high, delay_s: 0, hours: "21:00-07:00"}
+      sensor_offline:     {level: high, delay_s: 0}
+    breathing: {show: true, store: true}
+    pages: [breathing, posture, bed, alerts]
+
+notify: {ntfy_url: "https://ntfy.sh", topic: "", escalate_after_s: 120}
+zone: "Europe/Sofia"

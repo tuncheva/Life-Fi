@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  portal:
+    name: contracts + server + ui
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Fixtures validate against the schema
+        run: npm run check:contracts
+      - name: Generated types are committed and current
+        run: |
+          node ui/scripts/gen-types.mjs
+          git diff --exit-code -- ui/src/lib/contracts.gen.ts server/src/contracts.gen.ts
+      - name: Server typecheck + tests
+        run: |
+          npm run lint -w server
+          npm test -w server
+      - name: UI lint + static export + typecheck
+        # build first: it generates .next/types, which the typecheck relies on
+        run: |
+          npm run lint -w ui
+          npm run build -w ui
+          npm run typecheck -w ui
+
+  python:
+    name: engine + ml (no datasets, no GPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy==2.5.4 scipy==1.18.1 PyYAML==6.0.3 jsonschema==4.26.0 pyserial==3.5
+      - run: |
+          python engine/tests/test_dsp.py
+          python engine/tests/test_breathing.py
+          python engine/tests/test_heart.py
+          python engine/tests/test_live.py
+          python engine/tests/test_presence.py
+          python engine/tests/test_apnea.py
+          python engine/tests/test_posture.py
+          python engine/tests/test_engine.py
+          python engine/tests/test_control.py
+          python engine/tests/test_features_vectors.py
+          python ml/tests/test_own.py

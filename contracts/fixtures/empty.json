@@ -1,0 +1,19 @@
+{
+  "type": "result", "v": 2,
+  "ts": 1767225700123, "t_rx_last_us": 1767225700118000,
+  "node": 1, "boot_id": 2913411, "source": "live",
+  "config_hash": "9f3a1c", "pipeline_version": 2,
+  "health": {"rate_hz": 89.0, "loss_udp": 0.002, "loss_air": 0.02,
+             "invalid_ratio": 0.0, "rejected": {"layout": 0, "gain_invalid": 0},
+             "warmup": false},
+  "calibration": {"state": "ok", "id": "cal-0007", "age_s": 412},
+  "presence": {"value": false, "state": "empty", "S": 0.02, "B": 0.05, "M": 0.005},
+  "motion": 0.005,
+  "posture": null,
+  "count": null,
+  "activity": null,
+  "breathing": {"bpm": null, "confidence": 0.0, "valid": false, "wave": []},
+  "csi": [],
+  "events": [],
+  "active": []
+}

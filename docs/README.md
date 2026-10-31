@@ -1,0 +1,40 @@
+# Life-Fi Docs
+
+Start with [plan/plan-v2.md](plan/plan-v2.md). It is the single plan to build
+from; where any other document disagrees with it, plan-v2 wins.
+
+## plan/ — current, build from these
+
+| Document | What it is for |
+|---|---|
+| [plan-v2.md](plan/plan-v2.md) | **The master plan.** Whole system (firmware, engine, detectors, models, server, dashboard, profiles), decisions, phases and checklists |
+| [csi-for-models.md](plan/csi-for-models.md) | Companion to plan-v2: what the models and detectors need from ESP32 CSI — radio config, buffer layout, preprocessing, quality gates, recordings |
+| [model-scope-and-phases.md](plan/model-scope-and-phases.md) | Model side of plan-v2: which components learn weights, how much data they need, phases and gates |
+| [portal-plan.md](plan/portal-plan.md) | Portal side of plan-v2 (server + dashboard): decisions that differ from plan-v2, mock-data approach, work list |
+| [data-and-recording-guide.md](plan/data-and-recording-guide.md) | What every part (trained or rule) needs, where it comes from (ESP, public data, own recordings), a to-do per part, a Minimum and a Full recording track, and a step-by-step recording tutorial |
+| [dataset-preparation.md](plan/dataset-preparation.md) | What the downloaded public datasets really contain, which model each one feeds, and the cleaning/conversion plan |
+| [model-training-plan.md](plan/model-training-plan.md) | The one-week cut for demo day. §0: the 2026-10-30 decision (downloaded data only); §10: what was built and measured under it |
+| [model-audit.md](plan/model-audit.md) | Audit of the model and dataset work (2026-10-29), with the status of each finding |
+| [models.md](models.md) (in `docs/`) | **Model card**: the trained models and the engine's rules, the data and licences behind them, the numbers, and the limits |
+
+## research/ — evidence the plan is based on
+
+| Document | What it is for |
+|---|---|
+| [csi-sufficiency-research.md](research/csi-sufficiency-research.md) | Is ESP32-S3 CSI enough? Hardware limits, model feasibility, audit of the older docs |
+| [training-data-sources.md](research/training-data-sources.md) | Public CSI datasets, rated by fit, mapped to each detector/model |
+
+## archive/ — superseded by plan-v2, kept as background
+
+| Document | What it was |
+|---|---|
+| [implementation-plan.md](archive/implementation-plan.md) | First code plan (v1): components, data formats, build order |
+| [plan-audit-and-model-research.md](archive/plan-audit-and-model-research.md) | Audit of v1 and first model research |
+| [build-guide.md](archive/build-guide.md) | How each part is built, with parameters, plus a gap list against v1 |
+
+## Reading order
+
+1. `plan/plan-v2.md`
+2. `plan/csi-for-models.md` and `plan/model-scope-and-phases.md` when working on firmware/engine or models
+3. `research/` when you need to know *why* a number or decision is what it is
+4. `archive/` only for history

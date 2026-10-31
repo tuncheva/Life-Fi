@@ -1,0 +1,32 @@
+{
+  "name": "life-fi",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Life-Fi: camera-free presence, breathing and fall alerts from Wi-Fi CSI",
+  "workspaces": [
+    "server",
+    "ui"
+  ],
+  "scripts": {
+    "dev": "concurrently -n mock-engine,server,ui -c magenta,cyan,green \"npm:dev:mock-engine\" \"npm:dev:server\" \"npm:dev:ui\"",
+    "dev:real": "concurrently -n engine,server,ui -c magenta,cyan,green \"npm:dev:engine\" \"npm:dev:server\" \"npm:dev:ui\"",
+    "dev:replay": "concurrently -n engine,server,ui -c magenta,cyan,green \"npm:dev:engine:demo\" \"npm:dev:server\" \"npm:dev:ui\"",
+    "dev:engine": "node scripts/engine.mjs",
+    "dev:engine:demo": "node scripts/engine.mjs --demo",
+    "dev:mock-engine": "npm run mock-engine -w server",
+    "dev:server": "npm run dev -w server",
+    "dev:ui": "npm run dev -w ui",
+    "build": "npm run build -w server && npm run build -w ui",
+    "check:contracts": "node scripts/check-contracts.mjs",
+    "test": "npm run test -w server",
+    "lint": "npm run lint -w ui && npm run lint -w server"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}
