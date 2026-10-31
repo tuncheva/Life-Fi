@@ -3,6 +3,7 @@
 import net from "node:net";
 import { EventEmitter } from "node:events";
 import type { Result } from "./contracts.gen.js";
+import type { ResultValidator } from "./validate.js";
 
 export interface Ack {
   type: "ack";
@@ -42,12 +43,17 @@ export class EngineClient extends EventEmitter<EngineClientEvents> {
   private stopped = false;
   connected = false;
   connectedAt: number | null = null;
+  /** Results dropped because they broke results.schema.json. */
+  invalidResults = 0;
+  private lastInvalidLog = 0;
 
   constructor(
     private readonly host: string,
     private readonly port: number,
     private readonly log: Logger,
     private readonly reconnectMs = 1000,
+    /** When set, a result that fails it is logged (at most every 10 s) and dropped. */
+    private readonly validate: ResultValidator | null = null,
   ) {
     super();
   }
@@ -103,14 +109,18 @@ export class EngineClient extends EventEmitter<EngineClientEvents> {
       const line = this.buf.slice(0, i);
       this.buf = this.buf.slice(i + 1);
       if (!line.trim()) continue;
-      let msg: Record<string, unknown>;
+      let msg: unknown;
       try {
-        msg = JSON.parse(line) as Record<string, unknown>;
+        msg = JSON.parse(line);
       } catch {
         this.log.warn({ line: line.slice(0, 120) }, "engine sent a non-JSON line");
         continue;
       }
-      this.dispatch(msg);
+      if (msg === null || typeof msg !== "object" || Array.isArray(msg)) {
+        this.log.warn({ line: line.slice(0, 120) }, "engine sent a line that is not a JSON object");
+        continue;
+      }
+      this.dispatch(msg as Record<string, unknown>);
     }
     // A line longer than 1 MB means a broken peer; drop the buffer rather than grow forever.
     if (this.buf.length > 1_000_000) {
@@ -121,6 +131,16 @@ export class EngineClient extends EventEmitter<EngineClientEvents> {
 
   private dispatch(msg: Record<string, unknown>): void {
     if (msg.type === "result") {
+      const problem = this.validate ? this.validate(msg) : null;
+      if (problem) {
+        this.invalidResults++;
+        const now = Date.now();
+        if (now - this.lastInvalidLog >= 10_000) {
+          this.lastInvalidLog = now;
+          this.log.warn({ problem, dropped: this.invalidResults }, "engine result breaks results.schema.json: dropped");
+        }
+        return;
+      }
       this.emit("result", msg as unknown as Result);
     } else if (msg.type === "ack") {
       const ack = msg as unknown as Ack;

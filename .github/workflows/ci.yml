@@ -32,3 +32,25 @@ jobs:
           npm run lint -w ui
           npm run build -w ui
           npm run typecheck -w ui
+
+  python:
+    name: engine + ml (no datasets, no GPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy==2.5.4 scipy==1.18.1 PyYAML==6.0.3 jsonschema==4.26.0 pyserial==3.5
+      - run: |
+          python engine/tests/test_dsp.py
+          python engine/tests/test_breathing.py
+          python engine/tests/test_heart.py
+          python engine/tests/test_live.py
+          python engine/tests/test_presence.py
+          python engine/tests/test_apnea.py
+          python engine/tests/test_posture.py
+          python engine/tests/test_engine.py
+          python engine/tests/test_control.py
+          python engine/tests/test_features_vectors.py
+          python ml/tests/test_own.py

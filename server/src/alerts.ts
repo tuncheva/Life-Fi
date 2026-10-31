@@ -54,7 +54,8 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
   private readonly byKey = new Map<ConditionKey, string>();
   private readonly timers = new Map<string, Timers>();
   private seq = 0;
-  private lastBootId: number | null = null;
+  /** Set when the engine (re)connects: the next result settles which engine conditions survived. */
+  private reconnected = false;
 
   constructor(
     private profiles: ProfilesConfig,
@@ -115,18 +116,31 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     return n;
   }
 
+  /**
+   * The engine connected (again). It may have restarted, and then every
+   * condition it had is gone: the first result after this closes engine
+   * alerts missing from its `active` list as "engine restarted" (not an "all
+   * clear"). Event ids are never reused by a new engine run (control.md), so
+   * nothing else is needed. `boot_id` is the board's: a board reboot changes
+   * it while the engine and its conditions carry on.
+   */
+  onEngineConnected(): void {
+    this.reconnected = true;
+  }
+
   /** Feeds one engine result: edge events plus reconciliation against `active` (N8). */
   onResult(r: Result): void {
-    if (this.lastBootId !== null && r.boot_id !== this.lastBootId) {
-      // The engine restarted: its event ids start over, so every engine condition is gone.
-      for (const [key] of this.byKey) if (key.startsWith("e:")) this.clear(key, r.ts, "engine restarted");
+    if (this.reconnected) {
+      this.reconnected = false;
+      const still = new Set(r.active.map((id) => `e:${id}`));
+      for (const [key] of this.byKey) if (key.startsWith("e:") && !still.has(key)) this.clear(key, r.ts, "engine restarted");
     }
-    this.lastBootId = r.boot_id;
 
     for (const ev of r.events) {
       const key: ConditionKey = `e:${ev.id}`;
       if (ev.state === "active") this.raise(key, ev.type, ev.id, ev.t, ev.data);
-      else this.clear(key, ev.t, "cleared by the engine");
+      // a source switch ends the old signal's conditions without them being over: not an "all clear"
+      else this.clear(key, ev.t, (ev.data as { reason?: unknown }).reason === "source changed" ? "source changed" : "cleared by the engine");
     }
     const active = new Set(r.active.map((id) => `e:${id}`));
     for (const [key] of this.byKey) {
@@ -205,10 +219,13 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     this.prune();
     this.emit("alert", { ...alert });
 
-    if (rule.delay_s <= 0) {
+    // The delay counts from when the condition began (`t`): an event recovered
+    // from get_status after a reconnect does not wait the whole delay again.
+    const left = rule.delay_s * 1000 - Math.max(0, this.now() - t);
+    if (left <= 0) {
       this.open(alert);
     } else {
-      const delay = setTimeout(() => this.open(alert), rule.delay_s * 1000);
+      const delay = setTimeout(() => this.open(alert), left);
       this.timers.set(id, { delay });
     }
   }

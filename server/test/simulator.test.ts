@@ -99,19 +99,19 @@ describe("Simulator", () => {
       "fainted_suspected:cleared",
     ]);
     const [fallOn, faintOn, fallOff, faintOff] = edges as [typeof edges[0], typeof edges[0], typeof edges[0], typeof edges[0]];
-    expect(fallOn.id).toBe(1);
-    expect(faintOn.id).toBe(2);
+    expect(fallOn.id % 1000).toBe(1); // ids start from the run's start time, then count up
+    expect(faintOn.id).toBe(fallOn.id + 1);
     expect(fallOn.t).toBe(9500); // after walking(8) + 1.5 s fall
     expect(faintOn.t).toBe(29500); // 20 s later
     expect(fallOff.t).toBe(69500); // 40 s later, when the person gets up
     expect(faintOff.t).toBe(69500);
-    expect(fallOff.id).toBe(1);
-    expect(faintOff.id).toBe(2);
+    expect(fallOff.id).toBe(fallOn.id);
+    expect(faintOff.id).toBe(faintOn.id);
 
     // the fall carries a peak value
     const first = run(new Simulator("fall", T0), T0, 10_000).map((x) => x.r).find((r) => r?.events.length)!;
     expect(first.events[0]!.data).toEqual({ peak: expect.any(Number) });
-    expect(first.active).toEqual([1]);
+    expect(first.active).toEqual([first.events[0]!.id]);
   });
 
   it("'breath_hold' raises and clears no_breathing", () => {
@@ -176,8 +176,8 @@ describe("Simulator", () => {
   it("'uncertain' keeps presence_uncertain active and 'empty' has no posture or count", () => {
     const u = new Simulator("uncertain", T0).step(T0 + 5000)!;
     expect(u.presence.state).toBe("uncertain");
-    expect(u.events).toEqual([expect.objectContaining({ type: "presence_uncertain", state: "active", id: 1 })]);
-    expect(u.active).toEqual([1]);
+    expect(u.events).toEqual([expect.objectContaining({ type: "presence_uncertain", state: "active" })]);
+    expect(u.active).toEqual([u.events[0]!.id]);
 
     const e = new Simulator("empty", T0).step(T0 + 5000)!;
     expect(e.presence).toMatchObject({ value: false, state: "empty" });

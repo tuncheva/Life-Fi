@@ -4,9 +4,11 @@
 // big Acknowledge button. Acknowledged and cleared alerts de-escalate calmly.
 // Presentation mode draws its own full-screen version.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ApiError, ackAlert, getDeviceName, getSettings, type Alert } from "@/lib/api";
 import { useLive, useNow } from "@/lib/live";
+import { useSound } from "@/lib/sound";
 import { friendlyError, usePin } from "@/lib/pin";
 import { roomName, alertAction, alertTitle, clearedText, clock, duration, levelText, stopwatch } from "@/lib/words";
 import { Icon } from "./ui";
@@ -85,6 +87,7 @@ export function AlertBanner() {
   const path = usePathname();
   const now = useNow();
   const { ack, busy, error } = useAck();
+  const sound = useSound();
   const open = alerts.filter((a) => a.state === "open");
   const acked = alerts.filter((a) => a.state === "acked");
   const phone = usePhoneSetUp(open.length);
@@ -107,6 +110,11 @@ export function AlertBanner() {
                   <span className="font-semibold">{alertTitle(lead.type)}</span>
                   <span className="text-muted"> · {alertAction(lead.type, lead.profile)}</span>
                 </div>
+                {(lead.type === "presence_uncertain" || lead.type === "recalibrate_needed") && (
+                  <Link href="/calibrate/" className="rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-2">
+                    Calibrate
+                  </Link>
+                )}
                 <button onClick={() => void ack(open)} disabled={busy} className="rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-2 disabled:opacity-60">
                   {busy ? "…" : "Got it"}
                 </button>
@@ -145,6 +153,11 @@ export function AlertBanner() {
                 >
                   {busy ? "Acknowledging…" : "I'm on it · Acknowledge"}
                 </button>
+                {sound.beeping && (
+                  <button onClick={sound.silence} className="rounded-lg border-2 border-white/80 px-5 py-3.5 text-lg font-bold text-alert-fg hover:bg-white/10 sm:py-3">
+                    Silence beep
+                  </button>
+                )}
                 {phoneNumber && (
                   <a href={`tel:${phoneNumber.replace(/\s+/g, "")}`} className="rounded-lg border-2 border-white/80 px-5 py-3.5 text-center text-lg font-bold text-alert-fg hover:bg-white/10 sm:py-3">
                     Call {phoneNumber}

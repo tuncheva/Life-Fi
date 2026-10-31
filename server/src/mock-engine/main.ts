@@ -35,13 +35,20 @@ function handle(cmd: Record<string, unknown>): string {
       return ack(id, true, sim.statusData(now));
     case "set_source": {
       if (cmd.mode !== "live" && cmd.mode !== "replay") return ack(id, false, {}, "mode must be live or replay");
+      const speed = typeof cmd.speed === "number" ? cmd.speed : 1;
+      if (speed <= 0) return ack(id, false, {}, "speed must be > 0");
       sim.source = cmd.mode;
-      log("source", { mode: cmd.mode });
+      sim.sourceFile = cmd.mode === "replay" && typeof cmd.file === "string" ? cmd.file : null;
+      sim.sourceSpeed = speed;
+      sim.sourceLoop = cmd.loop === true;
+      log("source", { mode: cmd.mode, file: sim.sourceFile });
       return ack(id, true);
     }
     case "calibrate": {
       const kind = cmd.kind ?? "empty";
       const duration = typeof cmd.duration_s === "number" ? cmd.duration_s : 120;
+      // as the real engine (engine/lifefi/calibration.py MIN_S)
+      if (duration < 60) return ack(id, false, {}, `calibration needs at least 60 s, got ${duration}`);
       if (kind === "empty" && sim.currentMotion() > 0.1) return ack(id, false, {}, "motion seen during calibration");
       // The real engine acks when the calibration finishes. We do the same.
       log("calibration started", { kind, duration_s: duration });
@@ -65,7 +72,7 @@ function handle(cmd: Record<string, unknown>): string {
       return ack(id, true, { frames: r.frames, t_start_us: r.startedUs, t_end_us: now * 1000 });
     }
     case "reload_models":
-      return ack(id, true);
+      return ack(id, true, { models: [{ name: "transitions", loaded: true, pipeline_version: 2 }] });
     case "reload_rules":
       return ack(id, true, { config_hash: sim.configHash });
     case "mock_scenario": {

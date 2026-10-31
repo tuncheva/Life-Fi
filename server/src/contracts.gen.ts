@@ -4,6 +4,7 @@
  * Do not edit. Change the schema and run `npm run gen:types`.
  */
 
+export type ActivityLabel = "none" | "walking" | "sit_down" | "lie_down" | "rise" | "fall";
 export type EventType =
   | "fall"
   | "fainted_suspected"
@@ -100,6 +101,17 @@ export interface Result {
     p: [number, number];
     src: "model";
   };
+  /**
+   * The movement model's guess for the last window: the top label, its probability and every class's probability. Experimental (below a constant guess on unseen people, docs/models.md): the dashboard shows it in the technical section only. null when no model is loaded or the window is less than 90 % valid.
+   */
+  activity: null | {
+    label: ActivityLabel;
+    p: number;
+    probs: {
+      [k: string]: number | undefined;
+    };
+    src: "model";
+  };
   breathing: {
     bpm: number | null;
     confidence: number;
@@ -124,7 +136,7 @@ export interface Result {
 }
 export interface Event {
   /**
-   * Unique per boot of the engine
+   * Unique per engine run, and not reused by the next run (the engine seeds them from its start time), so the server can reconcile alerts across engine restarts
    */
   id: number;
   type: EventType;

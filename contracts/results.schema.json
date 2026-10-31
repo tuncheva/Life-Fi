@@ -21,6 +21,7 @@
     "motion",
     "posture",
     "count",
+    "activity",
     "breathing",
     "csi",
     "events",
@@ -279,6 +280,51 @@
       ],
       "description": "null when the count model is not loaded."
     },
+    "activity": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "p",
+            "probs",
+            "src"
+          ],
+          "properties": {
+            "label": {
+              "$ref": "#/$defs/activityLabel"
+            },
+            "p": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "probs": {
+              "type": "object",
+              "propertyNames": {
+                "$ref": "#/$defs/activityLabel"
+              },
+              "additionalProperties": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "src": {
+              "type": "string",
+              "enum": [
+                "model"
+              ]
+            }
+          }
+        }
+      ],
+      "description": "The movement model's guess for the last window: the top label, its probability and every class's probability. Experimental (below a constant guess on unseen people, docs/models.md): the dashboard shows it in the technical section only. null when no model is loaded or the window is less than 90 % valid."
+    },
     "breathing": {
       "type": "object",
       "additionalProperties": false,
@@ -339,6 +385,17 @@
     }
   },
   "$defs": {
+    "activityLabel": {
+      "type": "string",
+      "enum": [
+        "none",
+        "walking",
+        "sit_down",
+        "lie_down",
+        "rise",
+        "fall"
+      ]
+    },
     "eventType": {
       "type": "string",
       "enum": [
@@ -367,7 +424,7 @@
         "id": {
           "type": "integer",
           "minimum": 0,
-          "description": "Unique per boot of the engine"
+          "description": "Unique per engine run, and not reused by the next run (the engine seeds them from its start time), so the server can reconcile alerts across engine restarts"
         },
         "type": {
           "$ref": "#/$defs/eventType"

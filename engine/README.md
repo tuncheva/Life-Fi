@@ -1,8 +1,84 @@
 # Life-Fi engine (PC side)
 
-Processing of raw CSI recordings on the PC. This is the start of plan-v2's
-`engine/` component (§3.1). Recordings come from
-`firmware/tools/csi_recorder.py` (`.csirec`). Needs Python 3 and numpy.
+The engine reads the board's CSI live (or replays a `.csirec`), turns it
+into the same 50 Hz signal the models were trained on, runs the rules and
+the movement model every 0.5 s, and sends one result to the server on TCP
+127.0.0.1:6000 ([contracts/control.md](../contracts/control.md),
+[results.schema.json](../contracts/results.schema.json)). It replaces the
+mock engine in `server/src/mock-engine/`.
+
+## Run it
+
+One command starts the engine, the server and the dashboard together
+(`scripts/engine.mjs` finds the `.venv` Python):
+
+```powershell
+.venv\Scripts\pip install -r engine\requirements.txt   # once (ml\requirements.txt has it all)
+npm run dev:real      # the board on USB: its port is found by itself
+npm run dev:replay    # no board: the synthetic fall recording, looped
+npm run dev           # the mock engine (made-up numbers), as before
+```
+
+Then open http://localhost:3000.
+
+- **The board:** with nobody in the room, start the 2-minute calibration
+  from the dashboard (Setup → Calibration). Until then presence only counts
+  motion and the fall rule uses a provisional quiet level. The calibration
+  is saved to `data/calibration.json` and used again at the next start
+  (reported as `stale` after 24 h). If the board is unplugged, the
+  dashboard says "Can't read the sensor board" and the engine retries every
+  2 s; plugging it back in recovers.
+- **The replay:** `data/demo/fall.csirec` is made by
+  `engine/tools/fakesensor.py` the first time. The engine calibrates by
+  itself on its first 2 minutes (an empty room), then someone walks in,
+  sits breathing 15 /min, falls at about 3:20 and lies still: the "Possible
+  fall" alarm, then "No movement after a possible fall" 20 s later.
+- **Port 8080 taken** (on the dev PC Apache/httpd uses it): run the server
+  on another port and point the dashboard at it, e.g. in PowerShell
+  `$env:LIFEFI_PORT="8081"; $env:NEXT_PUBLIC_API_URL="http://localhost:8081"; npm run dev:replay`.
+  The `mock`, `replay` and `real` entries in `.claude/launch.json` do this.
+- **Alarm sound:** the dashboard asks once per browser whether it may beep.
+  Urgent alarms then beep every 2 s until someone acknowledges them or
+  presses "Silence beep"; change it under Setup → Alarm sound.
+
+By hand, the engine alone:
+
+```powershell
+.venv\Scripts\python engine\run.py                          # the board over USB, port found by itself
+.venv\Scripts\python engine\run.py --serial COM3            # this port
+.venv\Scripts\python engine\run.py --esp 192.168.100.111    # over Wi-Fi (--esp alone: broadcast)
+.venv\Scripts\python engine\run.py --replay data\demo\fall.csirec --loop --calibrate-at-start
+.venv\Scripts\python engine\tools\fakesensor.py fall data\demo\fall.csirec   # scenarios: empty, sitting, fall, breath_hold, leave
+```
+
+The dashboard's technical section ("Sensor details") also shows the
+movement model's guess (walking, sitting down, …), marked experimental: it
+does worse than a constant guess on people it was not trained on, and no
+alarm uses it.
+
+## What runs, and where the numbers come from
+
+Every threshold is in [config/rules.yaml](config/rules.yaml), with where
+it comes from next to it. All of them are set from downloaded public data
+only (decision 2026-10-30, [docs/models.md](../docs/models.md)).
+
+| Output | Code | State |
+|---|---|---|
+| Signal F (50 Hz, dB) | [lifefi/live.py](lifefi/live.py) on [lifefi/dsp.py](lifefi/dsp.py) | the training pipeline's code; live F equals an offline run (`tests/test_live.py`) |
+| Motion 0-1 | [lifefi/motion.py](lifefi/motion.py), `presence.motion_level` | 0.1 = presence's "someone moved" = the server's `MOTION_ON` |
+| Presence | [lifefi/presence.py](lifefi/presence.py), [lifefi/calibration.py](lifefi/calibration.py) | checked on E4; leaving the room only on synthetic data |
+| Breathing rate | [lifefi/breathing.py](lifefi/breathing.py) | gates checked on E1 |
+| Breathing stopped | [lifefi/apnea.py](lifefi/apnea.py) | 0 false alerts on E1; latency from synthetic holds only |
+| Fall → fainted | [lifefi/fall.py](lifefi/fall.py) | **not validated**: no public fall passes it; thresholds are a false-alarm guard |
+| Movement model, posture | [lifefi/models.py](lifefi/models.py), [lifefi/posture.py](lifefi/posture.py) | runs, but posture is hidden (`posture.publish: false`) |
+
+Tests (no board, no datasets): `tests/test_live.py`, `test_presence.py`,
+`test_apnea.py`, `test_posture.py`, `test_engine.py` (the whole engine on
+the five synthetic scenarios, every result checked against the schema),
+`test_control.py` (the TCP protocol). `test_features_vectors.py` needs
+`ml/models/`.
+
+## Offline tools
 
 | Path | What |
 |---|---|
@@ -12,12 +88,14 @@ Processing of raw CSI recordings on the PC. This is the start of plan-v2's
 | [lifefi/heart.py](lifefi/heart.py) | **Experimental** heart rate per 30 s window ([below](#heart-rate-experimental)) |
 | [tools/heart.py](tools/heart.py) | Runs it on a recording and prints every window |
 | [tests/test_heart.py](tests/test_heart.py) | Synthetic pulses between breathing harmonics are found within 2; harmonics alone, noise and motion are never reported |
+| [tools/inventory.py](tools/inventory.py) | One line per recording: length, rate, loss, pauses, RSSI, breathing and heart results, and what it can feed |
 
 ```powershell
 python engine\tools\breathing.py firmware\recordings\<file>.csirec
 python engine\tests\test_breathing.py
 python engine\tools\heart.py firmware\recordings\<file>.csirec
 python engine\tests\test_heart.py
+python engine\tools\inventory.py            # every .csirec in firmware\recordings\
 ```
 
 ### TypeScript version ([ts/](ts/))

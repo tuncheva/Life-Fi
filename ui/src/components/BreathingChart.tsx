@@ -2,8 +2,10 @@
 // Breathing waveform on uPlot (plan-v2 §8), fed from the ref-held ring buffer
 // without React re-renders: the chart is updated on requestAnimationFrame
 // whenever a new result has arrived. The amplitude has no unit a person can
-// use, so there is no y-axis; the x-axis reads "30 s ago … now". Colours come
-// from the design tokens and follow the theme.
+// use, so there is no y-axis, and the height follows the visible samples (the
+// mock and the real engine use different scales); the x-axis reads "30 s ago …
+// now", with gaps where no sample came. Colours come from the design tokens
+// and follow the theme.
 import { useEffect, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
@@ -18,12 +20,13 @@ export function BreathingChart({ buffers, seconds, height = 110, big = false }: 
     const el = host.current;
     if (!el) return;
     const n = seconds * WAVE_HZ;
+    let half = 0.45;
 
     const plot = new uPlot(
       {
         width: el.clientWidth || 300,
         height,
-        scales: { x: { time: false, range: [-seconds, 0] }, y: { range: [-0.45, 0.45] } },
+        scales: { x: { time: false, range: [-seconds, 0] }, y: { range: () => [-half, half] } },
         axes: [
           { show: false },
           { show: false },
@@ -45,6 +48,8 @@ export function BreathingChart({ buffers, seconds, height = 110, big = false }: 
       drawn = buffers.version;
       const ys = buffers.wave.toArray().slice(-n);
       const xs = ys.map((_, i) => (i - ys.length + 1) / WAVE_HZ);
+      const mags = ys.filter((y): y is number => y !== null && Number.isFinite(y)).map(Math.abs).sort((a, b) => a - b);
+      if (mags.length) half = Math.max(1e-3, 1.3 * mags[Math.floor(0.98 * (mags.length - 1))]!);
       plot.setData([xs, ys]);
     };
     raf = requestAnimationFrame(tick);

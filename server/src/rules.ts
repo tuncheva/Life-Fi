@@ -8,7 +8,7 @@ import type { AlertManager } from "./alerts.js";
 import type { Result } from "./contracts.gen.js";
 import { insideHours, minutesOfDayIn, type ProfileName, type ProfilesConfig } from "./profiles.js";
 
-/** Motion above this counts as "moved". Matches the mock's still/moving split; tune from recordings. */
+/** Motion above this counts as "moved": the real engine's presence motion threshold maps to 0.1 (engine/README.md), and the mock uses the same split. */
 export const MOTION_ON = 0.1;
 
 export class ServerRules {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import net from "node:net";
 import { once } from "node:events";
 import { EngineClient, EngineError, type Ack } from "../src/engine-client.js";
+import { resultValidator } from "../src/validate.js";
 
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
 
@@ -21,6 +22,7 @@ const RESULT_LINE = JSON.stringify({
   motion: 0.03,
   posture: null,
   count: null,
+  activity: null,
   breathing: { bpm: null, confidence: 0.1, valid: false, wave: [] },
   csi: [],
   events: [],
@@ -129,6 +131,27 @@ describe("EngineClient", () => {
     engine.sockets[0]!.write("this is not json\n\n" + JSON.stringify({ type: "hello", x: 1 }) + "\n");
     const [msg] = await unknown;
     expect(msg).toEqual({ type: "hello", x: 1 });
+  });
+
+  it("drops a result that breaks the schema, and lines that are not JSON objects", async () => {
+    client.stop();
+    client = new EngineClient("127.0.0.1", engine.port, log, 20, resultValidator());
+    await connect();
+    await waitFor(() => engine.sockets.length === 1);
+    const got: unknown[] = [];
+    client.on("result", (r) => got.push(r));
+    const bad = { ...JSON.parse(RESULT_LINE), presence: { value: true } };
+    engine.sockets[0]!.write(["null", "[1,2]", "42", JSON.stringify(bad), RESULT_LINE].join("\n") + "\n");
+    await waitFor(() => got.length === 1);
+    await sleep(30);
+    expect(got).toHaveLength(1);
+    expect(client.invalidResults).toBe(1);
+  });
+
+  it("the schema validator accepts every contract fixture", () => {
+    const validate = resultValidator();
+    expect(validate(JSON.parse(RESULT_LINE))).toBeNull();
+    expect(validate({ ...JSON.parse(RESULT_LINE), activity: { label: "dancing", p: 1, probs: {}, src: "model" } })).toMatch(/activity/);
   });
 
   it("send() resolves with the ack when the engine answers ok:true", async () => {
