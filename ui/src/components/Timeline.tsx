@@ -6,7 +6,7 @@
 // show the moment under the finger in words.
 import { useEffect, useRef, useState } from "react";
 import { getAlerts, getHistory, type Alert, type HistoryRow } from "@/lib/api";
-import { useLive } from "@/lib/live";
+import { useLive, usePublished } from "@/lib/live";
 import { token, useResolvedTheme } from "@/lib/useTheme";
 import { POSTURE_TEXT, activityText, alertTitle, clock } from "@/lib/words";
 import { Card, btn } from "./ui";
@@ -29,8 +29,10 @@ interface Hover {
   text: string;
 }
 
-export function Timeline({ showPosture = true }: { showPosture?: boolean }) {
+export function Timeline({ showPosture: wantPosture = true }: { showPosture?: boolean }) {
   const { alerts: liveAlerts, result } = useLive();
+  const published = usePublished();
+  const showPosture = wantPosture && published.posture;
   const theme = useResolvedTheme();
   const [hours, setHours] = useState(1);
   const [rows, setRows] = useState<HistoryRow[]>([]);

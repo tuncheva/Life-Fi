@@ -5,15 +5,20 @@ result goes out every tick whether or not a command is pending; every
 command gets exactly one ack (calibrate's when it finishes). Only one
 client: a second one replaces the first. Frames arrive from a source
 thread (lifefi.sources) through a queue and are fed to the engine on the
-event loop, so the engine itself is single-threaded.
+event loop, so the engine itself is single-threaded. An exception in
+one tick is logged and the next tick runs anyway: the result stream must
+never stop because of one bad frame.
 """
 
 import asyncio
 import json
 import queue
 import time
+import traceback
 
 from . import sources
+
+MAX_BUFFER = 1 << 20         # a client that stops reading is dropped past this many unsent bytes
 
 
 class Server:
@@ -25,7 +30,9 @@ class Server:
         self.source = None
         self.dropped = 0
         engine.source_hook = self.set_source
+        engine.source_info_hook = self.source_info
         self.bound_port = None
+        self.last_error_log = -1e9
 
     # ---- sources -----------------------------------------------------------
     def push(self, packet, host_us, src):
@@ -36,23 +43,34 @@ class Server:
 
     def set_source(self, mode, file=None, speed=1.0, loop=False):
         """Stops the current source and starts the one asked for; raises ValueError if it cannot."""
-        new = None
         if mode == "replay":
             if not file:
                 raise ValueError("replay needs a file")
             new = sources.ReplaySource(self.push, file, speed, loop)
-        elif self.live_args.get("serial") or self.live_args.get("esp"):
+        elif self.live_args:
             new = sources.LiveSource(self.push, **self.live_args)
+        else:
+            raise ValueError("no board configured: start the engine with --serial or --esp")
         if self.source is not None:
             self.source.stop()
-        self.source = new.start() if new is not None else None
-        self.log(f"source: {new.name if new else 'none'}")
+        self.source = new.start()
+        self.log(f"source: {new.name}")
+
+    def source_info(self):
+        if self.source is None:
+            return {"name": None, "state": "none", "file": None, "speed": 1.0, "loop": False, "error": None}
+        return self.source.info()
 
     # ---- protocol ----------------------------------------------------------
     def send(self, obj):
         w = self.writer
-        if w is not None and not w.is_closing():
-            w.write((json.dumps(obj, separators=(",", ":")) + "\n").encode())
+        if w is None or w.is_closing():
+            return
+        if w.transport.get_write_buffer_size() > MAX_BUFFER:
+            self.log("server is not reading: dropping it")
+            w.close()
+            return
+        w.write((json.dumps(obj, separators=(",", ":")) + "\n").encode())
 
     async def _client(self, reader, writer):
         if self.writer is not None:
@@ -74,7 +92,10 @@ class Server:
                     self.log(f"bad command line: {line[:120]!r}")
                     continue
                 if isinstance(cmd, dict):
-                    self.engine.handle(cmd, self.send, time.time())
+                    try:
+                        self.engine.handle(cmd, self.send, time.time())
+                    except Exception:                 # Engine.handle acks its own errors; this is a last resort
+                        self._log_error("command")
         except (ConnectionError, asyncio.IncompleteReadError):
             pass
         finally:
@@ -87,15 +108,27 @@ class Server:
         tick = self.engine.rules["tick_s"]
         due = time.time()
         while True:
-            while True:
-                try:
-                    packet, host_us, src = self.frames.get_nowait()
-                except queue.Empty:
-                    break
-                self.engine.feed(packet, host_us, src)
-            self.send(self.engine.tick(time.time()))
+            try:
+                while True:
+                    try:
+                        packet, host_us, src = self.frames.get_nowait()
+                    except queue.Empty:
+                        break
+                    self.engine.feed(packet, host_us, src)
+                self.send(self.engine.tick(time.time()))
+            except Exception:
+                self._log_error("tick")
             due += tick
+            if due < time.time() - 5 * tick:          # fell far behind (a slow tick): don't burst to catch up
+                due = time.time()
             await asyncio.sleep(max(0.0, due - time.time()))
+
+    def _log_error(self, where):
+        """The traceback, at most once a minute so a repeating error does not flood the log."""
+        now = time.time()
+        if now - self.last_error_log >= 60.0:
+            self.last_error_log = now
+            self.log(f"error in {where} (kept running):\n{traceback.format_exc()}")
 
     async def serve(self, ready=None):
         server = await asyncio.start_server(self._client, self.host, self.port)

@@ -128,8 +128,14 @@ export function roomStatus(input: {
   }
   if (status?.server.sensor_offline || stale) {
     const age = result ? now - result.ts : null;
-    const why = status?.server.sensor_offline ? (WATCHDOG_TEXT[status.server.sensor_offline] ?? "The sensor is not reporting.") : "The sensor is not reporting.";
-    const forHow = age !== null ? ` Last reading ${duration(age)} ago.` : "";
+    const why =
+      status?.source.state === "error" && status.source.error
+        ? `The sensor board can't be read (${status.source.error}).`
+        : status?.server.sensor_offline
+          ? (WATCHDOG_TEXT[status.server.sensor_offline] ?? "The sensor is not reporting.")
+          : "The sensor is not reporting.";
+    // with the board unreadable the engine still ticks, so "last reading" would say "0 s ago"
+    const forHow = age !== null && status?.source.state !== "error" ? ` Last reading ${duration(age)} ago.` : "";
     return { tone: "offline", headline: "We cannot see the room right now", detail: `${why}${forHow} Check the sensor is plugged in.`, ...none };
   }
   if (!result) {
@@ -186,6 +192,17 @@ export function breathingText(result: Result): { value: string | null; text: str
   return { value: null, text: "No steady reading right now" };
 }
 
+/** The movement model's classes (results.schema.json activityLabel), in words. */
+export const ACTIVITY_LABELS = ["none", "walking", "sit_down", "lie_down", "rise", "fall"] as const;
+export const ACTIVITY_TEXT: Record<(typeof ACTIVITY_LABELS)[number], string> = {
+  none: "No movement event",
+  walking: "Walking",
+  sit_down: "Sitting down",
+  lie_down: "Lying down",
+  rise: "Getting up",
+  fall: "Falling",
+};
+
 /** Alert copy: hedged where the detector can be wrong, with what to do, per profile. */
 export const ALERT_TITLE: Record<string, string> = {
   fall: "Possible fall",
@@ -196,6 +213,7 @@ export const ALERT_TITLE: Record<string, string> = {
   bed_exit: "Left the bed",
   sensor_offline: "Sensor offline",
   long_inactivity: "No movement for a long time",
+  after_hours_occupancy: "Room in use after hours",
 };
 
 export function alertTitle(type: string): string {
@@ -212,6 +230,7 @@ const CLEARED: Record<string, string> = {
   bed_exit: "back in bed",
   sensor_offline: "the sensor is back",
   long_inactivity: "moving again",
+  after_hours_occupancy: "the room is empty again",
 };
 
 export function clearedText(type: string): string {
@@ -232,6 +251,8 @@ export function alertAction(type: string, profile: ProfileName): string {
       return "We cannot see the room. Check the sensor has power and Wi-Fi.";
     case "long_inactivity":
       return "Call them, or ask someone nearby to look in.";
+    case "after_hours_occupancy":
+      return "Check who is in the room.";
     case "presence_uncertain":
     case "recalibrate_needed":
       return "Recalibrate while the room is empty.";

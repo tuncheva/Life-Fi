@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LiveProvider } from "@/lib/live";
 import { PinProvider } from "@/lib/pin";
+import { SoundProvider } from "@/lib/sound";
 import { THEME_BOOT } from "@/lib/theme";
 import { DISCLAIMER } from "@/lib/words";
 import { TopBar } from "@/components/TopBar";
@@ -37,11 +38,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-full flex-col bg-bg text-fg">
         <LiveProvider>
           <PinProvider>
+            <SoundProvider>
             <TopBar />
             <AlertBanner />
             <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:py-6">{children}</main>
             <footer className="px-4 pb-16 pt-4 text-center text-xs text-subtle sm:pb-4">{DISCLAIMER} No camera, no microphone, no images.</footer>
             <DevPanel />
+            </SoundProvider>
           </PinProvider>
         </LiveProvider>
       </body>

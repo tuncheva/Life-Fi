@@ -78,7 +78,7 @@ fakesensor.write(rec, ts_us[:2000], csi[:2000])            # ~22 s is enough her
 
 eng = Engine(mode="replay")
 logs = []
-srv = Server(eng, port=0, log=logs.append)
+srv = Server(eng, port=0, log=logs.append, live_args={"serial": "NO_SUCH_PORT", "baud": 921600})
 srv.set_source("replay", str(rec))
 ready = threading.Event()
 threading.Thread(target=lambda: asyncio.run(srv.serve(ready)), daemon=True).start()
@@ -110,18 +110,83 @@ check(a is not None and a["ok"] and a["data"]["config_hash"] == eng.config_hash,
 c.send({"type": "set_source", "id": 5, "mode": "replay"})
 a = c.ack(5)
 check(a is not None and not a["ok"] and "file" in a["error"], f"replay without a file refused ({a and a['error']})")
+c.send({"type": "calibrate", "id": 7, "kind": "empty", "duration_s": None})
+a = c.ack(7)
+check(a is not None and not a["ok"], f"a bad argument type is refused ({a and a['error']})")
+c.send({"type": "get_status", "id": 8})
+check(c.ack(8) is not None, "and the connection still works")
+c.send({"type": "reload_models", "id": 12})
+a = c.ack(12, seconds=10)
+check(a is not None and a["ok"] and "models" in a["data"], "reload_models acked")
 c.send({"type": "set_source", "id": 6, "mode": "live"})
 a = c.ack(6)
-check(a is not None and a["ok"], "switch to live (no board given: no frames)")
+check(a is not None and a["ok"], "switch to live (a port that does not exist)")
 time.sleep(2.5)
 r = [m for m in c.lines(1.2) if m.get("type") == "result"]
 check(r and r[-1]["source"] == "live" and r[-1]["health"]["rate_hz"] == 0.0, "live, and the rate falls to 0")
+c.send({"type": "get_status", "id": 9})
+a = c.ack(9)
+info = a and a["data"]["engine"]["source_info"]
+check(info and info["state"] == "error" and "NO_SUCH_PORT" in (info["error"] or ""),
+      f"the port error reaches get_status ({info})")
+rec_path = tmp / "rec" / "s01.csirec"
+c.send({"type": "record_start", "id": 10, "session": "s01", "path": str(rec_path), "meta": {}})
+a = c.ack(10)
+c.send({"type": "record_stop", "id": 11})
+b = c.ack(11)
+check(a and a["ok"] and b and b["ok"] and rec_path.exists() and b["data"]["frames"] == 0,
+      f"record_start / record_stop write a .csirec ({b and b['data']})")
+
+print("== a tick that raises does not stop the results")
+real_tick, calls = eng.tick, []
+
+
+def bad_tick(now):
+    calls.append(now)
+    if len(calls) == 1:
+        raise RuntimeError("boom")
+    return real_tick(now)
+
+
+eng.tick = bad_tick
+r = [m for m in c.lines(1.6) if m.get("type") == "result"]
+eng.tick = real_tick
+check(len(calls) >= 2 and len(r) >= 2 and any("boom" in x for x in logs), f"results go on ({len(r)} in 1.6 s)")
 
 print("== a second client replaces the first")
 c2 = Client(srv.bound_port)
 check(any(m.get("type") == "result" for m in c2.lines(1.2)), "the new client gets results")
 c.lines(0.3)                                                  # whatever was already in flight
 check(not [m for m in c.lines(1.2) if m.get("type") == "result"], "the old one gets nothing more")
+
+print("== no board configured")
+eng2 = Engine(mode="replay")
+srv2 = Server(eng2, port=0, log=lambda *_: None)
+acks = []
+eng2.handle({"type": "set_source", "id": 1, "mode": "live"}, acks.append, time.time())
+check(acks and not acks[0]["ok"] and "no board" in acks[0]["error"], f"live refused ({acks and acks[0]['error']})")
+
+print("== finding the board's port")
+from lifefi import sources  # noqa: E402
+from serial.tools import list_ports  # noqa: E402
+
+
+class Port:
+    def __init__(self, device, vid):
+        self.device, self.vid = device, vid
+
+
+real_comports = list_ports.comports
+for ports, want in (([], "no USB serial port"), ([Port("COM7", 0x10C4)], "COM7"),
+                    ([Port("COM7", 0x10C4), Port("COM9", 0x303A)], "several"),
+                    ([Port("COM1", None)], "no USB serial port")):
+    list_ports.comports = lambda ports=ports: ports
+    try:
+        got = sources.find_board_port()
+    except ValueError as err:
+        got = str(err)
+    check(want in got, f"{[p.device for p in ports]} -> {got}")
+list_ports.comports = real_comports
 
 srv.stop()
 print(f"\ntest_control {'PASSED' if not failures else 'FAILED'}: {failures} failure(s)")

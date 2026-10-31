@@ -9,6 +9,7 @@ warmup_s: 3.0               # no event can start for this long after a new boot 
 
 calibration:
   default_s: 120            # `calibrate kind=empty` without duration_s (plan-v2 §6.6)
+  stale_after_h: 24         # [H] older than this: reported as `stale` (still used); recalibrate at the venue
 
 movement_model: gbm         # gbm | cnn | none. gbm: better transition F1 on unseen E1 people (docs/models.md)
 

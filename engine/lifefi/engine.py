@@ -17,6 +17,10 @@ Per tick:
 
 The engine reports conditions; the server decides alerts (plan-v2 design
 rule 5). Every threshold is in engine/config/rules.yaml (rule 6).
+
+The empty-room calibration belongs to the signal it was taken on: live and
+replay each keep their own, and only the live one is saved to disk
+(`calibration_path`) and loaded again at the next start.
 """
 
 import hashlib
@@ -24,6 +28,7 @@ import json
 import pathlib
 import struct
 import sys
+import time
 from collections import deque
 
 import numpy as np
@@ -45,6 +50,8 @@ MODELS = ROOT / "ml" / "models"
 LLTF = np.array(csi_recorder.LLTF_PAIRS)
 CLOCK_WINDOW_S = 60.0
 FALL_EDGE_S = 5.0            # fall candidates this close to the window start are skipped (filter start-up)
+CALIBRATION = ROOT / "data" / "calibration.json"
+ACTIVITY_LABELS = ("none", "walking", "sit_down", "lie_down", "rise", "fall")   # results.schema.json activityLabel
 
 
 def lltf(data, first_word_invalid):
@@ -77,10 +84,11 @@ class Clock:
 
 
 class Events:
-    """Event ids are unique per engine run; `active` holds one event per type."""
+    """`active` holds one event per type. Ids start from a number taken from the start time, so
+    a restarted engine never reuses an id the server may still hold an alert for (control.md)."""
 
-    def __init__(self):
-        self.next_id = 1
+    def __init__(self, first_id=None):
+        self.next_id = int(time.time()) % 1_000_000 * 1000 + 1 if first_id is None else first_id
         self.active = {}
         self.changes = []
 
@@ -93,7 +101,11 @@ class Events:
             self.changes.append({**ev, "state": "active"})
         elif not on and ev is not None:
             del self.active[kind]
-            self.changes.append({"id": ev["id"], "type": kind, "state": "cleared", "t": t_ms, "data": {}})
+            self.changes.append({"id": ev["id"], "type": kind, "state": "cleared", "t": t_ms, "data": data or {}})
+
+    def clear_all(self, t_ms, data=None):
+        for kind in list(self.active):
+            self.set(kind, False, t_ms, data)
 
     def pop(self):
         out, self.changes = self.changes, []
@@ -101,13 +113,18 @@ class Events:
 
 
 class Engine:
-    def __init__(self, rules_path=RULES, models_dir=MODELS, mode="live"):
+    def __init__(self, rules_path=RULES, models_dir=MODELS, mode="live", calibration_path=None):
+        """calibration_path: where the live calibration is saved and loaded (None: memory only)."""
         self.rules_path, self.models_dir = pathlib.Path(rules_path), pathlib.Path(models_dir)
+        self.calibration_path = pathlib.Path(calibration_path) if calibration_path else None
         self.mode = mode
         self.source_hook = None                      # set by lifefi.control: (mode, file, speed, loop) -> None
+        self.source_info_hook = None                 # set by lifefi.control: () -> get_status source_info
         self.events = Events()
-        self.calibration = None
-        self.cal_seq = 0
+        self.calibrations = {"live": self._load_calibration(), "replay": None}
+        self.calibration = self.calibrations.get(mode)
+        self.cal_pending = self.calibration is not None   # applied to presence on the first tick
+        self.cal_seq = int(self.calibration.id.split("-")[-1]) if self.calibration else 0
         self.cal_job = None
         self.recording = None
         self.started = None
@@ -122,7 +139,7 @@ class Engine:
         self.last_host_us = 0
 
     # ---- configuration -------------------------------------------------
-    def load_rules(self):
+    def load_rules(self, t=0.0):
         text = self.rules_path.read_bytes()
         self.rules = yaml.safe_load(text)
         prof = PROFILES.read_bytes() if PROFILES.exists() else b""
@@ -130,8 +147,40 @@ class Engine:
         r = self.rules
         self.presence = presence.Presence(r["presence"])
         if self.calibration is not None:
-            self.presence.calibrate(presence.Levels.from_calibration(self.calibration, self.presence.cfg), 0.0)
+            self.presence.calibrate(presence.Levels.from_calibration(self.calibration, self.presence.cfg), t)
         self.apnea = apnea.NoBreathing(r["apnea"])
+
+    def _load_calibration(self):
+        path = self.calibration_path
+        if path is None or not path.exists():
+            return None
+        try:
+            d = json.loads(path.read_text(encoding="utf-8"))
+            d["p_empty"] = np.asarray(d["p_empty"], dtype=np.float32)
+            if d["p_empty"].shape != (52,):
+                raise ValueError("p_empty must have 52 values")
+            return calibration.Calibration(**d)
+        except (OSError, ValueError, TypeError, KeyError) as err:
+            print(f"ignoring {path}: {err}")
+            return None
+
+    def _save_calibration(self, cal):
+        if self.calibration_path is None:
+            return
+        try:
+            self.calibration_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.calibration_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(cal.to_dict()), encoding="utf-8")
+            tmp.replace(self.calibration_path)
+        except OSError as err:
+            print(f"could not save the calibration to {self.calibration_path}: {err}")
+
+    def _use_calibration(self, cal, t):
+        """Presence starts again from EMPTY with these levels, or with none (motion only)."""
+        self.calibration = cal
+        self.presence = presence.Presence(self.rules["presence"])
+        if cal is not None:
+            self.presence.calibrate(presence.Levels.from_calibration(cal, self.presence.cfg), t)
 
     def load_models(self):
         self.model, self.model_status = models.load(self.models_dir, self.rules.get("movement_model", "gbm"))
@@ -190,6 +239,9 @@ class Engine:
         if self.started is None:
             self.started = now
             self.warm_until = max(self.warm_until, now + r["warmup_s"])
+        if self.cal_pending:
+            self.cal_pending = False
+            self._use_calibration(self.calibration, now)
         self.live.update()
         lv = self.live
         if lv.segment != self.segment:               # a gap: everything that looks back starts again
@@ -297,7 +349,7 @@ class Engine:
         if "fall" in self.events.active:
             self.still_run = self.still_run + tick if still else 0.0
             self.motion_run = self.motion_run + tick if moving else 0.0
-            if self.still_run >= f["fainted_after_s"]:
+            if self.still_run >= f["fainted_after_s"] and self.fall_t is not None:
                 self.events.set("fainted_suspected", True, t_ms, {"still_s": round(now - self.fall_t, 1)})
             if self.motion_run >= f["clear_motion_s"]:
                 self.events.set("fall", False, t_ms)
@@ -340,8 +392,10 @@ class Engine:
             cal = calibration.from_empty(self.live.F[sel], self.live.valid[sel], cal_id, now)
         except calibration.Refused as err:
             return job["done"](False, {}, str(err))
-        self.calibration = cal
+        self.calibration = self.calibrations[self.mode] = cal
         self.presence.calibrate(presence.Levels.from_calibration(cal, self.presence.cfg), now)
+        if self.mode == "live":
+            self._save_calibration(cal)
         job["done"](True, {"id": cal_id}, None)
 
     # ---- output ---------------------------------------------------------
@@ -367,7 +421,26 @@ class Engine:
             return {"state": "running", "id": None, "age_s": None}
         if self.calibration is None:
             return {"state": "none", "id": None, "age_s": None}
-        return {"state": "ok", "id": self.calibration.id, "age_s": round(max(0.0, now - self.calibration.at), 1)}
+        age = max(0.0, now - self.calibration.at)
+        stale = age > self.rules["calibration"]["stale_after_h"] * 3600
+        return {"state": "stale" if stale else "ok", "id": self.calibration.id, "age_s": round(age, 1)}
+
+    def _activity(self):
+        """The movement model's guess (results.schema.json activity), or None."""
+        p = self.last_p
+        if p is None or self.model is None or len(p) != len(self.model.labels):
+            return None
+        labels = self.model.labels
+        if not set(labels) <= set(ACTIVITY_LABELS):     # an older model's classes: not in the contract
+            return None
+        p = np.clip(np.nan_to_num(np.asarray(p, dtype=np.float64)), 0.0, 1.0)
+        k = int(np.argmax(p))
+        return {"label": labels[k], "p": round(float(p[k]), 3),
+                "probs": {lab: round(float(v), 3) for lab, v in zip(labels, p)}, "src": "model"}
+
+    def outputs(self):
+        """Which optional result fields this engine fills (get_status engine.outputs)."""
+        return {"posture": bool(self.rules["posture"]["publish"]), "count": False, "activity": self.model is not None}
 
     def _result(self, now, t_ms, state, level, B, S, post, warm):
         b = self.breath
@@ -389,6 +462,7 @@ class Engine:
             "motion": round(level, 3),
             "posture": {"label": post[0], "since": int(post[1] * 1000), "src": post[2]} if show_posture else None,
             "count": None,
+            "activity": self._activity(),
             "breathing": {"bpm": round(float(b.bpm), 1) if self.breath_valid else None,
                           "confidence": round(float(np.clip(b.confidence, 0, 1)), 3) if b is not None else 0.0,
                           "valid": self.breath_valid, "wave": wave},
@@ -407,7 +481,10 @@ class Engine:
                   "models": [self.model_status], "calibration": self._calibration_status(now),
                   "recording": None if self.recording is None else
                   {"session": self.recording["session"], "frames": self.recording["frames"]},
-                  "active_events": [{k: e[k] for k in ("id", "type", "t", "data")} for e in self.events.active.values()]}
+                  "active_events": [{k: e[k] for k in ("id", "type", "t", "data")} for e in self.events.active.values()],
+                  "source_info": self.source_info_hook() if self.source_info_hook else
+                  {"name": None, "state": "none", "file": None, "speed": 1.0, "loop": False, "error": None},
+                  "outputs": self.outputs()}
         if h is None:
             return {"engine": engine, "device": None}
         health = self._health(now, False)
@@ -434,11 +511,18 @@ class Engine:
                 mode = cmd.get("mode")
                 if mode not in ("live", "replay"):
                     return ack(False, error="mode must be live or replay")
+                speed = 1.0 if cmd.get("speed") is None else float(cmd["speed"])
+                if speed <= 0:
+                    return ack(False, error="speed must be > 0")
                 if self.source_hook is not None:
-                    self.source_hook(mode, cmd.get("file"), float(cmd.get("speed", 1) or 1), bool(cmd.get("loop")))
+                    self.source_hook(mode, cmd.get("file"), speed, bool(cmd.get("loop")))
+                # they belonged to the old signal; the reason keeps the dashboard from calling it "all clear"
+                self.events.clear_all(int(round(now * 1000)), {"reason": "source changed"})
                 self.mode = mode
                 self._reset_signal()
                 self.rx.clear()
+                self._use_calibration(self.calibrations.get(mode), now)
+                self.cal_pending = False
                 return ack(True)
             if kind == "calibrate":
                 dur = float(cmd.get("duration_s", self.rules["calibration"]["default_s"]))
@@ -466,11 +550,11 @@ class Engine:
                 self.load_models()
                 return ack(True, {"models": [self.model_status]})
             if kind == "reload_rules":
-                self.load_rules()
+                self.load_rules(now)
                 return ack(True, {"config_hash": self.config_hash})
             return ack(False, error=f"unknown command '{kind}'")
-        except (KeyError, ValueError, OSError) as err:
-            return ack(False, error=str(err))
+        except Exception as err:                     # a bad argument must never cost the connection
+            return ack(False, error=str(err) if isinstance(err, ValueError) else f"{type(err).__name__}: {err}")
 
     def close(self):
         if self.recording is not None:

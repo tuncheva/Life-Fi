@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLive, useNow, useStale } from "@/lib/live";
+import { useSound } from "@/lib/sound";
 import { applyTheme, type Theme } from "@/lib/theme";
 import { useThemeChoice } from "@/lib/useTheme";
 import { roomName, calibrationText, duration } from "@/lib/words";
@@ -31,6 +32,12 @@ export function SystemBanners() {
       {replay && (
         <div className={`${bar} bg-replay text-replay-fg`} role="status">
           Replay: you are watching a recording{status?.source.file ? ` (${status.source.file.split(/[\\/]/).pop()}${status.source.speed !== 1 ? `, ${status.source.speed}×` : ""})` : ""}, not the live room
+          {status?.source.state === "stopped" ? ". The recording has finished." : ""}
+        </div>
+      )}
+      {connected && status?.engine.connected && status.source.state === "error" && (
+        <div className={`${bar} bg-danger text-white`} role="alert">
+          Can&apos;t read the sensor board{status.source.error ? `: ${status.source.error}` : ""}. Trying again every few seconds…
         </div>
       )}
       {!connected && status && (
@@ -57,6 +64,7 @@ export function TopBar() {
   const stale = useStale(result);
   const path = usePathname();
   const theme = useThemeChoice();
+  const sound = useSound();
   const menu = useRef<HTMLDetailsElement>(null);
   // Close the Setup menu on a click outside it or on Escape.
   useEffect(() => {
@@ -164,6 +172,17 @@ export function TopBar() {
               <Link href="/present/" onClick={closeMenu} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-surface-2">
                 <Icon name="monitor" className="h-4 w-4" /> Presentation mode
               </Link>
+              <div className="px-3 pb-1.5 pt-2">
+                <span className="text-xs font-medium text-subtle">Alarm sound</span>
+                <div className="mt-1 flex gap-1 rounded-lg bg-surface-2 p-1" role="radiogroup" aria-label="Alarm sound">
+                  {(["on", "off"] as const).map((c) => (
+                    <button key={c} role="radio" aria-checked={sound.choice === c} onClick={() => sound.setChoice(c)} className={`flex-1 ${btnSeg(sound.choice === c)}`}>
+                      {c === "on" ? "Beep" : "Silent"}
+                    </button>
+                  ))}
+                </div>
+                {sound.choice === "on" && sound.locked && <span className="mt-1 block text-xs text-muted">Click anywhere once to let the browser play it.</span>}
+              </div>
               <div className="px-3 pb-1.5 pt-2">
                 <span className="text-xs font-medium text-subtle">Theme</span>
                 <div className="mt-1 flex gap-1 rounded-lg bg-surface-2 p-1" role="radiogroup" aria-label="Theme">

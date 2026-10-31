@@ -8,7 +8,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useLive, useNow } from "@/lib/live";
+import { useLive, useNow, usePublished } from "@/lib/live";
 import { DISCLAIMER, PROFILE_TEXT, roomName, activityText, alertAction, alertTitle, breathingText, clearedText, clock, postureText, stopwatch } from "@/lib/words";
 import { BreathingChart } from "@/components/BreathingChart";
 import { CsiCanvas, StateHeadline, useRoomStatus } from "@/components/Cards";
@@ -47,7 +47,8 @@ export default function PresentPage() {
 
   const sit = open.length ? situation(open) : null;
   const top = sit?.lead;
-  const posture = result && !s.blind ? postureText(result.posture) : null;
+  const published = usePublished();
+  const posture = result && !s.blind && published.posture ? postureText(result.posture) : null;
   const breathing = result && !s.blind && s.profile !== "school" ? breathingText(result) : null;
 
   return (
