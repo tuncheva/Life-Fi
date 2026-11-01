@@ -58,6 +58,11 @@
   --replay: #6d28d9;
   --replay-fg: #ffffff;
 
+  /* emergency screen: rescuers on the floor plan */
+  --rescuer: #1d4ed8;
+  --rescuer-soft: #dbe6fe;
+  --rescuer-fg: #1e3a8a;
+
   /* charts */
   --chart-breath: #0369a1;
   --chart-activity: #7b8794;
@@ -105,6 +110,9 @@
     --alert-medium: #c2410c;
     --alert-low: #475569;
     --replay: #7c3aed;
+    --rescuer: #60a5fa;
+    --rescuer-soft: #13254a;
+    --rescuer-fg: #bfdbfe;
     --chart-breath: #38bdf8;
     --chart-activity: #6b7683;
     --chart-grid: #232831;
@@ -149,6 +157,9 @@
   --alert-medium: #c2410c;
   --alert-low: #475569;
   --replay: #7c3aed;
+  --rescuer: #60a5fa;
+  --rescuer-soft: #13254a;
+  --rescuer-fg: #bfdbfe;
   --chart-breath: #38bdf8;
   --chart-activity: #6b7683;
   --chart-grid: #232831;
@@ -217,6 +228,9 @@
   --color-alert-fg: var(--alert-fg);
   --color-replay: var(--replay);
   --color-replay-fg: var(--replay-fg);
+  --color-rescuer: var(--rescuer);
+  --color-rescuer-soft: var(--rescuer-soft);
+  --color-rescuer-fg: var(--rescuer-fg);
 
   --color-chart-breath: var(--chart-breath);
   --color-chart-activity: var(--chart-activity);

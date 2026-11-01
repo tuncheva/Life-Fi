@@ -82,7 +82,28 @@ export function Notice({ tone, children, className = "" }: { tone: "ok" | "warn"
 }
 
 // Icons: simple strokes drawn for this project (no icon dependency).
-type IconName = "person" | "empty" | "question" | "signal-off" | "alert" | "check" | "bell" | "bell-off" | "chevron" | "wave" | "monitor" | "settings" | "clock" | "bed" | "hourglass";
+export type IconName =
+  | "person"
+  | "empty"
+  | "question"
+  | "signal-off"
+  | "alert"
+  | "check"
+  | "bell"
+  | "bell-off"
+  | "chevron"
+  | "wave"
+  | "monitor"
+  | "settings"
+  | "clock"
+  | "bed"
+  | "hourglass"
+  | "flame"
+  | "rubble"
+  | "shield"
+  | "sound"
+  | "sound-off"
+  | "network";
 
 const PATHS: Record<IconName, ReactNode> = {
   person: (
@@ -163,6 +184,47 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M7 3.5h10M7 20.5h10" />
       <path d="M8 3.5c0 4 8 4.5 8 8.5s-8 4.5-8 8.5M16 3.5c0 4-8 4.5-8 8.5s8 4.5 8 8.5" />
+    </>
+  ),
+  flame: (
+    <>
+      <path d="M12 3c.6 3.4 5.5 5.6 5.5 10.5a5.5 5.5 0 0 1-11 0c0-2.6 1.3-4.3 2.7-5.4.1 1.9 1 3.1 2.3 3.6C11.1 9.2 10.8 6 12 3z" />
+      <path d="M10.2 17.2a1.9 1.9 0 0 0 3.6 0c0-1.3-1-2-1.8-2.9-.8.9-1.8 1.6-1.8 2.9z" />
+    </>
+  ),
+  rubble: (
+    <>
+      <path d="M3 20.5h18" />
+      <path d="M5 20.5V9.5L10 6l1.5 3-2 2.5 2 2-1 2" />
+      <path d="M14 5.5l5 3.5v4" />
+      <path d="M12.5 20.5l1.5-3.5 2.5 1 1.5-2.5 2 5" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 3.5 19 6v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
+      <rect x="9.3" y="11" width="5.4" height="4.2" rx=".8" />
+      <path d="M10.5 11V9.8a1.5 1.5 0 0 1 3 0V11" />
+    </>
+  ),
+  sound: (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </>
+  ),
+  "sound-off": (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+      <path d="m16 9.5 5 5M21 9.5l-5 5" />
+    </>
+  ),
+  network: (
+    <>
+      <circle cx="12" cy="5.5" r="2" />
+      <circle cx="5.5" cy="18" r="2" />
+      <circle cx="18.5" cy="18" r="2" />
+      <path d="M11 7.3 6.5 16.2M13 7.3l4.5 8.9M7.5 18h9" />
     </>
   ),
 };
