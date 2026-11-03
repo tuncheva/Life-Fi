@@ -340,7 +340,8 @@
             "number",
             "null"
           ],
-          "minimum": 0
+          "minimum": 0,
+          "description": "Breaths per minute of the last 30 s window; null unless `valid`"
         },
         "confidence": {
           "type": "number",
@@ -356,8 +357,90 @@
             "type": "number"
           },
           "description": "Breathing waveform samples produced in this window"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "warming_up",
+            "no_person",
+            "motion",
+            "noise",
+            "unstable",
+            null
+          ],
+          "description": "Why bpm is null right now, for the UI wording; null while bpm is shown. warming_up: under 30 s of packets; no_person: presence is not present; motion: the person moves (the rate needs about 30 s of stillness); noise: no clear peak above the noise floor; unstable: windows disagree or too few are valid. Optional: older engines leave it out."
         }
       }
+    },
+    "heart": {
+      "description": "EXPERIMENTAL heart rate (lifefi.heart): breathing harmonics removed, from the last 30 s of raw CSI every 5 s, only while someone is present and still. One ESP32 link is near its limit for 0.1-0.5 mm chest motion, so this is NOT a medical measurement and the UI must label it experimental. null when the engine has no heart estimator or has not run one yet. Optional: older engines leave it out.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bpm",
+            "valid",
+            "confidence",
+            "reason"
+          ],
+          "properties": {
+            "bpm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Beats per minute: median of the valid windows of the last 60 s; null unless `valid`"
+            },
+            "valid": {
+              "type": "boolean",
+              "description": "true only when enough recent windows pass every lifefi.heart check and agree"
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Share of the allowed heart-band power near the peak in the last window (lifefi.heart confidence); 0 when no window ran"
+            },
+            "snr": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Peak vs mean power of the allowed band in the last window; null when no window ran"
+            },
+            "valid_share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Share of the windows of the last 60 s that passed every check"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "warming_up",
+                "no_person",
+                "motion",
+                "noise",
+                "unstable",
+                null
+              ],
+              "description": "Why bpm is null right now, for the UI wording; null while bpm is shown. warming_up: under 30 s of packets; no_person: presence is not present; motion: the person moves (the rate needs about 30 s of stillness); noise: no clear peak above the noise floor; unstable: windows disagree or too few are valid."
+            }
+          }
+        }
+      ]
     },
     "csi": {
       "type": "array",

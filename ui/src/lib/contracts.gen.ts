@@ -113,6 +113,9 @@ export interface Result {
     src: "model";
   };
   breathing: {
+    /**
+     * Breaths per minute of the last 30 s window; null unless `valid`
+     */
     bpm: number | null;
     confidence: number;
     valid: boolean;
@@ -120,6 +123,39 @@ export interface Result {
      * Breathing waveform samples produced in this window
      */
     wave: number[];
+    /**
+     * Why bpm is null right now, for the UI wording; null while bpm is shown. warming_up: under 30 s of packets; no_person: presence is not present; motion: the person moves (the rate needs about 30 s of stillness); noise: no clear peak above the noise floor; unstable: windows disagree or too few are valid. Optional: older engines leave it out.
+     */
+    reason?: "warming_up" | "no_person" | "motion" | "noise" | "unstable" | null;
+  };
+  /**
+   * EXPERIMENTAL heart rate (lifefi.heart): breathing harmonics removed, from the last 30 s of raw CSI every 5 s, only while someone is present and still. One ESP32 link is near its limit for 0.1-0.5 mm chest motion, so this is NOT a medical measurement and the UI must label it experimental. null when the engine has no heart estimator or has not run one yet. Optional: older engines leave it out.
+   */
+  heart?: null | {
+    /**
+     * Beats per minute: median of the valid windows of the last 60 s; null unless `valid`
+     */
+    bpm: number | null;
+    /**
+     * true only when enough recent windows pass every lifefi.heart check and agree
+     */
+    valid: boolean;
+    /**
+     * Share of the allowed heart-band power near the peak in the last window (lifefi.heart confidence); 0 when no window ran
+     */
+    confidence: number;
+    /**
+     * Peak vs mean power of the allowed band in the last window; null when no window ran
+     */
+    snr?: number | null;
+    /**
+     * Share of the windows of the last 60 s that passed every check
+     */
+    valid_share?: number;
+    /**
+     * Why bpm is null right now, for the UI wording; null while bpm is shown. warming_up: under 30 s of packets; no_person: presence is not present; motion: the person moves (the rate needs about 30 s of stillness); noise: no clear peak above the noise floor; unstable: windows disagree or too few are valid.
+     */
+    reason: "warming_up" | "no_person" | "motion" | "noise" | "unstable" | null;
   };
   /**
    * Rows of exactly 52 log-amplitude (dB) values, the most recent frames of this window, for the heatmap only. (Length is checked by scripts/check-contracts.mjs, not by the schema, so the generated type stays number[][].)
