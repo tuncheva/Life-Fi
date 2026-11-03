@@ -19,6 +19,18 @@
         "dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "app-replay",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "concurrently",
+        "-n",
+        "engine,app",
+        "node scripts/engine.mjs --replay data/sessions/spots-20261031-192549/spots-20261031-192549.csirec --loop",
+        "npm run dev -w ui"
+      ],
+      "port": 3000
     }
   ]
 }
