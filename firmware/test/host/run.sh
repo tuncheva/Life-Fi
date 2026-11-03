@@ -19,9 +19,10 @@ build test_estimator "$SRC/estimator.c"
 build test_commands "$SRC/commands.c" "$SRC/estimator.c"
 build test_pipeline "$SRC/csi_window.c" "$SRC/estimator.c"
 build test_csi_frame "$SRC/csi_frame.c"
+build test_tx_match "$SRC/tx_match.c"
 
 failed=0
-for t in test_csi_window test_estimator test_commands test_pipeline test_csi_frame; do
+for t in test_csi_window test_estimator test_commands test_pipeline test_csi_frame test_tx_match; do
     echo "########## $t"
     ./"$t.exe" "$@" || failed=$((failed + 1))
 done

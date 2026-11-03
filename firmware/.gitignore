@@ -6,6 +6,10 @@
 /sdkconfig.esp32dev.old
 /sdkconfig.esp32s3.old
 /sdkconfig.esp32cam.old
+/sdkconfig.esp32dev_tx
+/sdkconfig.esp32cam_tx
+/sdkconfig.esp32dev_tx.old
+/sdkconfig.esp32cam_tx.old
 /dependencies.lock
 src/wifi_secrets.h
 logs/

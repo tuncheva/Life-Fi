@@ -28,6 +28,21 @@ esp_err_t wifi_link_save_credentials(const char *ssid, const char *password)
     return ESP_OK;
 }
 
+static int s_tx_sets;
+static bool s_tx_probe = true;
+
+esp_err_t wifi_link_set_tx_probe(bool on)
+{
+    s_tx_sets++;
+    s_tx_probe = on;
+    return ESP_OK;
+}
+
+bool wifi_link_tx_probe_enabled(void)
+{
+    return s_tx_probe;
+}
+
 void esp_restart(void)
 {
     s_restarts++;
@@ -129,6 +144,17 @@ int main(int argc, char **argv)
           "wifi clear erases and restarts");
     type("wifi \"clear\" password1");
     CHECK(strcmp(s_saved_ssid, "clear") == 0, "a network literally named \"clear\" can be quoted");
+
+    printf("== tx\n");
+    int restarts = s_restarts;
+    type("tx");
+    type("tx bogus");
+    type("tx onn");
+    CHECK(s_tx_sets == 0 && s_restarts == restarts, "tx / tx bogus change nothing");
+    type("TX off");
+    CHECK(s_tx_sets == 1 && !s_tx_probe && s_restarts == restarts + 1, "tx off saves and restarts");
+    type("  tx   on ");
+    CHECK(s_tx_sets == 2 && s_tx_probe && s_restarts == restarts + 2, "tx on saves and restarts");
 
     printf("== usbstream\n");
     type("usbstream");

@@ -393,3 +393,33 @@ Acceptance (all without hardware):
   Each new `_tx` env is a fresh build dir: expect ~6 min each the first time,
   so ~18 min for the three TX envs plus ~2 min per receiver env. Run builds
   sequentially in the background and write docs meanwhile.
+
+## Worker report
+
+**Shipped (compiles and is host-tested, not run on a board):**
+- Transmitter app `firmware/src/tx_main.c` (`#if LIFEFI_ROLE_TX`). It sends ESP-NOW broadcasts from MAC `1A:4C:46:54:58:01` on channel 11 at 100 Hz, HT20 MCS0. The rate is set with `esp_now_set_peer_rate_config`, falling back to the deprecated call; the start line logs which one worked. Pacing uses `xTaskDelayUntil`. Status line every 10 s, LED on GPIO 2 / 33, commands `status | channel | rate | help` saved in NVS `lifefi_tx`.
+- Envs `esp32dev_tx` and `esp32cam_tx` in `platformio.ini`, plus their `.gitignore` entries. `.pio/` was already ignored by `firmware/.gitignore`; the root `.gitignore` has no pio entry, which is fine.
+- Receiver lock in `wifi_link.c`:
+  - Boot probe: 400 ms on ch 11, then 120 ms on each other channel. It locks onto a prefix match with at least 5 frames, using `LINK_FIXED_TX`, and logs `link: fixed transmitter ... rssi N`.
+  - The probe is gated by `LIFEFI_TX_PROBE` and the NVS `tx_probe` key. With it off, the old path is unchanged.
+  - New `tx_match.c/.h` and the `tx [on|off]` command. The describe line becomes `FIXED transmitter "Life-Fi TX 01" ...` with the same trailing fields.
+- `main.c` body is guarded with `#if !LIFEFI_ROLE_TX`.
+- Owner guide `docs/hardware/fixed-transmitter.md`; README rows for the step, the mode and the command.
+
+**Commands run (from `firmware/`; never upload or monitor):**
+- `pio run -e esp32dev_tx -v`: compiled and linked, `-DLIFEFI_ROLE_TX=1` confirmed on the `tx_main.c` line. It then failed in PlatformIO's own verbose printer (`TypeError: '_Null' + 'str'` in SCons `print_cmd_line`). That is a `-v` bug, not our code.
+- Set the mtime of `src/CMakeLists.txt`, then non-verbose builds: `esp32dev_tx` SUCCESS 292 s, `esp32cam` SUCCESS 284 s, `esp32dev` SUCCESS 254 s, `esp32cam_tx` SUCCESS 277 s. No warnings in `src/`. An earlier unused `csi_task` warning in the TX build was fixed by moving the guard.
+- TX `.map`: `estimator_push`, `wifi_link_start` and `probe_fixed_tx` are in the discarded sections, so gc works. Flash use: TX 771 KB, receiver 820–832 KB.
+- `powershell -ExecutionPolicy Bypass -File firmware\test\host\run.ps1`: ALL HOST TESTS PASSED. That includes the new `test_tx_match` (5 checks) and the `tx` cases in `test_commands`.
+
+**Dropped:**
+- `esp32s3_tx` (critic) and the optional `esp32s3` receiver build. It was skipped for time; it shares every changed file with `esp32dev`.
+- The TX `id` command (critic).
+- The engine follow-up for track C/A: in `sources.py`, mark the transmitter as fixed when `src_mac` starts with `1a:4c:46:54:58`. Not edited here.
+
+**Owner's morning steps:**
+1. Stop the Life-Fi app. With only the spare ESP32 on USB, run `& $pio run -e esp32dev_tx -t upload -t monitor` (or `esp32cam_tx`). Look for the `tx: Life-Fi fixed transmitter ... as 1a:4c:46:54:58:01` line and `failed 0`.
+2. Re-flash the receiver once: `& $pio run -e esp32cam -t upload`.
+3. Power the TX from a USB charger and fix it in place 2–2.5 m from the receiver, across the room, both about 1 m high.
+4. Reset the receiver. Expect `link: fixed transmitter ... on channel 11, ~100 Hz` and `rate= ~100Hz`. If you want the router back, type `tx off`.
+5. Run `cal` with the room empty, then record new labelled sessions. Full guide: `docs/hardware/fixed-transmitter.md`.

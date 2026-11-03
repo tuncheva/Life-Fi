@@ -5,6 +5,7 @@
  *   status    print thresholds and learned levels
  *   wifi <ssid> <password>   save station credentials to flash and restart
  *   wifi clear               erase them (back to sniffer mode)
+ *   tx [on|off]              look for a fixed transmitter at boot (default on)
  *   usbstream   raw CSI as "@CSI <base64>" lines for the next 5 s (tools/csi_recorder.py --serial)
  *   help */
 #pragma once

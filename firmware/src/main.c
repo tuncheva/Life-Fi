@@ -15,6 +15,9 @@
 #include "stream.h"
 #include "wifi_link.h"
 
+/* The fixed transmitter (envs *_tx) has its own app_main in tx_main.c */
+#if !LIFEFI_ROLE_TX
+
 static const char *TAG = "main";
 
 #define HEALTH_EVERY_WINDOWS 15
@@ -89,3 +92,4 @@ void app_main(void)
     }
     xTaskCreate(csi_task, "csi", 4096, NULL, 5, NULL);
 }
+#endif
