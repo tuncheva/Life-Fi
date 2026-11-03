@@ -9,6 +9,8 @@ export const PUT = write(async (ctx, req) => {
   const body = await readBody(req);
   const mode = body.mode;
   if (mode !== "live" && mode !== "replay") return fail(400, "bad_request", "mode must be live or replay");
+  // the engine writes every frame it is fed into the open .csirec: a replay would end up in the session
+  if (ctx.state.recording) return fail(409, "conflict", "a recording is running; stop it first");
   let file: string | null = null;
   if (mode === "replay") {
     if (typeof body.file !== "string") return fail(400, "bad_request", "replay needs a file");

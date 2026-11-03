@@ -10,7 +10,7 @@ const T0 = 1_700_000_000_000;
 const dir = mkdtempSync(join(tmpdir(), "lifefi-health-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function mkCtx(o: { connected?: boolean; resultAgeMs?: number | null; offline?: boolean; mode?: "live" | "replay"; cal?: string | null; pin?: string; topic?: string; error?: string | null } = {}): AppContext {
+function mkCtx(o: { connected?: boolean; resultAgeMs?: number | null; offline?: boolean; mode?: "live" | "replay"; cal?: string | null; pin?: string; topic?: string; error?: string | null; sourceState?: string } = {}): AppContext {
   const age = o.resultAgeMs === undefined ? null : o.resultAgeMs;
   const latest =
     age === null
@@ -26,7 +26,7 @@ function mkCtx(o: { connected?: boolean; resultAgeMs?: number | null; offline?: 
       latest,
       lastResultAt: age === null ? null : T0 - age,
       engineStatus: null,
-      source: { mode: o.mode ?? "live", file: null, speed: 1, loop: false, state: "running", error: o.error ?? null },
+      source: { mode: o.mode ?? "live", file: null, speed: 1, loop: false, state: o.sourceState ?? "running", error: o.error ?? null },
     },
   } as unknown as AppContext;
 }
@@ -73,6 +73,13 @@ describe("health", () => {
     expect(health(mkCtx({ resultAgeMs: 6000 }), env()).checks.board.rate_hz).toBe(88);
     expect(health(mkCtx({ resultAgeMs: 11_000 }), env()).checks.board.rate_hz).toBeNull();
     expect(health(mkCtx({ resultAgeMs: 100, offline: true }), env()).ready).toBe(false);
+  });
+
+  it("board unreadable: not ready, even though the engine keeps sending warm-up results", () => {
+    const h = health(mkCtx({ resultAgeMs: 500, sourceState: "error", error: "no USB serial port found" }), env());
+    expect(h.ready).toBe(false);
+    expect(h.checks.board.ok).toBe(false);
+    expect(setup(mkCtx({ resultAgeMs: 500, sourceState: "error", error: "no USB serial port found" }), env()).steps[1].detail).toBe("no USB serial port found");
   });
 
   it("an unwritable data dir fails storage and ok", () => {

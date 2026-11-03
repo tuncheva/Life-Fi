@@ -7,16 +7,19 @@ export function StepSpots({ onNext }: { onNext: () => void }) {
   return (
     <>
       <p className="text-base">
-        To have the dashboard say &ldquo;probably at the desk&rdquo;, record each spot on the Labelling page, then train with <code className="font-mono text-sm">ml/train_spots.py</code>.
+        To have the dashboard say &ldquo;probably at the desk&rdquo;, teach it the spots: a guided recording with spoken prompts, then training, on one page. Record 3 sessions with a fixed transmitter.
       </p>
       <Notice tone="neutral" className="mt-3">
         Experimental. A spot is only shown once the trained model is reliable enough.
       </Notice>
       <div className="mt-4 flex flex-wrap gap-2">
+        <Link href="/teach/" className={btn.primary}>
+          Teach spots
+        </Link>
         <Link href="/label/" className={btn.secondary}>
           Open Labelling
         </Link>
-        <button type="button" onClick={onNext} className={btn.primary}>
+        <button type="button" onClick={onNext} className={btn.secondary}>
           Skip for now
         </button>
       </div>

@@ -1,13 +1,14 @@
 "use client";
 // The room from above (docs/overnight/plans/B-ui-ux.md B1.2): occupancy first, distance
 // second. The whole room fills when someone is there; the distance is a band around the
-// sensor (one link has no direction, so it is a radius, never a dot), drawn only with
-// its quality label. Reads the result itself so the dashboard around it does not
-// re-render on every 0.5 s result.
+// sensor (one link has no direction, so it is a radius, never a dot): a ring with a scale
+// when the engine rates it "medium", a wide faint "rough guess" band otherwise (lib/room.ts
+// roomDrawing). Reads the result itself so the dashboard around it does not re-render on
+// every 0.5 s result.
 import { useEffect, useId, useState } from "react";
 import type { ProfileName } from "@/lib/api";
 import { useLiveSlow, useNow, useResult, useStale } from "@/lib/live";
-import { DEFAULT_ROOM, distanceRange, positionView, readRoomGeometry, ROOM_EVENT, ROOM_KEY, type RoomGeometry, type WhereState } from "@/lib/room";
+import { DEFAULT_ROOM, distanceRange, positionView, readRoomGeometry, ROOM_EVENT, ROOM_KEY, roomDrawing, type RoomGeometry, type WhereState } from "@/lib/room";
 import { roomStatus, whereText, type RoomStatus } from "@/lib/words";
 
 /** The derived room status every view shares. */
@@ -76,12 +77,13 @@ export function RoomView({ className = "" }: { className?: string }) {
           ? { color: "transparent", opacity: 0, outline: "var(--empty)" }
           : { color: "transparent", opacity: 0, outline: status.tone === "offline" ? "var(--offline)" : "var(--line)" };
 
-  const dist = where.kind === "here" ? where.distance : null;
+  // roomDrawing: a ring and a scale for a "medium" distance, a wide unlabelled band for a rough guess
+  const { ring: dist, scale } = roomDrawing(where);
   const spot = where.kind === "here" ? where.spot : null;
   let label: string | null = null;
   if (dist) {
     const r = distanceRange(dist.d, dist.sd);
-    label = dist.quality === "medium" ? `roughly ${metres(r.lo)}–${metres(r.hi)} m` : "rough guess";
+    label = dist.rough ? "rough guess" : `roughly ${metres(r.lo)}–${metres(r.hi)} m`;
     if (dist.held) label += " · standing still";
   }
   const labelY = dist ? Math.max(fs * 1.4, Math.min(L - fs * 2, sy - (dist.d + Math.max(dist.sd, 0.1)) * PX - fs * 0.5)) : 0;
@@ -107,10 +109,10 @@ export function RoomView({ className = "" }: { className?: string }) {
 
       <g clipPath={`url(#${clipId})`}>
         {/* zone rings, faint, for scale */}
-        {ZONE_RINGS.map((r) => (
+        {scale && ZONE_RINGS.map((r) => (
           <circle key={r} cx={sx} cy={sy} r={r * PX} fill="none" stroke="var(--chart-axis)" strokeOpacity={0.35} strokeWidth={fs * 0.08} strokeDasharray={`${fs * 0.3} ${fs * 0.4}`} />
         ))}
-        {/* the distance band: d − sd … d + sd around the sensor */}
+        {/* the distance band: d − sd … d + sd around the sensor; a rough guess gets no sharp centre line */}
         {dist && (
           <>
             <circle
@@ -118,20 +120,20 @@ export function RoomView({ className = "" }: { className?: string }) {
               cy={sy}
               fill="none"
               stroke="var(--present)"
-              strokeOpacity={dist.quality === "medium" && !dist.held ? 0.3 : 0.12}
+              strokeOpacity={dist.rough ? (dist.held ? 0.14 : 0.22) : dist.held ? 0.12 : 0.3}
               className="transition-[r,stroke-width] duration-700 ease-out motion-reduce:transition-none"
               style={{ r: dist.d * PX, strokeWidth: Math.max(2 * dist.sd * PX, fs * 0.6) }}
             />
-            <circle
+            {!dist.rough && <circle
               cx={sx}
               cy={sy}
               fill="none"
               stroke="var(--present)"
-              strokeWidth={fs * (dist.quality === "medium" ? 0.16 : 0.1)}
-              strokeDasharray={dist.quality === "low" || dist.held ? `${fs * 0.5} ${fs * 0.4}` : undefined}
+              strokeWidth={fs * 0.16}
+              strokeDasharray={dist.held ? `${fs * 0.5} ${fs * 0.4}` : undefined}
               className="transition-[r] duration-700 ease-out motion-reduce:transition-none"
               style={{ r: dist.d * PX }}
-            />
+            />}
           </>
         )}
         {spot && spot.d !== null && (
@@ -145,7 +147,7 @@ export function RoomView({ className = "" }: { className?: string }) {
       </g>
 
       {/* ring labels, once, up and to the left of the sensor */}
-      {ZONE_RINGS.map((r) => {
+      {scale && ZONE_RINGS.map((r) => {
         const x = sx - r * PX * Math.SQRT1_2;
         const y = sy - r * PX * Math.SQRT1_2;
         if (x < fs * 1.5 || y < fs) return null;
@@ -186,15 +188,15 @@ export function RoomView({ className = "" }: { className?: string }) {
         sensor
       </text>
 
-      {/* scale bar */}
-      <g transform={`translate(${W - PX}, ${L + fs * 1.3})`}>
+      {/* scale bar, only with a ring to read against it */}
+      {scale && <g transform={`translate(${W - PX}, ${L + fs * 1.3})`}>
         <line x1={0} x2={PX} y1={0} y2={0} stroke="var(--subtle)" strokeWidth={fs * 0.1} />
         <line x1={0} x2={0} y1={-fs * 0.25} y2={fs * 0.25} stroke="var(--subtle)" strokeWidth={fs * 0.1} />
         <line x1={PX} x2={PX} y1={-fs * 0.25} y2={fs * 0.25} stroke="var(--subtle)" strokeWidth={fs * 0.1} />
         <text x={PX / 2} y={-fs * 0.45} textAnchor="middle" fill="var(--subtle)" fontSize={fs * 0.8}>
           1 m
         </text>
-      </g>
+      </g>}
 
       {replay && (
         <g transform={`translate(${-pad + fs * 0.3}, ${-pad + fs * 0.3})`}>

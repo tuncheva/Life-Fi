@@ -57,6 +57,8 @@ export function StepRoom({ roomName, moving, onNext }: { roomName: string; movin
       {moving && (
         <Notice tone="warn" className="mt-3">
           The sensor thinks the transmitter is not fixed (it moved, or it is a phone). Put it in one place, plugged in, and leave it there.
+          Saving this step does not clear the warning: once a fixed router or the fixed ESP transmitter is in place, the installer sets{" "}
+          <code>position.transmitter_fixed: true</code> in <code>engine/config/rules.yaml</code> and restarts the sensor software.
         </Notice>
       )}
       <form

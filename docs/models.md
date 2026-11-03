@@ -147,14 +147,17 @@ session, so every number below is very uncertain.
 | E7: A, n re-fitted on the other session | n > 0 | n = −1.64 (wrong sign) | n = 0.06 (flat) |
 
 The engine itself on the recordings (results every 0.5 s, no calibration;
-per spot, the share of answered ticks that are right or `unsure`):
+per spot, the share of answered ticks that are right or `unsure`). The
+occupancy logistic here is fitted on the **other** session (leave-one-session-out;
+the shipped `rules.yaml` offset/scale use both sessions, so replaying with
+them would be in-sample, as an earlier version of this table was):
 
 | Spot | S1 occupancy | S1 presence | S2 occupancy | S2 presence |
 |---|---|---|---|---|
-| close | 1.00 (unsure 45 %) | present 34 % | 0.94 (unsure 94 %, empty 6 %) | empty 100 % |
-| middle | 1.00 (unsure 42 %, no answer 28 %) | present 100 % | 1.00 (unsure 82 %) | empty 100 % |
-| far | 1.00 (unsure 39 %) | present 100 % | 1.00 (unsure 36 %) | empty 100 % |
-| empty | 0.92 (unsure 92 %: presence said present) | present 100 % (wrong) | 0.94 (empty 50 %, unsure 44 %) | empty 100 % |
+| close | 1.00 (unsure 33 %) | present 34 % | 1.00 (unsure 100 %) | empty 100 % |
+| middle | 1.00 (unsure 45 %, no answer 28 %) | present 100 % | 1.00 (unsure 83 %) | empty 100 % |
+| far | 1.00 (unsure 33 %) | present 100 % | 1.00 (unsure 66 %) | empty 100 % |
+| empty | 0.92 (unsure 92 %, occupied 8 %) | present 100 % (wrong) | 0.98 (unsure 98 %, occupied 2 %) | empty 100 % |
 
 Before tonight the dashboard had only presence (above: wrong for the
 whole empty minute of S1 and all three occupied minutes of S2), a spot
@@ -162,12 +165,23 @@ model below chance (0.19 LOSO), and a distance with no quality flag that
 never read close (0.4 m) as near (S1: median 2.7 m; S2: no estimate). Now:
 
 - **`occupancy`** (top level, `lifefi.occupancy`): empty / occupied /
-  unsure from the 4 s disturbance P, no calibration needed. On the replays
-  it is never wrong-and-sure on more than 8 % of a minute, and it is never
-  `empty` while presence says `present`. But it is `unsure` on 57 % (S1)
-  and 65 % (S2) of answered ticks, over the plan's 50 % target: the
-  p_on/p_off band (0.8/0.2) was set beforehand and is not tuned on these
-  two sessions. Cost: ~1.5 ms per update; the engine's tick is 20-45 ms.
+  unsure from the 4 s disturbance P. `occupied` needs no calibration.
+  `empty` is a high-evidence state: P in the empty band **and** presence
+  `empty` **and** an empty-room calibration loaded, all three for 30 s
+  without a break; anything less is `unsure` (the engine must pass
+  `calibrated=` to `Occupancy.update`; until it does, it never says
+  `empty`). Before this rule the
+  (in-sample) replay said `empty` on 7 ticks while a person stood at
+  0.4 m (S2 close): a still person gives a low P, and presence without a
+  calibration said `empty` next to them. Now: no false `empty` on either
+  replay (it never says `empty` there at all, since the engine refused
+  both sessions' calibrations), and wrong-and-sure only as `occupied` in
+  the empty minute (8 % S1, 2 % S2). The price is `unsure` on 52 % (S1)
+  and 88 % (S2) of answered ticks, far over the plan's 50 % target. The
+  residual false-empty risk is a still person whom a calibrated presence
+  also misses for 30 s; the synthetic shallow breather (0.15 dB) shows it
+  would then read `empty`. Not measured on real data (no accepted
+  calibration). Cost: ~1.2 ms per update; the engine's tick is 25-36 ms.
 - **`position.quality`** / `quality_reasons`: `low` on every replay tick
   with a distance (transmitter not fixed, no 2-distance fit, no empty
   calibration), never `medium`. The distance itself is unchanged.
@@ -177,7 +191,8 @@ never read close (0.4 m) as near (S1: median 2.7 m; S2: no estimate). Now:
   reads `reliable: false`. `holdout_accuracy` is never used for this.
 - The synthetic checks (`engine/tests/test_occupancy.py`) all pass with
   the real-data thresholds: an empty room never occupied, motion occupied,
-  a still breathing person never empty, a ±4 dB static step no blip.
+  a still breathing person never empty (presence `present`, or presence
+  `empty` without a calibration), a ±4 dB static step no blip.
 
 **Leak correction.** An earlier "0.40 with the empty profile subtracted"
 for the spot features used the test session's whole empty minute as the
@@ -202,6 +217,17 @@ score: `.venv/Scripts/python ml/train_spots.py data/sessions/spots-*/`
 `ml/eval_position.py --fit-occupancy`, then copy the block into
 `engine/config/rules.yaml`. Next recordings should use a fixed transmitter
 and start and end with 60 s of empty room.
+
+**From the dashboard** (`/teach`, Setup menu → Teach spots): a guided
+session (empty 60 s, close / middle / far held 45 s each, round 2 in
+reverse, empty 60 s again) with spoken prompts timed by the server, which
+writes the same `spots.json` as `ml/record_spots.py`. Training there runs
+`ml/train_spots.py --out data/spots_model.candidate.json --json`, shows
+`loso_bal_acc` next to chance and the reliable bar, and installs the model
+only when it beats the current one over chance (the old one stays as
+`data/spots_model.prev.json`, "Restore previous" swaps them back). The
+engine reloads it on `reload_models`. Spot names are fixed to close /
+middle / far (+ empty), as `ml/eval_position.py` expects.
 
 ## Limits
 

@@ -79,5 +79,29 @@ check(train_spots.loso_bal_acc(Xa, ya, np.zeros(len(ya), int), np.ones(len(ya), 
 two = train_spots.loso_bal_acc(Xa, ya, np.arange(len(ya)) % 2, np.ones(len(ya), bool), 2, 0.1)
 check(two is not None and len(two[1]) == 2 and 0.0 <= two[0] <= 1.0, f"two sessions: loso_bal_acc {two and round(two[0], 3)}")
 
+# the engine reloads the spot model on reload_models (what /teach does after installing one)
+from lifefi.engine import Engine  # noqa: E402
+
+with tempfile.TemporaryDirectory() as tmp:
+    path = pathlib.Path(tmp) / "spots_model.json"
+    path.write_text(json.dumps(base), encoding="utf-8")
+    eng = Engine(calibration_path=pathlib.Path(tmp) / "calibration.json")
+    check(eng.spot_model is not None and eng.spot_model.labels == list(SPOTS), "engine loads model A at start")
+    path.write_text(json.dumps({**base, "labels": ["sofa", "bed"], "distances": {"sofa": 1.0, "bed": 2.0},
+                                "loso_bal_acc": 0.8}), encoding="utf-8")
+    acks = []
+    eng.handle({"type": "reload_models", "id": 1}, acks.append, 0.0)
+    margin = float(eng.rules["spots"]["reliable_margin"])
+    check(eng.spot_model.labels == ["sofa", "bed"] and eng.spot_model.margin == margin,
+          f"reload_models picks up model B with the rules margin ({margin})")
+    check(acks and acks[0]["ok"] and acks[0]["data"]["spots"] == {"labels": ["sofa", "bed"], "loso_bal_acc": 0.8},
+          f"the reload ack names the spot model: {acks and acks[0]['data'].get('spots')}")
+    path.write_text("{not json", encoding="utf-8")
+    eng.handle({"type": "reload_models", "id": 2}, acks.append, 0.0)
+    check(eng.spot_model is not None and eng.spot_model.labels == ["sofa", "bed"], "bad JSON: the old model is kept")
+    path.unlink()
+    eng.handle({"type": "reload_models", "id": 3}, acks.append, 0.0)
+    check(eng.spot_model is None and acks[-1]["data"]["spots"] is None, "file gone: no spot model, ack spots null")
+
 print(f"\ntest_spots {'PASSED' if not failures else 'FAILED'}: {failures} failure(s)")
 sys.exit(1 if failures else 0)

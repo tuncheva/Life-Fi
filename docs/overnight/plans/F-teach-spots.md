@@ -501,3 +501,19 @@ file), confusion matrix display.
 - `ml/eval_position.py` stays 4-label and "empty last"; new sessions (empty first and
   last) load fine there (`empty_spot` takes the first empty, which is now
   a calibration-before), custom spot names would break it: documented, not fixed here.
+
+## Worker report
+
+**Shipped (all six R6 steps):**
+1. `ml/train_spots.py`: `main(argv)` + argparse (`--out`, `--json` → one `METRICS {...}` line, `allow_nan=False`); skips dirs without `spots.json`/`.csirec` with a reason; exit 2 on no usable session or differing label sets. Same numbers as before on the two real sessions (holdout 0.189, shrink 0.3; LOSO 0.169, run to a temp `--out`). `ml/tests/test_train_spots.py` (7 cases, fake `load_csirec`).
+2. `Engine.load_spots()` (called after `load_rules()` and on `reload_models`; bad JSON keeps the old model, missing file → None); ack adds `spots: {labels, loso_bal_acc} | null`; `contracts/control.md` row; reload cases in `engine/tests/test_spots.py`.
+3. `ui/src/server/python.ts` (`runPython`, injectable spawn/kill, taskkill tree on Windows), `ui/src/server/teach.ts` (sessions listing, `shouldPromote` per R3, tmp+rename install/restore, async training job in a `globalThis` singleton, readiness checks, `buildSchedule`, `TeachRun` with all R3 abort conditions), `readSpotsFile` in `position-files.ts`, `startRecording`/`stopRecording` helpers in `recordings.ts` (routes use them), `PUT /source` 409 while recording. Routes: `GET /spots`, `GET|POST /spots/teach`, `POST /spots/teach/stop`, `POST /spots/train` (202), `POST /spots/restore`.
+4–6. `/teach` page (`app/teach/page.tsx`, `components/teach/TeachRecord.tsx`, `TeachTrain.tsx`, `lib/teach.ts`): readiness list, transmitter, fixed spot names with editable distances (localStorage), rounds 1/2, test voice, run view (phase band, big instruction + countdown from the server clock at 250 ms, next step, progress, speech once per step + 3-2-1, wake lock, Stop with confirm), sessions table, Train, honest result/current-model cards (R4 wording, chance + bar on the same line, per-session scores, holdout only under Details), Restore previous. StepSpots → "Teach spots" primary; Setup menu entry. `contracts/api.md` Spots section, `docs/models.md` paragraph.
+
+**Checks:** `npm test` 17 passed, 1 skipped (features_vectors), 0 failed; vitest 174 passed (18 in `teach.test.ts`, 3 in `teach-client.test.ts`); `npx tsc --noEmit` clean; `npm run lint -w ui` clean. `GET /api/v1/spots` checked on `next dev` against the real data dir (2 old sessions listed as transmitter unknown, current model "not measured", Start blocked: engine not connected); `/teach` SSRs 200.
+
+**Not verified:** the page in a browser: the Browser pane never hydrated any page (HMR websocket refused, every page stuck on "Compiling…"), so the client UI is type/lint-checked only. No end-to-end run (no board): the morning manual check in §6 still applies.
+
+**Dropped (per R2):** server-side speech, editable spot names, Advanced timing, Install anyway, confusion matrix display.
+
+**For the orchestrator:** other agents edited files at the same time as me; `docs/models.md` and `ui/src/components/TopBar.tsx` contain their changes as well as mine (mine: the "From the dashboard" paragraph; the one `/teach/` menu row). `ui/next-env.d.ts` was already modified before I started (not mine).

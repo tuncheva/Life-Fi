@@ -52,7 +52,8 @@ occupancy:                  # lifefi.occupancy: room empty / occupied / unsure f
   offset: -1.05             # log10 P (dB²) at p = 0.5: ml/eval_position.py --fit-occupancy (spots-192549 + 193656 pooled, 2026-11-03)
   scale: 0.96               # decades of P per logistic unit, same fit; LOSO estimate in docs/models.md
   p_on: 0.8                 # [H] p >= this: occupied
-  p_off: 0.2                # [H] p <= this (and presence not `present`): empty; between: unsure
+  p_off: 0.2                # [H] p <= this, presence `empty` and an empty calibration loaded: empty; else unsure
+  empty_hold_s: 30.0        # empty only after this long of all three without a break (presence's breathing window)
   hold_ticks: 3             # [H] a new state after this many ticks of the same raw state
 
 position:                   # lifefi.position quality

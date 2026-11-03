@@ -15,7 +15,7 @@ How it works: the transmitter sends ESP-NOW broadcasts (tiny 12-byte frames)
 on channel 11 at 802.11n MCS0, 20 MHz, from the fixed MAC address
 `1A:4C:46:54:58:01`. The rate matters: ESP-NOW's default 1 Mbps 802.11b
 frames carry no CSI. The receiver looks for that MAC on every channel for
-about 2 s when it boots and, if it finds it, takes its CSI only from the
+up to about 3 s when it boots and, if it finds it, takes its CSI only from the
 transmitter. Same approach as Espressif's esp-csi `csi_send` / `csi_recv`.
 
 ## 1. Which board
@@ -62,7 +62,7 @@ Commands (type and press Enter; saved in the board's flash, applied at once):
 |---|---|
 | `status` | Print the counters line now |
 | `channel N` | Send on channel N (1-13). Reset the receiver afterwards so it finds it again |
-| `rate N` | Frames per second, 10-500 (default 100) |
+| `rate N` | Frames per second, 50-500 (default 100). Slower would be missed by the receiver's boot search |
 | `help` | List commands |
 
 Ctrl+C closes the monitor; the transmitter keeps sending.
@@ -97,7 +97,7 @@ e.g. `& $pio run -e esp32cam -t upload`; only one board on USB, or
 `--upload-port COMx`). Its saved Wi-Fi and `learn` levels stay in flash.
 
 Power the transmitter first, then reset or plug in the receiver: it looks for
-the transmitter only at boot (about 2 s). The receiver log shows:
+the transmitter only at boot (up to about 3 s). The receiver log shows:
 
 ```
 I (1450) link: fixed transmitter 1a:4c:46:54:58:01 on channel 11, 98 Hz in the probe, rssi -41
@@ -110,9 +110,9 @@ the live rate should sit near 100 Hz without the multi-second gaps the
 hotspot had. The `.csirec` / USB stream format is unchanged; recordings just
 show `1A:4C:46:54:58:01` as the source.
 
-Not found: `link: no Life-Fi fixed transmitter found (1.8 s probe)`, then the
-receiver carries on exactly as before (router / hotspot if credentials are
-saved, else sniffer).
+Not found: `link: no Life-Fi fixed transmitter found (2.8 s probe)`, then the
+receiver carries on as before, about 3 s later (router / hotspot if
+credentials are saved, else sniffer). Only `tx off` skips the search.
 
 ## 6. After the first good run
 
@@ -125,7 +125,7 @@ hotspot do not mix with these.
 
 | Symptom | Fix |
 |---|---|
-| Want the router / hotspot back | Type `tx off` in the receiver console (saved, the board restarts and behaves exactly as before). `tx on` turns the search back on, `tx` shows the setting. No reflash needed |
+| Want the router / hotspot back | Type `tx off` in the receiver console (saved, the board restarts and behaves exactly as before, without the boot search). `tx on` turns the search back on, `tx` shows the setting. No reflash needed |
 | `no Life-Fi fixed transmitter found` | Transmitter not powered, still booting (power it first), or too far; check its log for `sent ... failed 0` |
 | Rate low or gappy | Another network on the same channel: `channel 1`, `6` or `13` in the transmitter console, then reset the receiver |
 | Receiver keeps logging `waiting for the transmitter` | The transmitter stopped or was unplugged after the receiver locked: power it, then reset the receiver |

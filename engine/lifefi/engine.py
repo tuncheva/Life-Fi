@@ -132,11 +132,11 @@ class Engine:
         self.cal_job = None
         self.pos_fit_path = self.calibration_path.with_name("position.json") if self.calibration_path else None
         self.pos_fit = self._load_pos_fit()
-        # the taught spots of this room (ml/train_spots.py); without it, the distance estimate alone
-        self.spot_model = spots.SpotModel.load(self.calibration_path.with_name("spots_model.json")) if self.calibration_path else None
+        self.spot_model = None                       # load_spots(), after the rules (its margin)
         self.recording = None
         self.started = None
         self.load_rules()
+        self.load_spots()
         self.load_models()
         self._reset_signal()
         self.boot_id = 0
@@ -164,6 +164,17 @@ class Engine:
             self.spot_model.margin = float((r.get("spots") or {}).get("reliable_margin", 0.15))
         if hasattr(self, "position"):
             self.position.transmitter_fixed = self._transmitter_fixed()
+
+    def load_spots(self):
+        """The taught spots of this room (ml/train_spots.py, or /teach), next to the calibration file;
+        without it, the distance estimate alone. A file that does not load keeps the old model."""
+        path = self.calibration_path.with_name("spots_model.json") if self.calibration_path else None
+        try:
+            model = spots.SpotModel.load(path, float((self.rules.get("spots") or {}).get("reliable_margin", 0.15))) if path else None
+        except (OSError, ValueError, KeyError, TypeError) as err:
+            print(f"could not load the spot model {path}: {err}; keeping the previous one")
+            return
+        self.spot_model = model
 
     def _load_calibration(self):
         path = self.calibration_path
@@ -347,7 +358,8 @@ class Engine:
         self._fall_step(now, t_ms, F, tF, M, quiet, still, moving, state, warm)
         post = self._posture_step(now, present)
         occ = self.occupancy
-        occ_out = None if warm or occ is None else occ.update(now, *lv.raw_amp(occ.window_s + 1.0), state)
+        occ_out = None if warm or occ is None else occ.update(now, *lv.raw_amp(occ.window_s + 1.0), state,
+                                                              calibrated=self.calibration is not None)
         pos = None if warm else self.position.update(now, *lv.raw_amp(position.WIN_S), moving=moving,
                                                      present=True if present else False if state == "empty" else None)
         self.pos_out = None if pos is None else {**pos, "people": max(self._people(state), 1 if pos["valid"] else 0)}
@@ -630,7 +642,10 @@ class Engine:
                 return ack(True, {"frames": rec["frames"], "t_start_us": rec["t_start_us"], "t_end_us": rec["t_end_us"]})
             if kind == "reload_models":
                 self.load_models()
-                return ack(True, {"models": [self.model_status]})
+                self.load_spots()
+                sm = self.spot_model
+                return ack(True, {"models": [self.model_status],
+                                  "spots": sm and {"labels": sm.labels, "loso_bal_acc": sm.model_accuracy}})
             if kind == "reload_rules":
                 self.load_rules(now)
                 return ack(True, {"config_hash": self.config_hash})

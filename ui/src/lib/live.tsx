@@ -6,6 +6,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getAlerts, getHistory, getStatus, LIVE_URL, type Alert, type Status, type WsMessage } from "./api";
 import type { Result } from "./contracts.gen";
+import { spotReliable } from "./room";
 import type { PresenceSince } from "./words";
 
 export const WAVE_HZ = 10;
@@ -35,8 +36,8 @@ export interface SignalSample {
   zone: "near" | "middle" | "far" | null;
   /** How many people to mark (lifefi.position people). */
   people: number;
-  /** The spot model's answer (lifefi.spots), null without a model. */
-  spot: { name: string; p: number; d: number | null } | null;
+  /** The spot model's answer (lifefi.spots), null without a model; reliable as the engine rates it for this room. */
+  spot: { name: string; p: number; d: number | null; reliable: boolean } | null;
 }
 
 export class RingBuffer<T> {
@@ -205,7 +206,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             held: pos?.held ?? false,
             zone: pos?.zone ?? null,
             people: pos?.people ?? 0,
-            spot: pos?.spot ? { name: pos.spot.name, p: pos.spot.p, d: pos.spot.d_m } : null,
+            spot: pos?.spot ? { name: pos.spot.name, p: pos.spot.p, d: pos.spot.d_m, reliable: spotReliable(pos) } : null,
             R: pos ? pos.R_db : null,
           });
           buffers.version++;

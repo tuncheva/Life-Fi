@@ -32,7 +32,7 @@ command out after 3 s.
 | `set_source` | `mode`: `live` / `replay`; for `replay`: `file` (a `.csirec` path), optional `speed` (> 0, default 1), `loop` (default false) | The engine accepts only frames with that `source`; on `replay` it plays `file` itself, re-stamped with the current time. Every active event is cleared (it belonged to the old signal), with `data: {"reason": "source changed"}`. Refused (`ok: false`) when the file is missing, `speed` ≤ 0, or `live` is asked for and the engine has no board configured | `{}` |
 | `record_start` | `session`, `path`, `meta` (object; the **server** writes it to `session.json`) | Writes the `.csirec` (live only) | `{}` |
 | `record_stop` | — | Stops the recording | `{"frames": 12345, "t_start_us": …, "t_end_us": …}` |
-| `reload_models` | — | Reloads the model files | `{"models": [...]}` (as in `get_status`) |
+| `reload_models` | — | Reloads the model files and `spots_model.json` (a file that does not load keeps the old spot model) | `{"models": [...], "spots": {"labels", "loso_bal_acc"} | null}` (`models` as in `get_status`; `spots` null when no spot model is loaded) |
 | `reload_rules` | — | Reloads `rules.yaml`; the new `config_hash` appears in results | `{"config_hash": "…"}` |
 | `position_fit` | `d_m` (0.3–8), `seconds` (default 25) | Someone has been moving `d_m` from the board for the last `seconds`: sets the distance scale A of `result.position` from their disturbance and saves it (`data/position.json`, live only). Refused when too little movement above the empty room was seen | `{"A", "n", "R_db", "windows"}` |
 | `get_status` | — | Engine and device status | see below |

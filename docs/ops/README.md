@@ -64,8 +64,10 @@ engine running: the next start then says port 6000 is in use (see Troubleshootin
 A bad value (e.g. `LIFEFI_ENGINE_PORT=abc`) does not crash the server: the log
 prints `life-fi: invalid configuration` with the list, and every API call
 answers `500 {"error":"config"}` with the same list until it is fixed and the
-app restarted. The engine reads `--calibration` (default `data/calibration.json`);
-with a non-default `LIFEFI_DATA_DIR`, pass a matching `--calibration` too.
+app restarted. `npm run start` passes the engine `--port $LIFEFI_ENGINE_PORT` and
+`--calibration <LIFEFI_DATA_DIR>/calibration.json` (position.json and
+spots_model.json sit next to it) unless you pass your own; with `npm run dev` or
+engine/run.py by hand, pass a matching `--port` and `--calibration` yourself.
 
 PowerShell example: `$env:LIFEFI_HOST = "0.0.0.0"; npm run start`.
 
@@ -156,7 +158,7 @@ window shows, each with the time. `LIFEFI_LOG=debug` for more.
 | `sensor_offline` alert | the engine has been disconnected, or no result came, for 10 s (30 s grace after start), CSI rate under 50 Hz for 60 s, or the board stopped sending status. Check the board and its power |
 | `[start] engine exited (code …), restarting in …` repeating | read the `[engine]` lines just above it in the log |
 | `life-fi: invalid configuration` | fix the listed `LIFEFI_*` variables and restart |
-| writes answer `429 rate_limited` | 5 wrong PINs in a minute lock writes (60 s, doubling to 1 h). Wait, or restart the app |
+| writes answer `429 rate_limited` | 5 wrong PINs in a minute lock writes (60 s, doubling to 1 h). Browsers that used the right PIN before still get through. Wait, or restart the app |
 
 ## Security notes
 

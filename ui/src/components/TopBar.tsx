@@ -20,6 +20,7 @@ const SETUP: { href: string; label: string; hint: string }[] = [
   { href: "/setup", label: "Set up this room", hint: "Sensor, room size, calibration" },
   { href: "/source/", label: "Source & replay", hint: "Live sensor or a recording" },
   { href: "/label/", label: "Labelling", hint: "Record training sessions" },
+  { href: "/teach/", label: "Teach spots", hint: "Record spots with spoken prompts, then train" },
   { href: "/settings/", label: "Settings", hint: "Phone alerts, profile, PIN" },
   { href: "/model/", label: "Spot model view", hint: "3D view and live signals, experimental" },
   { href: "/emergency/", label: "Emergency (building demo, simulated)", hint: "Not real sensor data" },
@@ -43,7 +44,8 @@ export function SystemBanners() {
       )}
       {connected && status?.engine.connected && status.source.state === "error" && (
         <div className={`${bar} bg-danger text-white`} role="alert">
-          Can&apos;t read the sensor board{status.source.error ? `: ${status.source.error}` : ""}. Trying again every few seconds…
+          Can&apos;t read the sensor board{status.source.error ? `: ${status.source.error}` : ""}
+          {/[.?!]$/.test(status.source.error ?? "") ? "" : "."} Trying again every few seconds…
         </div>
       )}
       {!connected && status && (
@@ -81,7 +83,7 @@ function StatusPills() {
         <Pill tone="danger" dot>
           Offline
         </Pill>
-      ) : status && (!status.engine.connected || status.server.sensor_offline || stale) ? (
+      ) : status && (!status.engine.connected || status.server.sensor_offline || stale || status.source.state === "error") ? (
         <Pill tone="danger" dot title="No readings from the sensor">
           Sensor offline
         </Pill>
@@ -116,11 +118,13 @@ function subscribeLocalSetup(cb: () => void): () => void {
 /**
  * "Finish setup" while the room is not set up: the server's GET /setup when it
  * exists, else this browser's record of /setup and the calibration state.
- * Fetched on mount and when the calibration state changes, never on a timer.
+ * Fetched on mount and when the calibration state, the engine link or the source changes, never on a timer.
  */
 function FinishSetupPill() {
   const { status } = useLiveSlow();
   const calibration = status?.engine.status?.calibration.state ?? null;
+  const engineUp = status?.engine.connected ?? false;
+  const source = status?.source.mode ?? null;
   const localDone = useSyncExternalStore(subscribeLocalSetup, () => readLocalSetup() !== null, () => true);
   const [setup, setSetup] = useState<SetupResponse | null>(null);
   useEffect(() => {
@@ -131,7 +135,7 @@ function FinishSetupPill() {
     return () => {
       live = false;
     };
-  }, [calibration, localDone]);
+  }, [calibration, localDone, engineUp, source]);
   // Nothing to say before the box answered at all.
   if (!status || !needsSetup({ setup, localDone, calibration })) return null;
   return (

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Result } from "../src/lib/contracts.gen";
-import { DEFAULT_ROOM, distanceRange, positionView, readRoomGeometry, writeRoomGeometry, type WhereState } from "../src/lib/room";
-import { reasonLinks, whereText, type RoomStatus } from "../src/lib/words";
+import { DEFAULT_ROOM, distanceRange, positionView, readRoomGeometry, roomDrawing, writeRoomGeometry, type WhereState } from "../src/lib/room";
+import { reasonLinks, roomStatus, whereText, type RoomStatus } from "../src/lib/words";
 
 const seeing: RoomStatus = { tone: "present", headline: "Someone is home", detail: null, action: null, blind: false };
 const blind: RoomStatus = { tone: "offline", headline: "We cannot see the room right now", detail: null, action: null, blind: true };
@@ -101,7 +101,7 @@ describe("whereText", () => {
 
   it("mentions holding, several people and a spot", () => {
     const t = whereText(w({ people: 2, distance: dist("low", { held: true, heldSince: null }), spot: { name: "reading_chair", d: null } }));
-    expect(t.headline).toBe("2 people here");
+    expect(t.headline).toBe("More than one person may be here");
     expect(t.detail).toBe("One sensor can't tell them apart · distance: rough guess only · standing still · probably at the reading chair");
   });
 
@@ -118,6 +118,52 @@ describe("whereText", () => {
       "/setup?step=calibrate",
       "/setup?step=sensor",
     ]);
+  });
+});
+
+describe("roomStatus and positionView agree", () => {
+  const status = (r: Result) => roomStatus({ connected: true, status: null, result: r, stale: false, presenceSince: null, profile: "home", now: 2000 });
+
+  it("hedges the headline when presence says empty but occupancy sees someone", () => {
+    const r = result("empty", { occupancy: { state: "occupied", p: 0.8 } });
+    expect(status(r).headline).toBe("Not sure if anyone is there");
+    expect(whereText(view(r, status(r))).headline).toBe("Not sure if anyone is there");
+    expect(status(result("empty", { occupancy: { state: "empty", p: 0.9 } })).headline).toBe("Nobody in the room");
+    expect(status(result("empty")).headline).toBe("Nobody in the room");
+  });
+
+  it("says the room is not watched while the board can't be read, not 'starting up'", () => {
+    // the engine keeps ticking in warm-up with no board, inside the watchdog's start-up grace
+    const r = { ...result("empty"), health: { ...result("empty").health, warmup: true } } as Result;
+    const board = { engine: { connected: true }, server: { sensor_offline: null }, source: { state: "error", error: "no USB serial port found" } };
+    const s = roomStatus({ connected: true, status: board as never, result: r, stale: false, presenceSince: null, profile: "home", now: 2000 });
+    expect(s.headline).toBe("We cannot see the room right now");
+    expect(s.detail).toContain("can't be read (no USB serial port found)");
+  });
+});
+
+describe("roomDrawing", () => {
+  const draw = (position: Pos, extra: { occupancy?: unknown } = {}) => roomDrawing(view(result("present", { position, ...extra })));
+
+  it("draws a ring and a scale for a medium distance", () => {
+    expect(draw(pos({ quality: "medium" }))).toEqual({ ring: { d: 2.4, sd: 0.5, held: false, rough: false }, scale: true });
+    expect(draw(pos({ quality: "medium", held: true })).ring?.held).toBe(true);
+  });
+
+  it("draws a low or missing quality as a wide rough band, without the scale", () => {
+    expect(draw(pos({ quality: "low", quality_reasons: ["transmitter_not_fixed"] }))).toEqual({ ring: { d: 2.4, sd: 0.5, held: false, rough: true }, scale: false });
+    expect(draw(pos())).toEqual({ ring: { d: 2.4, sd: 0.5, held: false, rough: true }, scale: false }); // an older engine: no quality reads as low
+    expect(draw(pos({ quality: "low", d_sd: 0.1 })).ring?.sd).toBe(0.5); // never thinner than the guess deserves
+    expect(draw(pos({ quality: "low", d_sd: 0.9 })).ring?.sd).toBe(0.9);
+  });
+
+  it("draws nothing without a usable distance", () => {
+    expect(draw(pos({ quality: "none" }))).toEqual({ ring: null, scale: false });
+    expect(draw(pos({ quality: "medium" }), { occupancy: { state: "unsure", p: 0.5 } })).toEqual({ ring: null, scale: false });
+  });
+
+  it("draws nothing for the other states", () => {
+    for (const w of [{ kind: "nobody" }, { kind: "unsure" }, { kind: "blind", reason: "x" }] as WhereState[]) expect(roomDrawing(w)).toEqual({ ring: null, scale: false });
   });
 });
 

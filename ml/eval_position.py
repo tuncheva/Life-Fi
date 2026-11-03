@@ -368,10 +368,13 @@ def eval_distance(sessions):
 
 
 # ---- the engine on the recordings ---------------------------------------
-def replay(s, cal=None, cal_at=None):
+def replay(s, cal=None, cal_at=None, occ_fit=None):
     """Results every TICK_S from the engine in replay mode; with cal_at, a calibration job of CAL_S
-    started there (MIN_S lowered for it). Returns (rows, tick_ms, calibration)."""
+    started there (MIN_S lowered for it); occ_fit = (offset, scale) replaces the shipped occupancy
+    logistic (fitted on both sessions) by one fitted without this session. Returns (rows, tick_ms, calibration)."""
     eng = engine_mod.Engine(mode="replay")
+    if occ_fit is not None and eng.occupancy is not None:
+        eng.occupancy.offset, eng.occupancy.scale = occ_fit
     if cal is not None:
         eng.calibration = eng.calibrations["replay"] = cal
         eng.cal_pending = True
@@ -464,12 +467,17 @@ def eval_engine(sessions):
             _, _, cal, _ = replay(s, cal_at=e["t0"])
         finally:
             calibration_mod.MIN_S = real_min
-        res = {}
+        # leave-one-session-out: the occupancy logistic is fitted on the other session(s) only
+        # (rules.yaml's offset/scale were fitted on both, so replaying with them is in-sample)
+        others = [o for o in sessions if o is not s]
+        fit = fit_occupancy(others) if others else None
+        res = {"occupancy_fit": ({"offset": round(fit[0], 3), "scale": round(fit[1], 3),
+                                  "fitted_on": [o["short"] for o in others]} if fit else "in-sample (one session only)")}
         for tag, c in (("nocal", None), ("fresh", cal)):
             if tag == "fresh" and (c is None or isinstance(c, str)):
                 res[tag] = {"error": f"calibration refused by the engine: {c}"}
                 continue
-            rows, ms, _, occ_ms = replay(s, cal=c)
+            rows, ms, _, occ_ms = replay(s, cal=c, occ_fit=fit)
             sp = score_replay(s, rows, tag != "nocal")
             dec = {k: sum(v for st, v in m["occupancy"].items() if st != "null") for k, m in sp.items()}
             unsure = sum(m["occupancy"].get("unsure", 0) for m in sp.values())
@@ -486,7 +494,7 @@ def eval_engine(sessions):
 
 
 # ---- synthetic checks (lifefi.synth; no data/ needed) -------------------
-def drive(occ, ts_us, csi, presence_of=lambda now: None, t_step=TICK_S):
+def drive(occ, ts_us, csi, presence_of=lambda now: None, t_step=TICK_S, calibrated=False):
     """(now, result) of an Occupancy fed with synthetic packets, one update per tick."""
     t = ts_us / 1e6
     amp = np.abs(csi)
@@ -494,7 +502,7 @@ def drive(occ, ts_us, csi, presence_of=lambda now: None, t_step=TICK_S):
     for now in np.arange(t[0] + t_step, t[-1], t_step):
         k = int(np.searchsorted(t, now, side="right"))
         a = int(np.searchsorted(t, now - occ.window_s - 1.0))
-        out.append((now, occ.update(now, t[a:k], amp[a:k], presence_of(now))))
+        out.append((now, occ.update(now, t[a:k], amp[a:k], presence_of(now), calibrated)))
     return out
 
 
@@ -516,14 +524,20 @@ def synthetic_checks(cfg):
         st = [r["state"] if r else None for now, r in rows if 20.0 + lag <= now <= 40.0]
         share = st.count("occupied") / max(len(st), 1)
         res[f"moving_{tag}"] = {"pass": share >= 0.9, "detail": f"occupied on {share:.0%} of the motion ticks"}
-        # (iii) a still person breathing, presence `present`: never empty
-        ts, csi = synth(60, seed=23, agc=agc, bpm=15)
+        # (iii) a still person breathing shallowly (0.15 dB: P inside the empty band, as at S2's close
+        # spot): never empty, whether presence sees them (`present`) or, as presence without a
+        # calibration did on S2, says `empty` next to them (review H1)
+        ts, csi = synth(60, seed=23, agc=agc, bpm=15, breath_db=0.15)
         rows = drive(Occupancy(cfg), ts, csi, lambda now: "present")
         n_empty = sum(1 for _, r in rows if r and r["state"] == "empty")
-        free = drive(Occupancy(cfg), ts, csi)            # the same signal without the presence guard
+        blind = drive(Occupancy(cfg), ts, csi, lambda now: "empty")
+        n_blind = sum(1 for _, r in blind if r and r["state"] == "empty")
+        free = drive(Occupancy(cfg), ts, csi, lambda now: "empty", calibrated=True)   # what P alone would say
         st = [r["state"] for now, r in free if r is not None and now >= w + 1]
-        res[f"still_breathing_{tag}"] = {"pass": n_empty == 0, "detail": f"empty on {n_empty} ticks with presence present; "
-                                         f"without the guard: {st.count('empty')} empty, {st.count('unsure')} unsure, "
+        res[f"still_breathing_{tag}"] = {"pass": n_empty == 0 and n_blind == 0,
+                                         "detail": f"empty on {n_empty} ticks with presence present, {n_blind} with "
+                                         f"presence empty and no calibration; if presence and a calibration both "
+                                         f"wrongly said empty: {st.count('empty')} empty, {st.count('unsure')} unsure, "
                                          f"{st.count('occupied')} occupied of {len(st)}",
                                          "p_median": float(np.median([r["p"] for _, r in free if r]))}
         # (iv) the static multipath steps by up to ±4 dB at 30 s: a short blip at most
@@ -609,7 +623,9 @@ def main():
                      "form (p >= 0.5, and the p_on/p_off band)",
                      "fresh = first 30 s of the test session's empty minute as reference (recorded last: a "
                      "calibration-after); those windows are not scored",
-                     "only two sessions, both with the phone hotspot as a moving transmitter"],
+                     "only two sessions, both with the phone hotspot as a moving transmitter",
+                     "engine_replay: the engine as shipped, except the occupancy logistic, which is fitted on the "
+                     "other session (occupancy_fit) so the replay is leave-one-session-out too"],
            "variants": variants, "within_session": within}
     if not args.no_engine:
         res["engine_replay"] = eval_engine(sessions)

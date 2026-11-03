@@ -80,7 +80,7 @@
 #define LIFEFI_TX_CHANNEL 11            /* default; `channel N` on the TX changes it */
 #endif
 #ifndef LIFEFI_TX_RATE_HZ
-#define LIFEFI_TX_RATE_HZ 100           /* frames per second; `rate N`, 10-500 */
+#define LIFEFI_TX_RATE_HZ 100           /* frames per second; `rate N`, LIFEFI_TX_RATE_MIN-500 */
 #endif
 #ifndef LIFEFI_TX_ID
 #define LIFEFI_TX_ID 1                  /* last MAC byte */
@@ -99,5 +99,12 @@
 #define LIFEFI_TX_PROBE 1
 #endif
 #define LIFEFI_TX_PROBE_FIRST_MS 400    /* on LIFEFI_TX_CHANNEL */
-#define LIFEFI_TX_PROBE_MS       120    /* on each other channel */
+#define LIFEFI_TX_PROBE_MS       200    /* on each other channel */
 #define LIFEFI_TX_PROBE_MIN      5      /* frames needed to lock */
+/* The slowest rate the TX accepts. The probe must see it on any channel with
+ * room for lost frames and the channel-switch settle time: at 50 Hz a 200 ms
+ * listen expects 10 frames, twice LIFEFI_TX_PROBE_MIN. */
+#define LIFEFI_TX_RATE_MIN       50
+_Static_assert(LIFEFI_TX_RATE_MIN * LIFEFI_TX_PROBE_MS >= 2 * LIFEFI_TX_PROBE_MIN * 1000,
+               "the receiver's probe could miss a transmitter at LIFEFI_TX_RATE_MIN");
+_Static_assert(LIFEFI_TX_RATE_HZ >= LIFEFI_TX_RATE_MIN, "LIFEFI_TX_RATE_HZ below LIFEFI_TX_RATE_MIN");

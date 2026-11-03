@@ -1,5 +1,5 @@
 // Settings persisted to data/settings.json. The PIN is never returned to clients.
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProfileName, ProfilesConfig } from "./profiles";
@@ -56,10 +56,13 @@ export type PublicSettings = Omit<Settings, "pin" | "profile"> & { pin_set: bool
 
 export class SettingsStore {
   private readonly path: string;
+  private readonly dir: string;
+  private trustKey: Buffer | null = null;
   value: Settings;
 
   constructor(dataDir: string, defaults: { pin: string; profiles: ProfilesConfig }) {
     mkdirSync(dataDir, { recursive: true });
+    this.dir = dataDir;
     this.path = join(dataDir, "settings.json");
     const base: Settings = {
       pin: defaults.pin,
@@ -89,6 +92,41 @@ export class SettingsStore {
     const { pin, profile, ...rest } = this.value;
     void profile;
     return { ...rest, pin_set: pin.length > 0 };
+  }
+
+  /**
+   * The "this browser has given the right PIN before" cookie value: an HMAC of the current
+   * PIN under a random per-install key (data/trust.key), so changing the PIN revokes every
+   * browser, and nobody can derive it from the 4-digit PIN alone.
+   */
+  trustToken(): string {
+    if (!this.trustKey) {
+      const p = join(this.dir, "trust.key");
+      let key: Buffer | null = null;
+      try {
+        key = Buffer.from(readFileSync(p, "utf8").trim(), "hex");
+      } catch {
+        /* first start */
+      }
+      if (!key || key.length < 32) {
+        key = randomBytes(32);
+        try {
+          writeFileSync(p, key.toString("hex") + "\n", { mode: 0o600 });
+        } catch {
+          /* read-only data dir: trusted browsers last until the next restart */
+        }
+      }
+      this.trustKey = key;
+    }
+    return createHmac("sha256", this.trustKey).update(this.value.pin).digest("base64url");
+  }
+
+  /** Constant-time compare of a trust cookie against trustToken(). */
+  checkTrust(candidate: string | undefined): boolean {
+    if (typeof candidate !== "string" || candidate.length === 0) return false;
+    const a = Buffer.from(candidate);
+    const b = Buffer.from(this.trustToken());
+    return a.length === b.length && timingSafeEqual(a, b);
   }
 
   /** Constant-time compare, so response timing does not leak how many digits are right. */

@@ -1,6 +1,12 @@
 """Trains the spot model (engine/lifefi/spots.py) on recordings made with ml/record_spots.py.
 
     .venv/Scripts/python ml/train_spots.py data/sessions/spots-*/          # -> data/spots_model.json
+    .venv/Scripts/python ml/train_spots.py --out x.json --json DIR DIR     # what /teach runs
+
+A dir without spots.json or a .csirec (a stopped run) is skipped with a
+reason. Exit 2 when no usable session is left or the sessions do not
+share the same spot names (a class missing from one visit cannot be
+scored). `--json` ends with one `METRICS {...}` line for the dashboard.
 
 Windows of WIN_S every HOP_S inside each labelled spot (never across the
 walk between spots). With two or more sessions the score is leave-one-
@@ -16,10 +22,12 @@ ml/eval_position.py does (windows 2 s away from each spot's ends). The
 engine shows a spot as `reliable` only when it beats chance by
 rules.yaml spots.reliable_margin. One session writes none, so the model
 reads as unreliable: a within-session score says nothing about another
-visit. (The shrinkage is picked on the same score, so it is a little
-optimistic.)
+visit. It uses the fixed SHRINK_LOSO, never the shrinkage picked above:
+a shrinkage chosen on the held-out sessions would flatter the very number
+the engine's `reliable` gate trusts.
 """
 
+import argparse
 import json
 import pathlib
 import sys
@@ -37,6 +45,7 @@ from lifefi.spots import WIN_S, MIN_PACKETS, features  # noqa: E402
 HOP_S = 0.25
 HOLDOUT = 0.3
 TRIM_S = 2.0                     # the walk between spots: not scored (as ml/eval_position.py)
+SHRINK_LOSO = 0.2                # fixed for loso_bal_acc, set before any score was seen (review M2)
 OUT = ROOT / "data" / "spots_model.json"
 
 
@@ -109,8 +118,34 @@ def loso_bal_acc(X, y, sess, inner, k, shrink):
     return float(np.mean(per)), per
 
 
-def main():
-    dirs = sys.argv[1:] or sorted(str(p) for p in (ROOT / "data" / "sessions").glob("spots-*"))
+def usable(dirs):
+    """(dirs that have spots.json and a .csirec, their label sets); prints why the others are skipped."""
+    ok, sets = [], []
+    for d in map(pathlib.Path, dirs):
+        if not (d / "spots.json").is_file():
+            print(f"skip {d.name}: no spots.json (stopped early?)")
+        elif not any(d.glob("*.csirec")):
+            print(f"skip {d.name}: no .csirec")
+        else:
+            ok.append(d)
+            sets.append(sorted({s["name"] for s in json.loads((d / "spots.json").read_text(encoding="utf-8"))["spots"]}))
+    return ok, sets
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Train the spot model on labelled sessions.")
+    ap.add_argument("dirs", nargs="*", help="session dirs (default: every data/sessions/spots-*)")
+    ap.add_argument("--out", default=str(OUT), help="model file to write (default data/spots_model.json)")
+    ap.add_argument("--json", action="store_true", help="end with one METRICS {json} line")
+    args = ap.parse_args(argv)
+    out = pathlib.Path(args.out)
+    dirs, sets = usable(args.dirs or sorted(str(p) for p in (ROOT / "data" / "sessions").glob("spots-*")))
+    if not dirs:
+        print("no usable session (each needs spots.json and a .csirec)", file=sys.stderr)
+        return 2
+    if any(s != sets[0] for s in sets):
+        print("labels differ between sessions: " + "; ".join(f"{d.name} {','.join(s)}" for d, s in zip(dirs, sets)), file=sys.stderr)
+        return 2
     X, y, part, sess, inner, labels, dist, sessions = load(dirs)
     k = len(labels)
     print(f"{len(X)} windows from {', '.join(sessions)}: " + ", ".join(f"{l} {np.sum(y == i)}" for i, l in enumerate(labels)))
@@ -140,7 +175,7 @@ def main():
     for i, l in enumerate(labels):
         print(f"  {l:>16}  " + "  ".join(f"{c:>7}" for c in conf[i]))
 
-    loso = loso_bal_acc(X, y, sess, inner, k, shrink)
+    loso = loso_bal_acc(X, y, sess, inner, k, SHRINK_LOSO)
     if loso is not None:
         print(f"loso_bal_acc {loso[0]:.3f} (per left-out session {', '.join(f'{v:.3f}' for v in loso[1])}; chance {1 / k:.2f})")
     else:
@@ -148,14 +183,26 @@ def main():
 
     mu, sd, W, b = fit(X, y, k, shrink)
     extra = {} if loso is None else {"loso_bal_acc": round(loso[0], 3), "loso_by_session": [round(v, 3) for v in loso[1]]}
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps({
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({
         "labels": labels, "distances": dist, "mu": mu.tolist(), "sd": sd.tolist(), "W": W.tolist(), "b": b.tolist(),
         "shrink": shrink, "holdout_accuracy": round(acc, 3), "session": ",".join(sessions),
         "trained_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "win_s": WIN_S, **extra,
     }), encoding="utf-8")
-    print(f"saved {OUT}")
+    print(f"saved {out}")
+    if args.json:
+        # one line, plain floats, no NaN: the dashboard parses the last line starting "METRICS "
+        print("METRICS " + json.dumps({
+            "sessions": sessions, "labels": labels, "chance": round(1 / k, 4), "shrink": shrink, "how": how,
+            "split_bal_acc": round(acc, 3),
+            "windows": {sessions[i]: {l: int(np.sum((sess == i) & (y == j))) for j, l in enumerate(labels)} for i in range(len(sessions))},
+            "confusion": conf.tolist(),
+            "loso_bal_acc": None if loso is None else round(loso[0], 3),
+            "loso_by_session": None if loso is None else [round(v, 3) for v in loso[1]],
+            "out": str(out),
+        }, allow_nan=False))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

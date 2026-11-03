@@ -232,6 +232,7 @@ export function doneSteps(i: { sensorOk: boolean; setup: SetupResponse | null; c
 
 /** Plain-language text for the server's optional steps (keyed on id, never on detail). */
 export const SERVER_EXTRA: Record<string, { label: string; href: string | null; todo: string }> = {
+  board: { label: "Sensor board connected", href: "/setup?step=sensor", todo: "No live data from the sensor board (or a recording is playing). Plug the board in over USB and switch the source to the board." },
   pin: { label: "Dashboard PIN changed", href: "/settings/", todo: "The PIN is still the factory one (1234). Change it in Settings." },
   notify: { label: "Phone alerts set up", href: "/settings/", todo: "No phone alerts yet. Set an ntfy topic in Settings." },
   lan: { label: "Reachable from phones", href: null, todo: "Only this computer can open the dashboard. Start the box with LIFEFI_HOST=0.0.0.0 to reach it from phones." },

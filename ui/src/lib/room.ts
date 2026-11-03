@@ -142,6 +142,24 @@ export function positionView(input: { status: RoomStatus; result: Result | null;
   return { kind: "here", people, distance, spot, reasons };
 }
 
+/** Half-width of a rough band at the least, so a low-quality guess never reads as a line. */
+export const ROUGH_SD = 0.5;
+
+/**
+ * What the room drawing may show, by the same rule as whereText: a "medium" distance gets a
+ * ring with the zone rings, their labels and the scale bar to read it against. A low-quality
+ * distance gets only a wide band marked "rough guess" (no metres, no scale), so the owner
+ * still sees roughly where the engine thinks they are without reading off "about 2.2 m".
+ */
+export type RoomDrawing = { ring: { d: number; sd: number; held: boolean; rough: boolean } | null; scale: boolean };
+
+export function roomDrawing(w: WhereState): RoomDrawing {
+  const dist = w.kind === "here" ? w.distance : null;
+  if (!dist) return { ring: null, scale: false };
+  if (dist.quality !== "medium") return { ring: { d: dist.d, sd: Math.max(dist.sd, ROUGH_SD), held: dist.held, rough: true }, scale: false };
+  return { ring: { d: dist.d, sd: dist.sd, held: dist.held, rough: false }, scale: true };
+}
+
 /** Where to fix each reason in the setup flow (/setup?step=…). */
 export const REASON_STEP: Record<QualityReason, string> = {
   transmitter_not_fixed: "transmitter",

@@ -22,6 +22,13 @@ export interface SpotsSummary {
   trained_at: number | null;
 }
 
+/** What /teach shows of a spot model file: the summary plus the per-session scores and the optimistic within-split number. */
+export interface SpotsFile extends SpotsSummary {
+  loso_by_session: number[] | null;
+  /** chosen on the same split it is scored on: optimistic, never the headline */
+  holdout_accuracy: number | null;
+}
+
 function readJson(path: string): Record<string, unknown> | null {
   try {
     const v: unknown = JSON.parse(readFileSync(path, "utf8"));
@@ -49,18 +56,25 @@ export function readPositionFiles(dir = config.dataDir): { fit: PositionFit | nu
   const n = num(f?.n);
   const fit = f && A !== null && n !== null ? { A, n, d_m: num(f.d_m) ?? 0, at: toMs(f.at) } : null;
 
-  const s = readJson(join(dir, "spots_model.json"));
-  let spots: SpotsSummary | null = null;
-  if (s && Array.isArray(s.labels)) {
-    const labels = s.labels.filter((x): x is string => typeof x === "string");
-    const d = (s.distances && typeof s.distances === "object" ? s.distances : {}) as Record<string, unknown>;
-    spots = {
-      labels,
-      distances: Object.fromEntries(labels.map((l) => [l, num(d[l])])),
-      loso_bal_acc: num(s.loso_bal_acc),
-      session: typeof s.session === "string" ? s.session : null,
-      trained_at: toMs(s.trained_at),
-    };
-  }
+  const f2 = readSpotsFile(join(dir, "spots_model.json"));
+  const spots: SpotsSummary | null = f2 && { labels: f2.labels, distances: f2.distances, loso_bal_acc: f2.loso_bal_acc, session: f2.session, trained_at: f2.trained_at };
   return { fit, spots };
+}
+
+/** A spot model file (spots_model.json, its .prev / .candidate copies), or null when missing or broken. */
+export function readSpotsFile(path: string): SpotsFile | null {
+  const s = readJson(path);
+  if (!s || !Array.isArray(s.labels)) return null;
+  const labels = s.labels.filter((x): x is string => typeof x === "string");
+  const d = (s.distances && typeof s.distances === "object" ? s.distances : {}) as Record<string, unknown>;
+  const per = Array.isArray(s.loso_by_session) ? s.loso_by_session.map(num) : null;
+  return {
+    labels,
+    distances: Object.fromEntries(labels.map((l) => [l, num(d[l])])),
+    loso_bal_acc: num(s.loso_bal_acc),
+    session: typeof s.session === "string" ? s.session : null,
+    trained_at: toMs(s.trained_at),
+    loso_by_session: per && per.every((v) => v !== null) ? (per as number[]) : null,
+    holdout_accuracy: num(s.holdout_accuracy),
+  };
 }

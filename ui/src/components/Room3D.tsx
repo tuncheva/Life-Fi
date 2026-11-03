@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { useLive } from "@/lib/live";
-import { qualityOf } from "@/lib/room";
+import { qualityOf, spotAccuracy, spotReliable } from "@/lib/room";
 import { useRoomGeometry } from "./RoomView";
 import { attachOrbit, hasWebGL, placeCamera, type Orbit } from "@/lib/orbit";
 import { token, useResolvedTheme } from "@/lib/useTheme";
@@ -166,7 +166,8 @@ export function Room3D({ className = "h-72", source = "distance" }: { className?
         const last = buffers.signals.length ? buffers.signals.toArray().at(-1)! : null;
         if (source === "model") {
           const s = last?.spot ?? null;
-          goalD = s && s.name !== "empty" ? s.d : null;
+          // an unreliable spot model places nobody (plan B1.1), even in the installer view
+          goalD = s && s.reliable && s.name !== "empty" ? s.d : null;
           goalSd = 0.3;
           held = false;
           zone = zoneOf(goalD);
@@ -225,6 +226,9 @@ export function Room3D({ className = "h-72", source = "distance" }: { className?
   const pos = result?.position ?? null;
   const n = pos ? Math.max(pos.valid ? 1 : 0, pos.people) : 0;
   const spot = pos?.spot ?? null;
+  const reliable = spotReliable(pos);
+  const acc = spotAccuracy(pos);
+  const medium = !!pos && qualityOf(pos) === "medium";
 
   return (
     <div>
@@ -233,11 +237,13 @@ export function Room3D({ className = "h-72", source = "distance" }: { className?
         role="img"
         aria-label={
           source === "model"
-            ? spot
+            ? spot && reliable
               ? `3D room view, spot model: ${spot.name}${spot.d_m !== null ? `, ${spot.d_m} metres from the sensor` : ""}`
-              : "3D room view, spot model: no answer"
+              : spot
+                ? "3D room view, spot model: not reliable for this room"
+                : "3D room view, spot model: no answer"
             : pos?.valid && pos.d_m !== null
-              ? `3D room view: ${n} ${n === 1 ? "person" : "people"} about ${pos.d_m.toFixed(1)} metres from the sensor`
+              ? `3D room view: ${n} ${n === 1 ? "person" : "people"}${medium ? ` about ${pos.d_m.toFixed(1)} metres from the sensor` : ", distance a rough guess"}`
               : "3D room view: no distance reading"
         }
         className={`relative w-full cursor-grab overflow-hidden rounded-lg bg-surface-2 active:cursor-grabbing ${className}`}
@@ -245,7 +251,11 @@ export function Room3D({ className = "h-72", source = "distance" }: { className?
         {!webgl && <p className="absolute inset-0 grid place-items-center p-4 text-center text-sm text-muted">This browser cannot draw 3D (WebGL is off).</p>}
         <div className="pointer-events-none absolute left-3 top-2 text-sm font-semibold tabular-nums">
           {source === "model" ? (
-            spot ? (
+            spot && !reliable ? (
+              <span className="font-normal text-muted">
+                Spot model not reliable for this room{acc !== null ? ` (tested accuracy ${Math.round(acc * 100)} %)` : ""}
+              </span>
+            ) : spot ? (
               <>
                 {spot.name === "empty" ? "Room empty" : `Spot: ${spot.name}`}
                 {spot.d_m !== null && ` · ${spot.d_m} m`}
@@ -258,7 +268,13 @@ export function Room3D({ className = "h-72", source = "distance" }: { className?
             <>
               {n > 1 ? `${n >= MAX_MARKERS ? `${MAX_MARKERS}+` : n} people · ` : ""}
               {pos.zone ? `${ZONE_TEXT[pos.zone]} · ` : ""}
-              {pos.d_m.toFixed(1)} m <span className="font-normal text-muted">± {pos.d_sd?.toFixed(1) ?? "?"} m · quality {qualityOf(pos)}</span>
+              {medium ? (
+                <>
+                  {pos.d_m.toFixed(1)} m <span className="font-normal text-muted">± {pos.d_sd?.toFixed(1) ?? "?"} m · quality medium</span>
+                </>
+              ) : (
+                <span className="font-normal text-muted">distance: rough guess only (quality {qualityOf(pos)})</span>
+              )}
               {pos.held && <span className="block text-xs font-normal text-muted">Standing still: last position while moving</span>}
             </>
           ) : (

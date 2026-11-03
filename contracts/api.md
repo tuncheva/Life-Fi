@@ -19,8 +19,12 @@ Writes: every `POST` and `PUT` below.
 Wrong PINs are limited (one bucket for the whole server): 5 wrong PINs within
 60 s lock every write for 60 s (`429` `rate_limited`, `Retry-After: <s>`);
 each further lockout doubles it, up to 1 h. A right PIN outside a lockout
-resets it; so does restarting the server. The phone's one-time ack token is not
-limited.
+resets it; so does an hour without wrong PINs, or restarting the server. The
+phone's one-time ack token is not limited. Every accepted PIN also sets the
+`lifefi_trust` cookie (HttpOnly, an HMAC of the PIN under a per-install key in
+`data/trust.key`; a PIN change revokes it); a request with that cookie and the
+right PIN is not locked out, so a browser that has used the PIN before can still
+acknowledge an alert while someone else hammers wrong PINs.
 
 ## Errors
 
@@ -59,6 +63,12 @@ root; the server sends the engine the absolute path).
 | POST | `/recordings/segment` | `{"action":"start","label","count","subject","spot"}` or `{"action":"end"}` | `{"ended": segment \| null, "open_segment"}`; starting a segment ends the open one (segments never overlap) |
 | POST | `/recordings/mark` | `{"event","subject"}` | the written mark line |
 | POST | `/position/fit` | `{"d_m": 2, "seconds": 25}` | engine `position_fit` ack data `{"A","n","R_db","windows"}`; `409` when too little movement was seen |
+| GET | `/spots` | — | `SpotsOverview` (below) |
+| GET | `/spots/teach` | — | `RunState \| null` (cheap; the /teach page polls it while a run is active) |
+| POST | `/spots/teach` | `{"distances": {"close": 0.5, "middle": 1.5, "far": 3}, "rounds": 1 \| 2, "transmitter": "fixed" \| "phone"}` | `RunState`; `400` on bad input; `409` when not ready (engine not connected, source not live, no readings at ≥ 20/s, a recording, run, training or calibration is active) |
+| POST | `/spots/teach/stop` | `{}` | `RunState` (`aborted`, reason "stopped by user"); `409` when no run is active |
+| POST | `/spots/train` | `{"sessions": ["spots-20261103-070000", …]}` (≥ 2 usable session ids, same spot names) | `202 {"training": TrainingState}`; the outcome appears in `GET /spots` `training`; `409` while a run or training is active |
+| POST | `/spots/restore` | `{}` | swaps `spots_model.json` and `spots_model.prev.json`, then `reload_models` → `{"model", "previous", "engine_reloaded"}`; `409` without a backup or while training |
 
 `Recording` (also in `Status.recording` while a session runs, else `null`; the
 server clears it if the engine reports no recording, e.g. after an engine
@@ -158,6 +168,40 @@ Read from the engine's `position.json` (the saved `position/fit`) and
 is `null`. Never the model weights, nor its same-session `holdout_accuracy`; `loso_bal_acc` is the leave-one-session-out balanced accuracy (`null` for a model trained on one session). Times are ms since epoch. The engine writes
 these files next to its `--calibration` path (default `data/`): a non-default
 `LIFEFI_DATA_DIR` needs a matching `--calibration`.
+
+### Spots (`/spots`, the /teach page)
+
+`GET /spots` → `{"margin", "model", "previous", "candidate", "sessions", "readiness", "teach", "training", "spot_names", "timing"}`:
+`model` / `previous` / `candidate` are `ModelSummary | null` for `spots_model.json`, `.prev.json`
+and `.candidate.json` in the data dir: `{"labels", "distances", "loso_bal_acc", "loso_by_session",
+"holdout_accuracy", "session", "trained_at", "chance" (1/k), "bar" (chance + rules.yaml
+spots.reliable_margin), "reliable", "sessions"}`. `sessions` lists every
+`<data>/sessions/spots-YYYYMMDD-HHMMSS/`: `{"id", "started_ms", "transmitter": "fixed" | "phone" |
+"unknown", "protocol", "labels", "distances", "duration_s", "frames", "rate_hz", "ok", "problem"}`
+(`problem` e.g. "stopped early (no spots.json): stopped by user", "no .csirec"). `readiness` is
+`[{"id", "ok", "label"}]`, the checks `POST /spots/teach` applies. `training` is
+`{"state": "running" | "done" | "failed", "sessions", "started_ms", "ended_ms", "result", "error"}`,
+`result` = `{"metrics" (train_spots.py's METRICS line), "promoted", "reason", "engine_reloaded",
+"candidate", "model"}`.
+
+`RunState` = `{"session", "state": "running" | "done" | "aborted", "reason", "server_now_ms",
+"transmitter", "rounds", "steps": [Step], "index", "started_ms", "ends_ms", "frames"}`,
+`Step` = `{"id", "kind": "lead" | "empty" | "walk" | "hold" | "end", "name", "d_m", "t0_ms",
+"t1_ms", "say"}`. The server times the run on its clock (the engine's `host_us` clock), so a
+sleeping phone cannot shift the labels; the page counts down from `server_now_ms`. A complete
+run writes `spots.json` in `ml/record_spots.py`'s shape (`{session, spots: [{name, d_m, t0_us,
+t1_us}]}`, plus `frames`, `t_start_us`, `t_end_us`, `protocol: "teach-v1"`, `transmitter`); an
+aborted one writes `teach.json` with the reason and never `spots.json`. A run aborts on: stop,
+engine gone > 5 s, source not live, the recording stopped elsewhere, no result for 10 s or
+under 10 readings/s for 10 s. A server restart mid-run loses the run (the session then lists as
+stopped early). While any recording runs, `PUT /source` answers `409`.
+
+Training runs `ml/train_spots.py --out <data>/spots_model.candidate.json --json <dirs>` (killed
+after 180 s). The candidate is installed (current → `.prev.json`, each file written to `.tmp`
+then renamed) only when its `loso_bal_acc − 1/k` is at least the current model's (or the current
+one has no `loso_bal_acc`); a candidate without `loso_bal_acc` never is. The engine reads
+`spots_model.json` next to its `--calibration` path: a non-default `LIFEFI_DATA_DIR` needs a
+matching `--calibration`.
 
 ### `Source`
 

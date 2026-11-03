@@ -67,7 +67,8 @@ export function health(ctx: AppContext, env: HealthEnv = defaultEnv()): Health {
   const { state } = ctx;
   const engineOk = ctx.engine.connected;
   const ageMs = state.lastResultAt === null ? null : Math.max(0, env.now - state.lastResultAt);
-  const boardOk = engineOk && ageMs !== null && ageMs < 5000 && !ctx.watchdog.isOffline;
+  // an unreadable board still gets fresh results (the engine ticks on in warm-up), so check the source too
+  const boardOk = engineOk && ageMs !== null && ageMs < 5000 && !ctx.watchdog.isOffline && state.source.state !== "error";
   const memory = env.dbPath === ":memory:";
   let free: number | null = null;
   try {

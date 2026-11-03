@@ -22,7 +22,16 @@ const port = Number(env("LIFEFI_PORT", "3000"));
 const enginePort = Number(env("LIFEFI_ENGINE_PORT", "6000"));
 const dataDir = resolve(root, env("LIFEFI_DATA_DIR", "data"));
 const logDir = join(dataDir, "logs");
-const engineArgs = process.argv.slice(2);
+const userArgs = process.argv.slice(2);
+const has = (flag) => userArgs.some((a) => a === flag || a.startsWith(`${flag}=`));
+// The engine must listen where the backend dials (LIFEFI_ENGINE_PORT) and keep calibration.json,
+// position.json and spots_model.json (siblings of --calibration) in the app's data dir.
+// Arguments the user passes win.
+const engineArgs = [
+  ...(has("--port") ? [] : ["--port", String(enginePort)]),
+  ...(has("--calibration") ? [] : ["--calibration", join(dataDir, "calibration.json")]),
+  ...userArgs,
+];
 const win = process.platform === "win32";
 
 function die(what, fix, code = 1) {
@@ -49,7 +58,9 @@ function portFree(p, h) {
   });
 }
 if (!(await portFree(port, host))) die(`port ${port} on ${host} is in use`, "stop what uses it (Get-NetTCPConnection -LocalPort " + port + ") or set LIFEFI_PORT");
-if (Number.isInteger(enginePort) && !(await portFree(enginePort, "127.0.0.1")))
+if (!Number.isInteger(enginePort) || enginePort < 1 || enginePort > 65535)
+  die(`LIFEFI_ENGINE_PORT must be a port number (got "${process.env.LIFEFI_ENGINE_PORT}")`, "unset it or set 1-65535");
+if (!(await portFree(enginePort, "127.0.0.1")))
   die(`engine port ${enginePort} is in use (an engine still running?)`, `stop it: Get-NetTCPConnection -LocalPort ${enginePort} | % OwningProcess`);
 try {
   mkdirSync(logDir, { recursive: true });
@@ -85,8 +96,11 @@ const say = (msg) => out(`[start] ${msg}`);
 
 // ---- children --------------------------------------------------------------------------
 const BACKOFF_S = [1, 2, 4, 8, 16, 30];
-// exit codes that mean "stopped on purpose": run.py's Ctrl+C path, 130 (SIGINT), STATUS_CONTROL_C_EXIT
-const STOPPED = new Set([0, 130, 3221225786, -1073741510]);
+// exit codes that mean "Ctrl+C reached the child": 130 (SIGINT), STATUS_CONTROL_C_EXIT. A clean
+// exit 0 is not one of them: run.py and next also return 0 when they stop on their own, and that
+// is restarted. On a real Ctrl+C our own SIGINT handler sets `stopping` (and clears a pending
+// restart), so a child that exits 0 a moment earlier is not brought back.
+const STOPPED = new Set([130, 3221225786, -1073741510]);
 let stopping = false;
 let exitCode = 0;
 
@@ -121,7 +135,8 @@ function launch(name) {
     }
     if ((code !== null && STOPPED.has(code)) || signal === "SIGINT" || signal === "SIGTERM") {
       say(`${name} stopped (${how}); shutting down`);
-      return shutdown(`${name} stopped`, true); // usually Ctrl+C reached it first; the 10 s force covers the rest
+      // a console Ctrl+C reached the sibling too; a signal from elsewhere did not, so stop it now
+      return shutdown(`${name} stopped`, code !== null && STOPPED.has(code));
     }
     if (Date.now() - startedAt > 60_000) failures[name] = 0;
     const delay = BACKOFF_S[Math.min(failures[name], BACKOFF_S.length - 1)];

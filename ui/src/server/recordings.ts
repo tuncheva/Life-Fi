@@ -1,7 +1,7 @@
 // Recordings (plan-v2 §4.3, §10.1): the engine writes the .csirec, the server
 // writes session.json at start and appends labels.jsonl. Segments are
 // non-overlapping: starting one ends the open one.
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { config, repoRoot } from "./config";
 import { buildStatus, type AppContext } from "./context";
@@ -53,6 +53,42 @@ export function endOpenSegment(ctx: AppContext, t_us: number): Record<string, un
   const line = { kind: "segment", session: rec.session, t_start_us: seg.t_start_us, t_end_us: t_us, label: seg.label, count: seg.count, subject: seg.subject, spot: seg.spot };
   appendLabel(ctx, rec.session, line);
   return line;
+}
+
+/**
+ * Starts a recording (the caller has checked that none runs and the source is live): the engine
+ * opens `<dir>/<session>.csirec`, then session.json = header + `meta` (meta keys at the top level).
+ * Throws the engine's error.
+ */
+export async function startRecording(ctx: AppContext, session: string, meta: Record<string, unknown>, dir = sessionDir(session)): Promise<{ session: string; started_us: number }> {
+  await ctx.engine.send("record_start", { session, path: join(dir, `${session}.csirec`), meta });
+  const started_us = Date.now() * 1000;
+  mkdirSync(dir, { recursive: true });
+  const sessionJson = {
+    session,
+    started_us,
+    firmware: (ctx.state.engineStatus?.device as Record<string, unknown> | null)?.fw_version ?? null,
+    engine: ctx.state.engineStatus?.engine.version ?? null,
+    config_hash: ctx.state.latest?.config_hash ?? null,
+    pipeline_version: ctx.state.latest?.pipeline_version ?? null,
+    ...meta,
+  };
+  writeFileSync(join(dir, "session.json"), JSON.stringify(sessionJson, null, 2) + "\n");
+  ctx.state.recording = { session, started_us, open_segment: null, labels: readLabels(session).length };
+  ctx.log.info({ session }, "recording started");
+  broadcastStatus(ctx);
+  return { session, started_us };
+}
+
+/** Stops the open recording (the caller has checked there is one): the stop ack's data. Throws the engine's error. */
+export async function stopRecording(ctx: AppContext): Promise<Record<string, unknown>> {
+  const rec = ctx.state.recording!;
+  endOpenSegment(ctx, Date.now() * 1000);
+  const ack = await ctx.engine.send("record_stop");
+  ctx.state.recording = null;
+  ctx.log.info({ session: rec.session, frames: ack.data.frames }, "recording stopped");
+  broadcastStatus(ctx);
+  return ack.data;
 }
 
 export function broadcastStatus(ctx: AppContext): void {

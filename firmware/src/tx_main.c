@@ -5,7 +5,7 @@
  * csi_send. ESP-NOW's default rate is 1 Mbps 802.11b, which carries no CSI:
  * the rate call below is the important part.
  *
- * Serial commands (921600 baud): status | channel <1-13> | rate <10-500> | help.
+ * Serial commands (921600 baud): status | channel <1-13> | rate <50-500> | help.
  * Settings are saved in flash (NVS namespace "lifefi_tx") and applied live.
  * See docs/hardware/fixed-transmitter.md. */
 #include "lifefi_config.h"
@@ -40,7 +40,7 @@ static const char *TAG = "tx";
 #define NVS_NS        "lifefi_tx"
 #define NVS_KEY_CH    "channel"
 #define NVS_KEY_RATE  "rate"
-#define RATE_MIN      10
+#define RATE_MIN      LIFEFI_TX_RATE_MIN   /* slower: the receiver's boot probe can miss it */
 #define RATE_MAX      500
 #define STATUS_EVERY_US 10000000LL
 #define CMD_LINE_MAX  64

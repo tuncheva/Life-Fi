@@ -4,7 +4,7 @@
 // (empty / present / uncertain, warmup, stale, S/B/M) reaches a consumer view.
 import type { Result } from "./contracts.gen";
 import type { Alert, ProfileName, Status } from "./api";
-import { distanceRange, REASON_STEP, type QualityReason, type WhereState } from "./room";
+import { distanceRange, occupancyOf, REASON_STEP, type QualityReason, type WhereState } from "./room";
 
 /** The room's name comes from the server settings; "Room 1" until the status has arrived. */
 export function roomName(status: Status | null | undefined): string {
@@ -127,7 +127,9 @@ export function roomStatus(input: {
   if (status && !status.engine.connected) {
     return { tone: "offline", headline: "We cannot see the room right now", detail: "The sensor software is not running. Restart the Life-Fi box.", ...none };
   }
-  if (status?.server.sensor_offline || stale) {
+  // an unreadable board counts at once: the engine keeps ticking (warm-up), so neither the
+  // watchdog (30 s start-up grace) nor staleness would catch it, and "starting up" would hide it
+  if (status?.server.sensor_offline || stale || status?.source.state === "error") {
     const age = result ? now - result.ts : null;
     const why =
       status?.source.state === "error" && status.source.error
@@ -152,7 +154,8 @@ export function roomStatus(input: {
     const headline = profile === "school" ? "Room in use" : profile === "clinic" ? "Patient is in the room" : "Someone is home";
     return { tone: "present", headline, detail: since, action: null, blind: false };
   }
-  if (p === "empty") {
+  // presence empty but the occupancy model sees someone: hedge, as the room drawing does (positionView)
+  if (p === "empty" && occupancyOf(result)?.state !== "occupied") {
     const headline = profile === "school" ? "Room is empty" : "Nobody in the room";
     return { tone: "empty", headline, detail: since, action: null, blind: false };
   }
@@ -290,7 +293,8 @@ export function whereText(w: WhereState): { headline: string; detail: string | n
     case "unsure":
       return { headline: "Not sure if anyone is there", detail: null, reasons: [] };
   }
-  const who = w.people > 1 ? `${w.people} people here` : "Someone is here";
+  // the board's own head count caps at 2 and means "2 or more": never a number as a fact
+  const who = w.people > 1 ? "More than one person may be here" : "Someone is here";
   const parts: string[] = [];
   if (w.people > 1) parts.push("one sensor can't tell them apart");
   const dist = w.distance;

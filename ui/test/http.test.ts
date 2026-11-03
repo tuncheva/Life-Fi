@@ -1,16 +1,19 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { ProfilesConfig } from "../src/server/profiles";
 import { ConfigError } from "../src/server/config";
 import type { AppContext } from "../src/server/context";
 import { EngineError } from "../src/server/engine-client";
 import { PinLimiter, read, readBody, write } from "../src/server/http";
 import { replayPath } from "../src/server/recordings";
-import { parseRoom } from "../src/server/settings";
+import { parseRoom, SettingsStore } from "../src/server/settings";
 
 const errors: unknown[] = [];
 const ctx = {
   log: { error: (o: unknown) => errors.push(o), warn() {}, info() {}, debug() {} },
-  settings: { checkPin: (p: string | undefined) => p === "2468" },
+  settings: { checkPin: (p: string | undefined) => p === "2468", trustToken: () => "T0KEN", checkTrust: (c: string | undefined) => c === "T0KEN" },
 } as unknown as AppContext;
 const runtime = () => ctx;
 const post = (body: string | null, pin = "2468", headers: Record<string, string> = {}) =>
@@ -61,6 +64,20 @@ describe("read/write error handling", () => {
     const res = await h(post("{}", "2468", { "content-length": String(70_000) }));
     expect(res.status).toBe(413);
   });
+
+  it("a body over 64 KB without Content-Length (chunked) is 413 too", async () => {
+    const h = write(async (_c, req) => readBody(req), { runtime, limiter: new PinLimiter() });
+    const big = new TextEncoder().encode(`{"x":"${"a".repeat(70_000)}"}`);
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let i = 0; i < big.length; i += 8192) c.enqueue(big.subarray(i, i + 8192));
+        c.close();
+      },
+    });
+    const req = new Request("http://x/api/v1/thing", { method: "POST", body, headers: { "x-lifefi-pin": "2468" }, duplex: "half" } as RequestInit);
+    expect(req.headers.get("content-length")).toBeNull();
+    expect((await h(req)).status).toBe(413);
+  });
 });
 
 describe("wrong-PIN limiter", () => {
@@ -87,6 +104,60 @@ describe("wrong-PIN limiter", () => {
     expect((await h(post("{}", "2468"))).status).toBe(429);
     now += 60_000;
     expect((await h(post("{}", "2468"))).status).toBe(200);
+  });
+
+  it("lets a trusted browser with the right PIN through a lockout, nobody else", async () => {
+    const limiter = new PinLimiter(() => 0);
+    const h = write(() => ({ ok: true }), { runtime, limiter });
+    // the first accepted PIN hands out the trust cookie
+    const first = await h(post("{}"));
+    expect(first.headers.get("set-cookie")).toMatch(/^lifefi_trust=T0KEN; Path=\/api\/v1; .*HttpOnly; SameSite=Strict/);
+    expect((await h(post("{}", "2468", { cookie: "a=1; lifefi_trust=T0KEN" }))).headers.get("set-cookie")).toBeNull();
+    for (let i = 0; i < 5; i++) await h(post("{}", "0000"));
+    // locked: the right PIN without the cookie, a wrong PIN with it, and a forged cookie all get 429
+    expect((await h(post("{}"))).status).toBe(429);
+    expect((await h(post("{}", "0000", { cookie: "lifefi_trust=T0KEN" }))).status).toBe(429);
+    expect((await h(post("{}", "2468", { cookie: "lifefi_trust=guess" }))).status).toBe(429);
+    // the caregiver's browser still acknowledges right away
+    expect((await h(post("{}", "2468", { cookie: "lifefi_trust=T0KEN" }))).status).toBe(200);
+    // and that did not lift the lockout for everyone else
+    expect((await h(post("{}"))).status).toBe(429);
+  });
+
+  it("forgets earlier lockouts after an hour without wrong PINs", async () => {
+    let now = 0;
+    const limiter = new PinLimiter(() => now);
+    const h = write(() => ({ ok: true }), { runtime, limiter });
+    for (let i = 0; i < 5; i++) await h(post("{}", "0000"));
+    now += 60_000;
+    for (let i = 0; i < 5; i++) await h(post("{}", "0000"));
+    expect((await h(post("{}"))).headers.get("Retry-After")).toBe("120");
+    now += 120_000 + 3600_001;
+    for (let i = 0; i < 5; i++) await h(post("{}", "0000"));
+    expect((await h(post("{}"))).headers.get("Retry-After")).toBe("60");
+  });
+
+  it("the trust token is per install and changes with the PIN", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lifefi-trust-"));
+    try {
+      const defaults = { pin: "1234", profiles: { notify: { ntfy_url: "", topic: "", escalate_after_s: 60 }, zone: "UTC" } as unknown as ProfilesConfig };
+      const a = new SettingsStore(dir, defaults);
+      const t = a.trustToken();
+      expect(t).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(new SettingsStore(dir, defaults).trustToken()).toBe(t); // the key survives a restart
+      expect(a.checkTrust(t)).toBe(true);
+      expect(a.checkTrust("x")).toBe(false);
+      a.update({ pin: "9753" });
+      expect(a.checkTrust(t)).toBe(false);
+      const other = mkdtempSync(join(tmpdir(), "lifefi-trust-"));
+      try {
+        expect(new SettingsStore(other, defaults).trustToken()).not.toBe(t);
+      } finally {
+        rmSync(other, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("wrong PINs spread over more than 60 s do not lock", async () => {
