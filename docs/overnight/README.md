@@ -41,6 +41,7 @@ people are in a room from Wi-Fi CSI; **better model accuracy** and **better UI/U
 |---|---|
 | **A — position / model accuracy** | `engine/lifefi/` (all but `sources.py`, `control.py`), `engine/tests/`, `engine/config/`, `ml/`, `contracts/results.schema.json` + `ui/src/lib/contracts.gen.ts` (additive changes only), `docs/models.md` |
 | **B — UI / UX** | `ui/src/app/**` except `ui/src/app/api/**`, `ui/src/components/**`, `ui/src/lib/**` except `contracts.gen.ts`, `ui/src/app/globals.css` |
+| **D — fixed transmitter firmware** | `firmware/**` (compile only, never flash), `docs/hardware/` |
 | **C — production readiness** | `ui/src/server/**`, `ui/src/app/api/**`, `ui/test/**`, `ui/src/instrumentation.ts`, `ui/next.config.ts`, `ui/package.json`, root `package.json`, `scripts/**`, `.github/**`, `engine/run.py`, `engine/lifefi/sources.py`, `engine/lifefi/control.py`, `README.md`, new `docs/ops/` |
 
 Plans live in `docs/overnight/plans/`, the morning report in `docs/overnight/REPORT.md`.
