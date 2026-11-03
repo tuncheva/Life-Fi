@@ -424,3 +424,40 @@ with:
 3. Please record 3+ new labelled spot sessions with the fixed transmitter, each
    starting *and* ending with 60 s empty, so calibration-before and drift-after can
    both be evaluated.
+
+## Worker report
+
+**Shipped (steps 1-5; step 6 E2 ran as a harness-only variant).**
+- `ml/eval_position.py`: LOSO harness, Wilson intervals on non-overlapping windows, `--synthetic`,
+  `--fit-occupancy`, engine replay with tick timing. Runs in ~35 s, writes `ml/results/position_eval.json`.
+- `engine/lifefi/occupancy.py` + `rules.yaml` `occupancy:` (offset −1.05, scale 0.96 from the pooled fit;
+  p_on/p_off/hold as planned), wired into `engine.py` as top-level `occupancy` on every tick.
+- `position.quality` / `quality_reasons`, `spot.model_accuracy` / `reliable`, `train_spots.py` `loso_bal_acc`
+  (not retrained: `data/spots_model.json` untouched, so it reads unreliable).
+- Schema: additive optional fields exactly as §5; new fixture `contracts/fixtures/position_quality.json`
+  (the one file outside the table, per revision 11); `contracts.gen.ts` regenerated.
+- `synth(step_db=...)`, `test_occupancy.py`, `test_replay_position.py`, additions to `test_position.py` /
+  `test_spots.py`, `docs/models.md` section.
+
+**Before → after (LOSO, S2→S1 / S1→S2).** Occupancy at 4 s did not exist before. It is 0.75 [0.55, 0.87] / 0.77
+[0.55, 0.89] (chance 0.5, ~12 independent empty windows). Spot LDA 4-class is 0.09 / 0.23 (chance 0.25); where3 is
+0.12 / 0.31 (chance 0.33). E2 fresh is 0.37 / 0.42, where3 0.32 / 0.37: below the ship bar, not shipped. Distance
+Spearman(true, est) is +0.07 (S1) and −0.70 (S2). The E7 re-fit gives n = −1.64 / 0.06. Engine replay, no
+calibration: occupancy is right or unsure on ≥ 0.92 of every spot's ticks and never `empty` while presence is
+`present`; quality is never `medium`. Presence, by contrast, is wrong for the whole S1 empty minute and all S2
+occupied minutes. Occupancy update ~1.5 ms mean; tick 20-45 ms mean.
+
+**Not met / not done.**
+- §7.2 "unsure ≤ 50 %" fails: 57 % (S1), 65 % (S2). The band was not tuned to the test data; the replay test marks it
+  `xfail`. In S1 most of it is the presence guard: presence says `present` through the empty minute.
+- The calibrated replay could not be scored. The engine refuses a 30 s empty calibration on these recordings
+  (37 % / 78 % valid F); this is recorded in the JSON.
+- All synth checks pass with the real-data thresholds (no xfail).
+
+**Tests.** All 14 `engine/tests/test_*.py` exit 0 (test_engine ~5.5 min; test_features_vectors skips, no model).
+`node scripts/check-contracts.mjs` passes on 6 fixtures; `npx tsc --noEmit` passes. `engine/run.py --replay`
+on S1 (port 3107) streamed 61 results in 30 s with `occupancy` and `quality`.
+
+**For other tracks (not edited).** Track C's `ui/src/server/position-files.ts` exposes `holdout_accuracy`.
+Critic revision 7 says no within-session number may reach the UI, so it should show `loso_bal_acc` /
+`spot.model_accuracy` instead.

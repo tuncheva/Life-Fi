@@ -8,7 +8,7 @@ import numpy as np
 
 
 def synth(seconds, bpm=None, breath_db=0.5, motion=False, gap=None, seed=1, rate=90.0, agc=True,
-          breath_off=None, bursts=(), moving=()):
+          breath_off=None, bursts=(), moving=(), step_db=None):
     """Raw CSI like the ESP32 delivers it: static multipath, an optional
     breathing modulation on ~40 % of subcarriers, per-packet AGC gain,
     receiver noise, jittered timing, and an optional gap.
@@ -20,7 +20,9 @@ def synth(seconds, bpm=None, breath_db=0.5, motion=False, gap=None, seed=1, rate
     s, or a list of them, stops the breathing in between (a breath-hold, or
     nobody there; t1 may be inf); bursts is a list of (t0, t1) s of strong
     broadband change, e.g. an impact; moving is a list of (t0, t1) s in
-    which a person moves as with motion=True (walking in or out)."""
+    which a person moves as with motion=True (walking in or out); step_db =
+    (t, db) changes the static multipath for good at t s by a fixed random
+    gain of up to ±db dB per subcarrier (furniture or the transmitter moved)."""
     rng = np.random.default_rng(seed)
     n = int(seconds * rate)
     t = np.cumsum(rng.uniform(0.6, 1.4, n) / rate)
@@ -48,6 +50,9 @@ def synth(seconds, bpm=None, breath_db=0.5, motion=False, gap=None, seed=1, rate
     for t0, t1 in bursts:                        # an impact: strong broadband change for (t1 - t0) s
         inside = (t >= t0) & (t < t1)
         db[inside] += 6.0 * rng.normal(0, 1, (int(inside.sum()), 52))
+    if step_db is not None:                      # its own generator: the other signals stay as they were
+        t_step, size = step_db
+        db[t >= t_step] += np.random.default_rng(seed + 1000).uniform(-size, size, 52)
     gain = rng.uniform(0.6, 1.4, len(t))[:, None] if agc else np.ones((len(t), 1))   # AGC / auto-scale per packet
     amp = np.abs(static) * 10 ** (db / 20) * gain
     csi = amp * np.exp(1j * np.angle(static)) + rng.normal(0, 0.7, (len(t), 52)) + 1j * rng.normal(0, 0.7, (len(t), 52))

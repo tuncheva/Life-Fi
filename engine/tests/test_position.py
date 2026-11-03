@@ -131,6 +131,17 @@ late = [o["valid"] for o in outs[-40:] if o is not None]
 check(auto.levels_now()[1] is not None, "a rolling gate without calibration")
 check(late and sum(late) <= 0.2 * len(late), f"an uncalibrated empty room settles to no distance ({sum(late)}/{len(late)})")
 
+# quality: low with every reason that holds, medium only when none does, none without a distance
+check(moving["quality"] == "low" and set(moving["quality_reasons"]) == {"transmitter_not_fixed", "no_distance_fit",
+                                                                          "no_empty_calibration"},
+      f"uncalibrated, moving transmitter: low {moving['quality_reasons']}")
+check(empty["quality"] == ("none" if not empty["valid"] else "low"), f"no distance: quality none ({empty['quality']})")
+good = position.Position(transmitter_fixed=True, fit_distances=2)
+good.calibrate(p50, p95)
+check(good.quality(True, 90.0) == {"quality": "medium", "quality_reasons": []}, "fixed transmitter, 2-distance fit, calibrated: medium")
+check(good.quality(True, 12.0)["quality_reasons"] == ["low_packet_rate"], "under 20 Hz: low_packet_rate")
+check(good.quality(False, 90.0)["quality"] == "none", "not valid: none")
+
 check([position.zone_of(d) for d in (0.8, 2.0, 5.0, None)] == ["near", "middle", "far", None], "zones near / middle / far")
 
 # a pause longer than MAX_GAP_S inside the window: no estimate

@@ -16,7 +16,12 @@ discriminant with a shrunk shared covariance, all numbers in a JSON file
 SMOOTH_S so the answer does not flicker.
 
 It knows only the spots it was taught, for one person, with the board
-and router where they were during the recording.
+and router where they were during the recording. Each answer carries
+`model_accuracy`, the model's leave-one-session-out balanced accuracy
+(`loso_bal_acc`, written by ml/train_spots.py from >= 2 sessions), and
+`reliable`, true only when that beats chance (1/k) by `margin`. A model
+without it (one session, or an older file) is never reliable; the
+within-session `holdout_accuracy` is not used for this.
 """
 
 import json
@@ -40,19 +45,25 @@ def features(amp, rssi_dbm):
 
 
 class SpotModel:
-    def __init__(self, d):
+    def __init__(self, d, margin=0.15):
         self.labels = list(d["labels"])
         self.dist = dict(d["distances"])
         self.mu, self.sd = np.asarray(d["mu"]), np.asarray(d["sd"])
         self.W = np.asarray(d["W"])                  # [k, 107] linear weights
         self.b = np.asarray(d["b"])                  # [k]
         self.meta = {k: d[k] for k in ("session", "trained_at", "holdout_accuracy") if k in d}
+        acc = d.get("loso_bal_acc")
+        self.model_accuracy = float(acc) if isinstance(acc, (int, float)) else None
+        self.margin = margin                         # rules.yaml spots.reliable_margin (the engine sets it)
         self.hist = deque()                          # (t, p [k]) for smoothing
 
     @classmethod
-    def load(cls, path):
+    def load(cls, path, margin=0.15):
         path = pathlib.Path(path)
-        return cls(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
+        return cls(json.loads(path.read_text(encoding="utf-8")), margin) if path.exists() else None
+
+    def reliable(self):
+        return self.model_accuracy is not None and self.model_accuracy >= 1.0 / len(self.labels) + self.margin
 
     def proba(self, f):
         z = self.W @ ((f - self.mu) / self.sd) + self.b
@@ -73,4 +84,6 @@ class SpotModel:
         p = np.mean([q for _, q in self.hist], axis=0)
         i = int(np.argmax(p))
         name = self.labels[i]
-        return {"name": name, "p": round(float(p[i]), 3), "d_m": self.dist.get(name)}
+        return {"name": name, "p": round(float(p[i]), 3), "d_m": self.dist.get(name),
+                "model_accuracy": None if self.model_accuracy is None else round(self.model_accuracy, 3),
+                "reliable": self.reliable()}

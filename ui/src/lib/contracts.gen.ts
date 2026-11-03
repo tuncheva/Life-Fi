@@ -174,7 +174,36 @@ export interface Result {
        * The distance measured for that spot when it was taught; null for `empty`
        */
       d_m: number | null;
+      /**
+       * The model's cross-session (leave-one-session-out) balanced accuracy from ml/train_spots.py; null when unknown (one session, or an older model file). Optional.
+       */
+      model_accuracy?: number | null;
+      /**
+       * true only when model_accuracy >= 1/k + rules.yaml spots.reliable_margin; show the spot name only then. Optional.
+       */
+      reliable?: boolean;
     };
+    /**
+     * How far d_m can be trusted: none when valid is false; low when quality_reasons is non-empty; else medium. Optional: older engines leave it out.
+     */
+    quality?: "none" | "low" | "medium";
+    /**
+     * Why quality is low: transmitter_not_fixed (rules.yaml position.transmitter_fixed is false, e.g. a phone hotspot); no_distance_fit (no saved position_fit at >= 2 distances); no_empty_calibration (no empty-room disturbance levels); low_packet_rate (< 20 Hz over the 10 s window). Optional.
+     */
+    quality_reasons?: ("transmitter_not_fixed" | "no_distance_fit" | "no_empty_calibration" | "low_packet_rate")[];
+  };
+  /**
+   * Is anybody in the link area at all (lifefi.occupancy): from the body disturbance P of the last 4 s as an absolute level, no calibration needed. Independent of `position`, which needs 10 s of packets. null while warming up or with fewer than 8 Hz x 4 s of packets. Optional: older engines leave it out.
+   */
+  occupancy?: null | {
+    /**
+     * occupied when p >= p_on; empty when p <= p_off and presence is not `present` (never empty while presence sees someone); unsure otherwise. Changes only after 3 ticks of the same raw state
+     */
+    state: "empty" | "occupied" | "unsure";
+    /**
+     * Logistic of log10 P fitted on the labelled spot sessions (ml/eval_position.py); NOT a calibrated probability for a new room
+     */
+    p: number;
   };
   /**
    * The radio link and the board's own view of it. Optional: older engines leave it out.

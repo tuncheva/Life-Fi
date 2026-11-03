@@ -61,5 +61,23 @@ for name, (t, amp, rssi) in data.items():
           f"{name}: named {out and out['name']} (p {out and out['p']}) at {out and out['d_m']} m")
 check(model.update(0.0, np.zeros(0), np.zeros((0, 52)), -50.0) is None, "no packets: no answer")
 
+# self-assessment: only a cross-session score makes a model reliable, never holdout_accuracy
+check(out["model_accuracy"] is None and out["reliable"] is False, "no loso_bal_acc: model_accuracy None, not reliable")
+base = {"labels": list(SPOTS), "distances": {n: v[2] for n, v in SPOTS.items()},
+        "mu": mu.tolist(), "sd": sd.tolist(), "W": W.tolist(), "b": b.tolist()}
+check(not spots.SpotModel({**base, "holdout_accuracy": 0.93}).reliable(), "holdout_accuracy 0.93 alone: not reliable")
+check(not spots.SpotModel({**base, "loso_bal_acc": 0.6}, margin=0.15).reliable(), "LOSO 0.60 with 2 spots (chance 0.5 + 0.15): not reliable")
+check(spots.SpotModel({**base, "loso_bal_acc": 0.7}, margin=0.15).reliable(), "LOSO 0.70 with 2 spots: reliable")
+current = spots.SpotModel.load(ROOT / "data" / "spots_model.json")
+if current is not None:
+    check(not current.reliable(), f"the saved data/spots_model.json is not reliable (model_accuracy {current.model_accuracy})")
+
+# train_spots: loso_bal_acc only from >= 2 sessions, with the harness's 2 s trim
+Xa, ya = np.array(X), np.array(y)
+check(train_spots.loso_bal_acc(Xa, ya, np.zeros(len(ya), int), np.ones(len(ya), bool), 2, 0.1) is None,
+      "one session: no loso_bal_acc")
+two = train_spots.loso_bal_acc(Xa, ya, np.arange(len(ya)) % 2, np.ones(len(ya), bool), 2, 0.1)
+check(two is not None and len(two[1]) == 2 and 0.0 <= two[0] <= 1.0, f"two sessions: loso_bal_acc {two and round(two[0], 3)}")
+
 print(f"\ntest_spots {'PASSED' if not failures else 'FAILED'}: {failures} failure(s)")
 sys.exit(1 if failures else 0)

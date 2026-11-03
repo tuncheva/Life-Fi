@@ -125,6 +125,84 @@ and `t_still` comes from E4's still people. Whether a fall on our board
 triggers it is untested; a hard sit-down followed by sitting still can.
 The team chose not to test it on the board for now (2026-10-30).
 
+## Position and spots (2026-11-03)
+
+Evaluated on the only two valid labelled spot sessions,
+`spots-20261031-192549` (S1, 26.6 Hz) and `spots-20261031-193656` (S2,
+43.6 Hz): 60 s each at close (0.4 m), middle (1.2 m), far (2.2 m), then
+empty. `ml/eval_position.py` (results in `ml/results/position_eval.json`,
+< 1 min) scores leave-one-session-out only, both directions, with 2 s
+trimmed at each spot's ends. The 95 % intervals are Wilson intervals on
+the **non-overlapping** windows: only ~12 independent empty windows per
+session, so every number below is very uncertain.
+
+| What | Chance | Train S2 → test S1 | Train S1 → test S2 |
+|---|---|---|---|
+| Occupancy, 4 s absolute log10 P (headline, window fixed beforehand) | 0.50 | **0.75** [0.55, 0.87]; occupied 0.97, empty 0.53 | **0.77** [0.55, 0.89]; occupied 0.69, empty 0.84 |
+| Occupancy, 6 s / 10 s (sensitivity only) | 0.50 | 0.81 / 0.78 | 0.68 / 0.63 |
+| Spot model (LDA, 4 classes) | 0.25 | 0.09 [0.04, 0.35] | 0.23 [0.13, 0.42] |
+| "Where" among close/middle/far, same model | 0.33 | 0.12 | 0.31 |
+| E2: log-std minus a fresh empty profile, nearest centroid (4 classes / where) | 0.25 / 0.33 | 0.37 / 0.32 (close 0.00, middle 0.00) | 0.42 / 0.37 (close 0.00, middle 0.02) |
+| Distance d from P, no calibration: MAE, zone accuracy, Spearman(true d, d) | — | S1: 2.97 m, 0.11, +0.07 | S2: 4.41 m, 0.17, **−0.70** |
+| E7: A, n re-fitted on the other session | n > 0 | n = −1.64 (wrong sign) | n = 0.06 (flat) |
+
+The engine itself on the recordings (results every 0.5 s, no calibration;
+per spot, the share of answered ticks that are right or `unsure`):
+
+| Spot | S1 occupancy | S1 presence | S2 occupancy | S2 presence |
+|---|---|---|---|---|
+| close | 1.00 (unsure 45 %) | present 34 % | 0.94 (unsure 94 %, empty 6 %) | empty 100 % |
+| middle | 1.00 (unsure 42 %, no answer 28 %) | present 100 % | 1.00 (unsure 82 %) | empty 100 % |
+| far | 1.00 (unsure 39 %) | present 100 % | 1.00 (unsure 36 %) | empty 100 % |
+| empty | 0.92 (unsure 92 %: presence said present) | present 100 % (wrong) | 0.94 (empty 50 %, unsure 44 %) | empty 100 % |
+
+Before tonight the dashboard had only presence (above: wrong for the
+whole empty minute of S1 and all three occupied minutes of S2), a spot
+model below chance (0.19 LOSO), and a distance with no quality flag that
+never read close (0.4 m) as near (S1: median 2.7 m; S2: no estimate). Now:
+
+- **`occupancy`** (top level, `lifefi.occupancy`): empty / occupied /
+  unsure from the 4 s disturbance P, no calibration needed. On the replays
+  it is never wrong-and-sure on more than 8 % of a minute, and it is never
+  `empty` while presence says `present`. But it is `unsure` on 57 % (S1)
+  and 65 % (S2) of answered ticks, over the plan's 50 % target: the
+  p_on/p_off band (0.8/0.2) was set beforehand and is not tuned on these
+  two sessions. Cost: ~1.5 ms per update; the engine's tick is 20-45 ms.
+- **`position.quality`** / `quality_reasons`: `low` on every replay tick
+  with a distance (transmitter not fixed, no 2-distance fit, no empty
+  calibration), never `medium`. The distance itself is unchanged.
+- **`spot.model_accuracy` / `reliable`**: from `loso_bal_acc` in the model
+  file (`ml/train_spots.py` writes it from ≥ 2 sessions; about 0.17 for the
+  current sessions). The saved `data/spots_model.json` has none, so it
+  reads `reliable: false`. `holdout_accuracy` is never used for this.
+- The synthetic checks (`engine/tests/test_occupancy.py`) all pass with
+  the real-data thresholds: an empty room never occupied, motion occupied,
+  a still breathing person never empty, a ±4 dB static step no blip.
+
+**Leak correction.** An earlier "0.40 with the empty profile subtracted"
+for the spot features used the test session's whole empty minute as the
+reference and then scored those same windows. Done leak-free (reference =
+first 30 s, scored on the last 30 s) it is 0.37 / 0.42 above, and all of
+the gain is in `empty` and `far`: close and middle are never found. E2 does
+not reach the bar to ship (where ≥ 0.50 and 4-class ≥ 0.45 in both
+directions).
+
+**Limits.** One link: no direction, so no x/y. The transmitter was a phone
+hotspot that moved between and during sessions (RSSI per spot flips
+between them), which is the likely reason distance correlates with the
+wrong sign. Only two sessions, ~12 independent empty windows each, and
+the empty minute was recorded last, so a "fresh" calibration is one taken
+after. The engine refuses an empty calibration from those 30 s (37 % and
+78 % valid samples at these packet rates), so the calibrated replay could
+not be scored.
+
+**Retrain the spot model** with ≥ 2 sessions so it gets a cross-session
+score: `.venv/Scripts/python ml/train_spots.py data/sessions/spots-*/`
+(writes `data/spots_model.json` with `loso_bal_acc`). Re-fit occupancy:
+`ml/eval_position.py --fit-occupancy`, then copy the block into
+`engine/config/rules.yaml`. Next recordings should use a fixed transmitter
+and start and end with 60 s of empty room.
+
 ## Limits
 
 - One link, one person. Two people's states cannot be separated.

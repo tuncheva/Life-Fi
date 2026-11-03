@@ -9,6 +9,15 @@ saw (the honest number). With one session: the last 30 % of every spot,
 with a WIN_S gap so no window shares packets with training. Shrinkage (the
 covariance pulled towards its diagonal) is chosen on that score, then the
 final model is fitted on everything.
+
+With two or more sessions the model file also gets `loso_bal_acc`: the
+mean over test sessions of the balanced accuracy, scored as
+ml/eval_position.py does (windows 2 s away from each spot's ends). The
+engine shows a spot as `reliable` only when it beats chance by
+rules.yaml spots.reliable_margin. One session writes none, so the model
+reads as unreliable: a within-session score says nothing about another
+visit. (The shrinkage is picked on the same score, so it is a little
+optimistic.)
 """
 
 import json
@@ -27,6 +36,7 @@ from lifefi.spots import WIN_S, MIN_PACKETS, features  # noqa: E402
 
 HOP_S = 0.25
 HOLDOUT = 0.3
+TRIM_S = 2.0                     # the walk between spots: not scored (as ml/eval_position.py)
 OUT = ROOT / "data" / "spots_model.json"
 
 
@@ -40,7 +50,7 @@ def windows(t, amp, rssi, t0, t1):
 
 
 def load(dirs):
-    X, y, part, sess, labels, dist, sessions = [], [], [], [], [], {}, []
+    X, y, part, sess, inner, labels, dist, sessions = [], [], [], [], [], [], {}, []
     for d in dirs:
         d = pathlib.Path(d)
         spec = json.loads((d / "spots.json").read_text(encoding="utf-8"))
@@ -61,7 +71,8 @@ def load(dirs):
                 # 0 train, 1 hold-out, -1 straddles the cut (dropped from the score)
                 part.append(0 if ws + WIN_S <= cut - WIN_S else 1 if ws >= cut else -1)
                 sess.append(len(sessions) - 1)
-    return np.array(X), np.array(y), np.array(part), np.array(sess), labels, dist, sessions
+                inner.append(t0 + TRIM_S <= ws and ws + WIN_S <= t1 - TRIM_S)
+    return np.array(X), np.array(y), np.array(part), np.array(sess), np.array(inner), labels, dist, sessions
 
 
 def fit(X, y, k, shrink):
@@ -83,9 +94,24 @@ def predict(model, X):
     return np.argmax(((X - mu) / sd) @ W.T + b, axis=1)
 
 
+def balanced(truth, pred, k):
+    return float(np.mean([np.mean(pred[truth == c] == c) for c in range(k) if np.any(truth == c)]))
+
+
+def loso_bal_acc(X, y, sess, inner, k, shrink):
+    """Balanced accuracy per left-out session (inner windows only) and their mean, or None under 2 sessions."""
+    if len(np.unique(sess)) < 2:
+        return None
+    per = []
+    for s in np.unique(sess):
+        te = (sess == s) & inner
+        per.append(balanced(y[te], predict(fit(X[sess != s], y[sess != s], k, shrink), X[te]), k))
+    return float(np.mean(per)), per
+
+
 def main():
     dirs = sys.argv[1:] or sorted(str(p) for p in (ROOT / "data" / "sessions").glob("spots-*"))
-    X, y, part, sess, labels, dist, sessions = load(dirs)
+    X, y, part, sess, inner, labels, dist, sessions = load(dirs)
     k = len(labels)
     print(f"{len(X)} windows from {', '.join(sessions)}: " + ", ".join(f"{l} {np.sum(y == i)}" for i, l in enumerate(labels)))
     # (train, test) masks: leave one session out, or the time split inside the one session
@@ -114,12 +140,19 @@ def main():
     for i, l in enumerate(labels):
         print(f"  {l:>16}  " + "  ".join(f"{c:>7}" for c in conf[i]))
 
+    loso = loso_bal_acc(X, y, sess, inner, k, shrink)
+    if loso is not None:
+        print(f"loso_bal_acc {loso[0]:.3f} (per left-out session {', '.join(f'{v:.3f}' for v in loso[1])}; chance {1 / k:.2f})")
+    else:
+        print("one session: no loso_bal_acc, the engine will show this model as not reliable")
+
     mu, sd, W, b = fit(X, y, k, shrink)
+    extra = {} if loso is None else {"loso_bal_acc": round(loso[0], 3), "loso_by_session": [round(v, 3) for v in loso[1]]}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({
         "labels": labels, "distances": dist, "mu": mu.tolist(), "sd": sd.tolist(), "W": W.tolist(), "b": b.tolist(),
         "shrink": shrink, "holdout_accuracy": round(acc, 3), "session": ",".join(sessions),
-        "trained_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "win_s": WIN_S,
+        "trained_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "win_s": WIN_S, **extra,
     }), encoding="utf-8")
     print(f"saved {OUT}")
 

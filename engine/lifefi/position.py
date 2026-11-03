@@ -32,6 +32,13 @@ so nobody has to calibrate.
 One link has no direction: d is a radius around the board, and movement
 raises R as much as closeness does (engine/README.md "3D position view").
 A and n are guesses until someone calibrates them for the room.
+
+`quality` says how far d can be trusted. On the two labelled spot
+sessions (a phone hotspot as the transmitter, which moved) d followed the
+true distance with the wrong sign (docs/models.md). So it is "low", with
+`quality_reasons`, unless the transmitter is fixed, A was fitted at >= 2
+distances, an empty calibration is loaded and packets come at >= 20 Hz;
+"none" without a distance. Nothing earns more than "medium".
 """
 
 import os
@@ -50,6 +57,7 @@ DEBUG = bool(os.environ.get("LIFEFI_POS_DEBUG"))
 # fitted at 2 m on the development board (2026-10-31, position_fit); a saved fit overrides it
 A_DEFAULT, N_DEFAULT = 16.1, 2.0
 ZONES = ((1.5, "near"), (3.5, "middle"), (np.inf, "far"))
+LOW_RATE_HZ = 20.0           # fewer packets per second over WIN_S: quality reason low_packet_rate
 
 
 def zone_of(d):
@@ -93,8 +101,10 @@ def disturbance(t, x, win=WIN_S, min_frames=MIN_FRAMES):
 class Position:
     """Feeds on the raw packet buffer; `update(now, t, amp)` returns the published dict or None."""
 
-    def __init__(self, A=A_DEFAULT, n=N_DEFAULT, floor=0.0, gate=None):
+    def __init__(self, A=A_DEFAULT, n=N_DEFAULT, floor=0.0, gate=None, transmitter_fixed=False, fit_distances=0):
+        """transmitter_fixed: rules.yaml position.transmitter_fixed; fit_distances: how many distances A was fitted at."""
         self.A, self.n = A, n
+        self.transmitter_fixed, self.fit_distances = bool(transmitter_fixed), int(fit_distances)
         self.floor, self.gate = floor, gate          # empty-room P50 (subtracted) and P95 (to exceed)
         self.hist = deque()                          # (now, P) per update, for the calibration
         self.next_at = -np.inf
@@ -198,7 +208,16 @@ class Position:
             "held": held,
             "zone": zone_of(ds),
         }
+        self.out.update(self.quality(ds is not None, len(tw) / WIN_S))
         return self.out
+
+    def quality(self, valid, rate_hz):
+        """{quality, quality_reasons} of one estimate."""
+        reasons = [r for r, bad in (("transmitter_not_fixed", not self.transmitter_fixed),
+                                    ("no_distance_fit", self.fit_distances < 2),
+                                    ("no_empty_calibration", self.gate is None),
+                                    ("low_packet_rate", rate_hz < LOW_RATE_HZ)) if bad]
+        return {"quality": "none" if not valid else "low" if reasons else "medium", "quality_reasons": reasons}
 
     def _smooth(self, d):
         """Constant-velocity Kalman filter on d (as position.html); (d, sd) or (None, None)."""

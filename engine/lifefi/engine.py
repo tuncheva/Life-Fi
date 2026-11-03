@@ -14,8 +14,10 @@ Per tick:
 5. `no_breathing` (lifefi.apnea), the fall rule (lifefi.fall) and its
    escalation to `fainted_suspected`;
 6. the movement model and posture (hidden unless rules.yaml says so);
-7. the experimental distance from the link (lifefi.position) and the
-   link itself: RSSI and the board's own presence/people estimate.
+7. room occupancy (lifefi.occupancy, every tick, no calibration needed),
+   the experimental distance from the link (lifefi.position) with its
+   quality, and the link itself: RSSI and the board's own presence/people
+   estimate.
 
 The engine reports conditions; the server decides alerts (plan-v2 design
 rule 5). Every threshold is in engine/config/rules.yaml (rule 6).
@@ -36,7 +38,7 @@ from collections import deque
 import numpy as np
 import yaml
 
-from . import apnea, breathing, calibration, dsp, fall, models, position, posture, presence, spots
+from . import apnea, breathing, calibration, dsp, fall, models, occupancy, position, posture, presence, spots
 from . import live as live_mod
 from . import motion as motion_mod
 from .live import LiveF
@@ -157,6 +159,11 @@ class Engine:
         if self.calibration is not None:
             self.presence.calibrate(presence.Levels.from_calibration(self.calibration, self.presence.cfg), t)
         self.apnea = apnea.NoBreathing(r["apnea"])
+        self.occupancy = occupancy.Occupancy(r["occupancy"]) if r.get("occupancy") else None
+        if self.spot_model is not None:
+            self.spot_model.margin = float((r.get("spots") or {}).get("reliable_margin", 0.15))
+        if hasattr(self, "position"):
+            self.position.transmitter_fixed = self._transmitter_fixed()
 
     def _load_calibration(self):
         path = self.calibration_path
@@ -171,6 +178,16 @@ class Engine:
         except (OSError, ValueError, TypeError, KeyError) as err:
             print(f"ignoring {path}: {err}")
             return None
+
+    def _transmitter_fixed(self):
+        return bool((self.rules.get("position") or {}).get("transmitter_fixed", False))
+
+    def _fit_distances(self):
+        """How many distances the saved position_fit was taken at (one, today)."""
+        fit = self.pos_fit
+        if fit is None or fit.get("d_m") is None:
+            return 0
+        return len(set(fit["d_m"])) if isinstance(fit["d_m"], list) else 1
 
     def _load_pos_fit(self):
         """The saved distance fit {A, n, d_m, at} (position_fit), or None."""
@@ -212,7 +229,10 @@ class Engine:
         self.live = LiveF()
         self.segment = self.live.segment
         fit = getattr(self, "pos_fit", None)
-        self.position = position.Position(**({"A": fit["A"], "n": fit["n"]} if fit else {}))
+        self.position = position.Position(**({"A": fit["A"], "n": fit["n"]} if fit else {}),
+                                          transmitter_fixed=self._transmitter_fixed(), fit_distances=self._fit_distances())
+        if self.rules.get("occupancy"):
+            self.occupancy = occupancy.Occupancy(self.rules["occupancy"])
         cal = getattr(self, "calibration", None)
         if cal is not None:
             self.position.calibrate(cal.pos_p50, cal.pos_p95)
@@ -326,6 +346,8 @@ class Engine:
 
         self._fall_step(now, t_ms, F, tF, M, quiet, still, moving, state, warm)
         post = self._posture_step(now, present)
+        occ = self.occupancy
+        occ_out = None if warm or occ is None else occ.update(now, *lv.raw_amp(occ.window_s + 1.0), state)
         pos = None if warm else self.position.update(now, *lv.raw_amp(position.WIN_S), moving=moving,
                                                      present=True if present else False if state == "empty" else None)
         self.pos_out = None if pos is None else {**pos, "people": max(self._people(state), 1 if pos["valid"] else 0)}
@@ -335,7 +357,7 @@ class Engine:
             self.pos_out["spot"] = self.spot_model.update(now, *lv.raw_amp(spots.WIN_S), float(np.mean(rs)) if rs else None)
 
         level = float(presence.motion_level(M_now, m_on, r["presence"]["motion_span"])) if M_now is not None else 0.0
-        return self._result(now, t_ms, state, level, B, S, post, warm)
+        return self._result(now, t_ms, state, level, B, S, post, warm, occ_out)
 
     def _quiet_level(self):
         """The fall rule's baseline: the empty calibration's P10 of M, else a provisional P10."""
@@ -499,7 +521,7 @@ class Engine:
         """Which optional result fields this engine fills (get_status engine.outputs)."""
         return {"posture": bool(self.rules["posture"]["publish"]), "count": False, "activity": self.model is not None}
 
-    def _result(self, now, t_ms, state, level, B, S, post, warm):
+    def _result(self, now, t_ms, state, level, B, S, post, warm, occ_out=None):
         b = self.breath
         wave = []
         if b is not None and b.v is not None:
@@ -525,6 +547,7 @@ class Engine:
                           "valid": self.breath_valid, "wave": wave},
             "csi": [[round(float(v), 1) for v in row] for row in self.live.F[-5:]],
             "position": self.pos_out,
+            "occupancy": occ_out,
             "link": self._link(now),
             "events": self.events.pop(),
             "active": [e["id"] for e in self.events.active.values()],
@@ -616,6 +639,7 @@ class Engine:
                 d_m, seconds = float(cmd["d_m"]), float(cmd.get("seconds", 25.0))
                 data = self.position.fit(d_m, now - seconds, now)
                 self.pos_fit = {"A": data["A"], "n": data["n"], "d_m": d_m, "at": now}
+                self.position.fit_distances = 1          # A from one distance: n is still a guess
                 if self.mode == "live" and self.pos_fit_path is not None:
                     self.pos_fit_path.parent.mkdir(parents=True, exist_ok=True)
                     self.pos_fit_path.write_text(json.dumps(self.pos_fit), encoding="utf-8")
