@@ -3,7 +3,7 @@
 // without React re-renders: the chart is updated on requestAnimationFrame
 // whenever a new result has arrived. The amplitude has no unit a person can
 // use, so there is no y-axis, and the height follows the visible samples (the
-// mock and the real engine use different scales); the x-axis reads "30 s ago …
+// scale depends on the room and the board); the x-axis reads "30 s ago …
 // now", with gaps where no sample came. Colours come from the design tokens
 // and follow the theme.
 import { useEffect, useRef } from "react";

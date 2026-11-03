@@ -19,6 +19,7 @@ real reboot.
 """
 
 import pathlib
+import re
 import sys
 import threading
 import time
@@ -77,12 +78,68 @@ def find_board_port():
     return ports[0]
 
 
+# The firmware's once-a-second estimator line (firmware/src/estimator.c):
+#   I (12345) lifefi: t=   12s rate= 98Hz ... | PRESENT   people=1 (est)
+BOARD_LINE = re.compile(r"\|\s*([A-Z_]+)\s+people=(\S+)")
+
+
+# Board warnings that explain why no CSI arrives (firmware/src/main.c, estimator.c).
+NO_AP = re.compile(r"link: disconnected \(reason (\d+)\)")
+REASONS = {201: "Wi-Fi network not found", 15: "Wi-Fi password rejected", 2: "Wi-Fi authentication expired",
+           8: "left the Wi-Fi network", 200: "Wi-Fi beacon timeout", 202: "Wi-Fi authentication failed"}
+NO_CSI_S = 3.0               # this long without a CSI packet and the board's own reason is shown
+
+
+def parse_board_note(text):
+    """A short reason from a board warning that explains missing CSI, else None."""
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+    m = NO_AP.search(text)
+    if m:
+        code = int(m.group(1))
+        return f"board: {REASONS.get(code, 'Wi-Fi disconnected')} (reason {code}), no CSI"
+    if "waiting for the transmitter" in text:
+        return "board: connected but no CSI packets, waiting for the transmitter"
+    return None
+
+
+def parse_board_line(text):
+    """{"state": "present", "people": 1 | None} from an estimator log line, else None."""
+    text = re.sub(r"\x1b\[[0-9;]*m", "", text)      # ESP_LOG colours
+    m = BOARD_LINE.search(text)
+    if m is None or " lifefi: t=" not in text:
+        return None
+    people = m.group(2).rstrip("+")
+    return {"state": m.group(1).lower(), "people": int(people) if people.isdigit() else None}
+
+
 class LiveSource(_Thread):
     def __init__(self, push, serial=None, baud=921600, esp=None):
         super().__init__()
         self.push = push
         self.args = (serial, baud, esp)
         self.name = f"usb {serial}" if serial else f"udp {esp or 'broadcast'}"
+        self.board = None                            # the board's own estimate, from its USB log: {state, people, t}
+        self.note = None                             # (monotonic s, text): the board's last reason for missing CSI
+        self.last_packet = 0.0                       # monotonic s of the last CSI packet
+
+    def _board_line(self, text):
+        est = parse_board_line(text)
+        if est is not None:
+            self.board = {**est, "t": time.time()}   # one assignment: safe to read from the engine thread
+            return
+        note = parse_board_note(text)
+        if note is not None:
+            # "network not found" says more than the "waiting" line that follows it every second
+            if self.note is None or "waiting" not in note or time.monotonic() - self.note[0] > 5.0:
+                self.note = (time.monotonic(), note)
+
+    def info(self):
+        """As _Thread.info, but a port that is open with no CSI coming says why, in the board's words."""
+        out = super().info()
+        now = time.monotonic()
+        if out["state"] == "running" and self.note is not None and now - self.last_packet > NO_CSI_S and now - self.note[0] < 10.0:
+            out["state"], out["error"] = "error", self.note[1]
+        return out
 
     def run(self):
         while not self._stop.is_set():
@@ -98,6 +155,8 @@ class LiveSource(_Thread):
         if serial == "auto":
             serial = find_board_port()
         src = csi_recorder.SerialSource(serial, baud) if serial else csi_recorder.UdpSource(esp)
+        if serial:
+            src.on_log = self._board_line
         self.name = f"usb {serial}" if serial else f"udp {esp or 'broadcast'}"
         self.state, self.error = "running", None
         last_sub = 0.0
@@ -109,6 +168,7 @@ class LiveSource(_Thread):
                     last_sub = now
                 packet = src.receive()
                 if packet is not None:
+                    self.last_packet = time.monotonic()
                     self.push(packet, time.time_ns() // 1000, "live")
         finally:
             src.close()

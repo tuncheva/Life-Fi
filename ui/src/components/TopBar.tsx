@@ -1,6 +1,6 @@
 "use client";
 // Always-visible elements (plan-v2 §8): replay banner that cannot be dismissed,
-// connection lost, sensor silent, calibration state, warm-up / uncertain.
+// connection lost, sensor silent, warm-up / uncertain.
 // Navigation by audience (docs/plan/ui-ux.md §4.6): "Room" and "Alerts" for
 // everyone; installer pages, presentation mode and theme under "Setup".
 import { useEffect, useRef } from "react";
@@ -10,11 +10,10 @@ import { useLive, useNow, useStale } from "@/lib/live";
 import { useSound } from "@/lib/sound";
 import { applyTheme, type Theme } from "@/lib/theme";
 import { useThemeChoice } from "@/lib/useTheme";
-import { roomName, calibrationText, duration } from "@/lib/words";
+import { roomName, duration } from "@/lib/words";
 import { Icon, Pill } from "./ui";
 
 const SETUP: { href: string; label: string; hint: string }[] = [
-  { href: "/calibrate/", label: "Calibration", hint: "Teach it the empty room" },
   { href: "/source/", label: "Source & replay", hint: "Live sensor or a recording" },
   { href: "/label/", label: "Labelling", hint: "Record training sessions" },
   { href: "/settings/", label: "Settings", hint: "Phone alerts, profile, PIN" },
@@ -84,8 +83,6 @@ export function TopBar() {
   if (path.startsWith("/present")) return null;
 
   const replay = (status?.source.mode ?? result?.source) === "replay";
-  const calState = result?.calibration ?? status?.engine.status?.calibration ?? null;
-  const cal = calibrationText(calState);
   const open = alerts.filter((a) => a.state === "open" && a.level !== "low").length;
   const onSetup = SETUP.some((s) => path.startsWith(s.href.replace(/\/$/, "")));
   const closeMenu = () => {
@@ -136,16 +133,14 @@ export function TopBar() {
             </Pill>
           )}
           {result?.presence.state === "uncertain" && !result.health.warmup && <Pill tone="uncertain">Presence unclear</Pill>}
-          {calState && (
-            <Link href="/calibrate/" className={cal.tone === "ok" ? "hidden sm:inline-flex" : "inline-flex"} title="Empty-room calibration">
-              <Pill tone={cal.tone}>{cal.text}</Pill>
-            </Link>
-          )}
         </div>
 
         <nav aria-label="Main" className="ml-auto flex items-center gap-1">
           <Link href="/" className={navCls(path === "/")} aria-current={path === "/" ? "page" : undefined}>
             Room
+          </Link>
+          <Link href="/model/" className={navCls(path.startsWith("/model"))} aria-current={path.startsWith("/model") ? "page" : undefined}>
+            Model
           </Link>
           <Link href="/alerts/" className={navCls(path.startsWith("/alerts"))} aria-current={path.startsWith("/alerts") ? "page" : undefined}>
             Alerts

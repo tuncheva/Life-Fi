@@ -380,7 +380,7 @@ const RAMP: [number, number, number][] = [
   [94, 201, 98],
   [253, 231, 37],
 ];
-function ramp(t: number): [number, number, number] {
+export function ramp(t: number): [number, number, number] {
   const x = Math.max(0, Math.min(1, t)) * (RAMP.length - 1);
   const i = Math.min(RAMP.length - 2, Math.floor(x));
   const f = x - i;
@@ -402,7 +402,7 @@ export function CsiCanvas({ className = "h-40" }: { className?: string }) {
       if (!c || drawn === buffers.version) return;
       drawn = buffers.version;
       const rows = buffers.csi.toArray();
-      // colour range from what is on screen (2nd-98th percentile): the mock and the real engine use different dB levels
+      // colour range from what is on screen (2nd-98th percentile): dB levels depend on the room and the board gain
       const sample: number[] = [];
       for (let r = 0; r < rows.length; r += 2) for (let k = 0; k < rows[r]!.length; k += 4) sample.push(rows[r]![k]!);
       sample.sort((a, b) => a - b);

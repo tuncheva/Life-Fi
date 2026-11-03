@@ -4,7 +4,6 @@
 // big Acknowledge button. Acknowledged and cleared alerts de-escalate calmly.
 // Presentation mode draws its own full-screen version.
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ApiError, ackAlert, getDeviceName, getSettings, type Alert } from "@/lib/api";
 import { useLive, useNow } from "@/lib/live";
@@ -110,11 +109,6 @@ export function AlertBanner() {
                   <span className="font-semibold">{alertTitle(lead.type)}</span>
                   <span className="text-muted"> · {alertAction(lead.type, lead.profile)}</span>
                 </div>
-                {(lead.type === "presence_uncertain" || lead.type === "recalibrate_needed") && (
-                  <Link href="/calibrate/" className="rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-2">
-                    Calibrate
-                  </Link>
-                )}
                 <button onClick={() => void ack(open)} disabled={busy} className="rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-2 disabled:opacity-60">
                   {busy ? "…" : "Got it"}
                 </button>

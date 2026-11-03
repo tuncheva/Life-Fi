@@ -2,7 +2,8 @@
 // the Result type is generated from the schema (contracts.gen.ts).
 import type { Result } from "./contracts.gen";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+// The API is served by this Next.js app (src/app/api/v1), so every call is same-origin.
+export const API_BASE = "";
 
 export type ProfileName = "home" | "school" | "clinic";
 export type AlertLevel = "high" | "medium" | "low";
@@ -71,7 +72,6 @@ export interface EngineStatus {
   source_info?: { name: string | null; state: "running" | "finished" | "error" | "none"; file: string | null; speed: number; loop: boolean; error: string | null };
   /** Which optional result fields the engine fills; missing from older engines (then: all). */
   outputs?: { posture: boolean; count: boolean; activity: boolean };
-  mock?: { scenario: string; phase: string };
 }
 
 export interface CalibrationJob {
@@ -242,22 +242,5 @@ export const startSegment = (label: string, count: number, subject: string, spot
 export const endSegment = () => api<{ open_segment: null }>("/recordings/segment", { method: "POST", body: JSON.stringify({ action: "end" }), pin: true });
 export const addMark = (event: string, subject: string) => api<LabelLine>("/recordings/mark", { method: "POST", body: JSON.stringify({ event, subject }), pin: true });
 
-// Dev-only (mock engine)
-export interface ScenarioInfo {
-  name: string;
-  description: string;
-  duration_s: number;
-  loop: boolean;
-}
-export const devScenarios = async () => {
-  const res = await fetch(`${API_BASE}/dev/scenarios`);
-  if (!res.ok) throw new ApiError(res.status, "dev", "dev endpoints unavailable");
-  return (await res.json()) as { scenarios: ScenarioInfo[]; current: string; phase: string };
-};
-export const devSetScenario = (name: string) =>
-  fetch(`${API_BASE}/dev/scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
-
-export function wsUrl(): string {
-  const base = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
-  return base.replace(/^http/, "ws") + "/ws/live";
-}
+/** Server-Sent Events stream of status, results and alert transitions. */
+export const LIVE_URL = `${API_BASE}/api/v1/live`;

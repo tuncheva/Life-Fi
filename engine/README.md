@@ -4,19 +4,17 @@ The engine reads the board's CSI live (or replays a `.csirec`), turns it
 into the same 50 Hz signal the models were trained on, runs the rules and
 the movement model every 0.5 s, and sends one result to the server on TCP
 127.0.0.1:6000 ([contracts/control.md](../contracts/control.md),
-[results.schema.json](../contracts/results.schema.json)). It replaces the
-mock engine in `server/src/mock-engine/`.
+[results.schema.json](../contracts/results.schema.json)). The dashboard
+and its backend run in one Next.js app (`ui/`), which connects to it.
 
 ## Run it
 
-One command starts the engine, the server and the dashboard together
-(`scripts/engine.mjs` finds the `.venv` Python):
+One command starts the engine and the dashboard (with its backend)
+together (`scripts/engine.mjs` finds the `.venv` Python):
 
 ```powershell
 .venv\Scripts\pip install -r engine\requirements.txt   # once (ml\requirements.txt has it all)
-npm run dev:real      # the board on USB: its port is found by itself
-npm run dev:replay    # no board: the synthetic fall recording, looped
-npm run dev           # the mock engine (made-up numbers), as before
+npm run dev           # the board on USB: its port is found by itself
 ```
 
 Then open http://localhost:3000.
@@ -28,15 +26,13 @@ Then open http://localhost:3000.
   (reported as `stale` after 24 h). If the board is unplugged, the
   dashboard says "Can't read the sensor board" and the engine retries every
   2 s; plugging it back in recovers.
-- **The replay:** `data/demo/fall.csirec` is made by
-  `engine/tools/fakesensor.py` the first time. The engine calibrates by
-  itself on its first 2 minutes (an empty room), then someone walks in,
-  sits breathing 15 /min, falls at about 3:20 and lies still: the "Possible
-  fall" alarm, then "No movement after a possible fall" 20 s later.
-- **Port 8080 taken** (on the dev PC Apache/httpd uses it): run the server
-  on another port and point the dashboard at it, e.g. in PowerShell
-  `$env:LIFEFI_PORT="8081"; $env:NEXT_PUBLIC_API_URL="http://localhost:8081"; npm run dev:replay`.
-  The `mock`, `replay` and `real` entries in `.claude/launch.json` do this.
+- **A recording:** real board recordings (`firmware/recordings/*.csirec`,
+  `data/sessions/`) can be replayed from Setup → Source; live is the
+  default and nothing synthetic is ever shown.
+- **Live views:** the dashboard draws a 3D room view (the distance from
+  `lifefi.position`), a 3D surface of the 52 subcarriers and a live
+  signals chart, all from the board's packets. The result's `link` carries
+  the RSSI and the board's own presence/people estimate from its USB log.
 - **Alarm sound:** the dashboard asks once per browser whether it may beep.
   Urgent alarms then beep every 2 s until someone acknowledges them or
   presses "Silence beep"; change it under Setup → Alarm sound.
@@ -47,8 +43,7 @@ By hand, the engine alone:
 .venv\Scripts\python engine\run.py                          # the board over USB, port found by itself
 .venv\Scripts\python engine\run.py --serial COM3            # this port
 .venv\Scripts\python engine\run.py --esp 192.168.100.111    # over Wi-Fi (--esp alone: broadcast)
-.venv\Scripts\python engine\run.py --replay data\demo\fall.csirec --loop --calibrate-at-start
-.venv\Scripts\python engine\tools\fakesensor.py fall data\demo\fall.csirec   # scenarios: empty, sitting, fall, breath_hold, leave
+.venv\Scripts\python engine\run.py --replay firmware\recordings\usb-test.csirec --loop   # a real recording
 ```
 
 The dashboard's technical section ("Sensor details") also shows the

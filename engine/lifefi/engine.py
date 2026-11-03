@@ -13,7 +13,9 @@ Per tick:
 4. presence (lifefi.presence) from M, breathing energy B and S;
 5. `no_breathing` (lifefi.apnea), the fall rule (lifefi.fall) and its
    escalation to `fainted_suspected`;
-6. the movement model and posture (hidden unless rules.yaml says so).
+6. the movement model and posture (hidden unless rules.yaml says so);
+7. the experimental distance from the link (lifefi.position) and the
+   link itself: RSSI and the board's own presence/people estimate.
 
 The engine reports conditions; the server decides alerts (plan-v2 design
 rule 5). Every threshold is in engine/config/rules.yaml (rule 6).
@@ -34,7 +36,7 @@ from collections import deque
 import numpy as np
 import yaml
 
-from . import apnea, breathing, calibration, dsp, fall, models, posture, presence
+from . import apnea, breathing, calibration, dsp, fall, models, position, posture, presence, spots
 from . import live as live_mod
 from . import motion as motion_mod
 from .live import LiveF
@@ -126,6 +128,10 @@ class Engine:
         self.cal_pending = self.calibration is not None   # applied to presence on the first tick
         self.cal_seq = int(self.calibration.id.split("-")[-1]) if self.calibration else 0
         self.cal_job = None
+        self.pos_fit_path = self.calibration_path.with_name("position.json") if self.calibration_path else None
+        self.pos_fit = self._load_pos_fit()
+        # the taught spots of this room (ml/train_spots.py); without it, the distance estimate alone
+        self.spot_model = spots.SpotModel.load(self.calibration_path.with_name("spots_model.json")) if self.calibration_path else None
         self.recording = None
         self.started = None
         self.load_rules()
@@ -136,6 +142,8 @@ class Engine:
         self.clock = Clock()
         self.rejected = {"layout": 0, "gain_invalid": 0, "source": 0}
         self.rx = deque()                            # (host_s, seq, rx_seq) of the last 10 s
+        self.rssi = deque()                          # (host_s, rssi_dbm) of the last 10 s
+        self.board_hook = None                       # set by lifefi.control: () -> the board's own estimate or None
         self.last_host_us = 0
 
     # ---- configuration -------------------------------------------------
@@ -164,6 +172,18 @@ class Engine:
             print(f"ignoring {path}: {err}")
             return None
 
+    def _load_pos_fit(self):
+        """The saved distance fit {A, n, d_m, at} (position_fit), or None."""
+        path = self.pos_fit_path
+        if path is None or not path.exists():
+            return None
+        try:
+            d = json.loads(path.read_text(encoding="utf-8"))
+            return {"A": float(d["A"]), "n": float(d["n"]), "d_m": d.get("d_m"), "at": d.get("at")}
+        except (OSError, ValueError, TypeError, KeyError) as err:
+            print(f"ignoring {path}: {err}")
+            return None
+
     def _save_calibration(self, cal):
         if self.calibration_path is None:
             return
@@ -181,6 +201,7 @@ class Engine:
         self.presence = presence.Presence(self.rules["presence"])
         if cal is not None:
             self.presence.calibrate(presence.Levels.from_calibration(cal, self.presence.cfg), t)
+        self.position.calibrate(*(cal.pos_p50, cal.pos_p95) if cal is not None else (None, None))
 
     def load_models(self):
         self.model, self.model_status = models.load(self.models_dir, self.rules.get("movement_model", "gbm"))
@@ -190,6 +211,12 @@ class Engine:
     def _reset_signal(self):
         self.live = LiveF()
         self.segment = self.live.segment
+        fit = getattr(self, "pos_fit", None)
+        self.position = position.Position(**({"A": fit["A"], "n": fit["n"]} if fit else {}))
+        cal = getattr(self, "calibration", None)
+        if cal is not None:
+            self.position.calibrate(cal.pos_p50, cal.pos_p95)
+        self.pos_out = None
         self.warm_until = -np.inf
         self.breath = None
         self.breath_at = None
@@ -231,6 +258,9 @@ class Engine:
         self.rx.append((host_us / 1e6, hdr["seq"], hdr["rx_seq"]))
         while self.rx and self.rx[0][0] < host_us / 1e6 - 10.0:
             self.rx.popleft()
+        self.rssi.append((host_us / 1e6, hdr["rssi_dbm"]))
+        while self.rssi and self.rssi[0][0] < host_us / 1e6 - 10.0:
+            self.rssi.popleft()
 
     # ---- one tick -------------------------------------------------------
     def tick(self, now):
@@ -249,6 +279,7 @@ class Engine:
             self.warm_until = max(self.warm_until, now + r["warmup_s"])
             self.fall_done = []
             self.next_breath = -np.inf
+            self.position.reset()
         warm = now < self.warm_until or lv.seconds() < 1.0
         t_ms = int(round(now * 1000))
 
@@ -295,6 +326,13 @@ class Engine:
 
         self._fall_step(now, t_ms, F, tF, M, quiet, still, moving, state, warm)
         post = self._posture_step(now, present)
+        pos = None if warm else self.position.update(now, *lv.raw_amp(position.WIN_S), moving=moving,
+                                                     present=True if present else False if state == "empty" else None)
+        self.pos_out = None if pos is None else {**pos, "people": max(self._people(state), 1 if pos["valid"] else 0)}
+        # the taught-spot model runs next to the distance estimate; the dashboard's model page shows it
+        if self.pos_out is not None and self.spot_model is not None and self.mode == "live":
+            rs = [r for t, r in self.rssi if t >= now - spots.WIN_S]
+            self.pos_out["spot"] = self.spot_model.update(now, *lv.raw_amp(spots.WIN_S), float(np.mean(rs)) if rs else None)
 
         level = float(presence.motion_level(M_now, m_on, r["presence"]["motion_span"])) if M_now is not None else 0.0
         return self._result(now, t_ms, state, level, B, S, post, warm)
@@ -392,8 +430,10 @@ class Engine:
             cal = calibration.from_empty(self.live.F[sel], self.live.valid[sel], cal_id, now)
         except calibration.Refused as err:
             return job["done"](False, {}, str(err))
+        cal.pos_p50, cal.pos_p95 = self.position.levels(job["start"], job["until"])
         self.calibration = self.calibrations[self.mode] = cal
         self.presence.calibrate(presence.Levels.from_calibration(cal, self.presence.cfg), now)
+        self.position.calibrate(cal.pos_p50, cal.pos_p95)
         if self.mode == "live":
             self._save_calibration(cal)
         job["done"](True, {"id": cal_id}, None)
@@ -415,6 +455,23 @@ class Engine:
                 "loss_air": round(min(1.0, lost_air / (n + lost_air)), 4),
                 "invalid_ratio": round(float(1.0 - V.mean()), 4) if len(V) else 0.0,
                 "rejected": dict(self.rejected), "warmup": bool(warm)}
+
+    def _people(self, state):
+        """How many to mark: the board's own head count (USB log), at least 1 while present, 0 when empty."""
+        if state == "empty":
+            return 0
+        board = self.board_hook() if self.board_hook is not None and self.mode == "live" else None
+        n = board["people"] if board is not None and time.time() - board["t"] <= 5.0 and board["people"] is not None else 0
+        return max(n, 1) if state == "present" else n
+
+    def _link(self, now):
+        """Mean RSSI of the last 2 s of packets and the board's own estimate from its log (USB only)."""
+        rs = [r for t, r in self.rssi if t >= now - 2.0]
+        board = self.board_hook() if self.board_hook is not None and self.mode == "live" else None
+        if board is not None and now - board["t"] > 5.0:
+            board = None                             # the board stopped logging: not current any more
+        return {"rssi_dbm": round(float(np.mean(rs)), 1) if rs else None,
+                "board": None if board is None else {"state": board["state"], "people": board["people"]}}
 
     def _calibration_status(self, now):
         if self.cal_job is not None:
@@ -467,6 +524,8 @@ class Engine:
                           "confidence": round(float(np.clip(b.confidence, 0, 1)), 3) if b is not None else 0.0,
                           "valid": self.breath_valid, "wave": wave},
             "csi": [[round(float(v), 1) for v in row] for row in self.live.F[-5:]],
+            "position": self.pos_out,
+            "link": self._link(now),
             "events": self.events.pop(),
             "active": [e["id"] for e in self.events.active.values()],
         }
@@ -552,6 +611,15 @@ class Engine:
             if kind == "reload_rules":
                 self.load_rules(now)
                 return ack(True, {"config_hash": self.config_hash})
+            if kind == "position_fit":
+                # someone has been moving at a measured distance for the last `seconds`
+                d_m, seconds = float(cmd["d_m"]), float(cmd.get("seconds", 25.0))
+                data = self.position.fit(d_m, now - seconds, now)
+                self.pos_fit = {"A": data["A"], "n": data["n"], "d_m": d_m, "at": now}
+                if self.mode == "live" and self.pos_fit_path is not None:
+                    self.pos_fit_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.pos_fit_path.write_text(json.dumps(self.pos_fit), encoding="utf-8")
+                return ack(True, data)
             return ack(False, error=f"unknown command '{kind}'")
         except Exception as err:                     # a bad argument must never cost the connection
             return ack(False, error=str(err) if isinstance(err, ValueError) else f"{type(err).__name__}: {err}")

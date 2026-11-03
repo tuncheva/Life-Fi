@@ -1,12 +1,14 @@
 "use client";
 // One dashboard per profile (plan-v2 §11). The engine output is the same; the
 // profile decides what is shown. Order by what the reader needs first
-// (docs/plan/ui-ux.md §4.3): room state, then breathing, then the day, then
-// the technical section for installers.
+// (docs/plan/ui-ux.md §4.3): room state, then breathing, then the three live
+// views, then the day, then the technical section for installers.
 import { useEffect, useState } from "react";
 import { getProfile, type ProfileView } from "@/lib/api";
 import { useLive, useNow } from "@/lib/live";
 import { BreathingCard, CsiHeatmap, DetectorCard, HealthCard, RoomCard, SensorDetails } from "./Cards";
+import { LiveViews } from "./LiveViews";
+import type { PositionSource } from "./Room3D";
 import { Timeline } from "./Timeline";
 
 function useProfileView(): ProfileView | null {
@@ -28,33 +30,35 @@ function Details() {
   );
 }
 
-export function HomeDashboard() {
+export function HomeDashboard({ source = "distance" }: { source?: PositionSource }) {
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <RoomCard />
       </div>
       <BreathingCard />
+      <LiveViews source={source} />
       <Timeline />
       <Details />
     </div>
   );
 }
 
-export function ClinicDashboard() {
+export function ClinicDashboard({ source = "distance" }: { source?: PositionSource }) {
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <RoomCard />
       </div>
       <BreathingCard />
+      <LiveViews source={source} />
       <Timeline />
       <Details />
     </div>
   );
 }
 
-export function SchoolDashboard() {
+export function SchoolDashboard({ source = "distance" }: { source?: PositionSource }) {
   const view = useProfileView();
   const { status } = useLive();
   const now = useNow(30_000);
@@ -65,6 +69,7 @@ export function SchoolDashboard() {
       <div className="lg:col-span-3">
         <RoomCard afterHours={after ? { from: after.from, to: after.to, now: inAfterHours } : null} />
       </div>
+      <LiveViews source={source} />
       <Timeline showPosture={false} />
       <Details />
     </div>

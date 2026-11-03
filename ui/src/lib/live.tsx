@@ -1,10 +1,10 @@
 "use client";
-// One WebSocket for the whole dashboard (plan-v2 §8): exponential backoff
+// One live stream (Server-Sent Events) for the whole dashboard (plan-v2 §8): exponential backoff
 // capped at 5 s, a `connected` flag for the "connection lost" state, and
 // ref-held ring buffers for the breathing wave and the CSI heatmap so canvases
 // can draw on requestAnimationFrame without re-rendering React.
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAlerts, getHistory, getStatus, wsUrl, type Alert, type Status, type WsMessage } from "./api";
+import { getAlerts, getHistory, getStatus, LIVE_URL, type Alert, type Status, type WsMessage } from "./api";
 import type { Result } from "./contracts.gen";
 import type { PresenceSince } from "./words";
 
@@ -12,6 +12,32 @@ export const WAVE_HZ = 10;
 const TICK_S = 0.5; // one result per 0.5 s (contracts/control.md)
 export const WAVE_SECONDS = 300; // ring buffer length; the chart shows 30 s or 5 min of it
 export const CSI_ROWS = 300; // ~30 s at 5 rows per 0.5 s
+export const SIGNAL_SECONDS = 120; // the live signals chart: one sample per result
+
+/** One result's scalar signals, for the live signals chart and the 3D room view. */
+export interface SignalSample {
+  /** Result time, ms since epoch. */
+  t: number;
+  /** Motion level 0..1. */
+  M: number;
+  /** Deviation from the empty-room profile. */
+  S: number;
+  /** Breathing-band energy. */
+  B: number;
+  rssi: number | null;
+  /** Distance from the link (m) and the body disturbance (dB), null without an estimate. */
+  d: number | null;
+  /** Standard deviation of d (m). */
+  sd: number | null;
+  R: number | null;
+  /** d is the last distance measured while moving (the person stands still). */
+  held: boolean;
+  zone: "near" | "middle" | "far" | null;
+  /** How many people to mark (lifefi.position people). */
+  people: number;
+  /** The spot model's answer (lifefi.spots), null without a model. */
+  spot: { name: string; p: number; d: number | null } | null;
+}
 
 export class RingBuffer<T> {
   private buf: T[];
@@ -45,6 +71,7 @@ export interface LiveBuffers {
   /** null = no sample for that moment (the engine had no breathing window): drawn as a gap. */
   wave: RingBuffer<number | null>;
   csi: RingBuffer<number[]>;
+  signals: RingBuffer<SignalSample>;
   /** Bumped on every result; canvases compare it to skip redraws. */
   version: number;
 }
@@ -93,14 +120,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // Once the server reports presence changes itself (Status.presence), history seeding is not needed.
   const serverPresence = useRef(false);
   // A stable mutable object (not React state): canvases read it on rAF, React never re-renders on it.
-  const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), version: 0 }));
+  const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), signals: new RingBuffer(SIGNAL_SECONDS / TICK_S), version: 0 }));
   const lastBoot = useRef<number | null>(null);
   const lastSource = useRef<Result["source"] | null>(null);
 
   const refreshAlerts = async () => {
     try {
       const { alerts } = await getAlerts("pending,open,acked");
-      // A WebSocket transition may have arrived while this request was in flight: keep whichever is newer.
+      // A live transition may have arrived while this request was in flight: keep whichever is newer.
       const stamp = (a: Alert) => Math.max(a.created_at, a.opened_at ?? 0, a.acked_at ?? 0, a.resolved_at ?? 0, a.escalated_at ?? 0, a.notified_at ?? 0);
       setAlerts((prev) => {
         const byId = new Map(alerts.map((a) => [a.id, a]));
@@ -111,26 +138,26 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         return [...byId.values()].filter((a) => a.state === "pending" || a.state === "open" || a.state === "acked").sort((a, b) => b.created_at - a.created_at);
       });
     } catch {
-      /* server unreachable; the ws state shows it */
+      /* server unreachable; the live state shows it */
     }
   };
 
   useEffect(() => {
-    let ws: WebSocket | null = null;
+    let es: EventSource | null = null;
     let attempt = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(wsUrl());
-      ws.onopen = () => {
+      es = new EventSource(LIVE_URL);
+      es.onopen = () => {
         attempt = 0;
         setConnected(true);
         void refreshAlerts();
         getStatus().then(setStatus).catch(() => {});
       };
-      ws.onmessage = (ev) => {
+      es.onmessage = (ev) => {
         let m: WsMessage;
         try {
           m = JSON.parse(ev.data as string) as WsMessage;
@@ -142,12 +169,28 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           if ((lastBoot.current !== null && lastBoot.current !== m.boot_id) || (lastSource.current !== null && lastSource.current !== m.source)) {
             buffers.wave.clear();
             buffers.csi.clear();
+            buffers.signals.clear();
           }
           lastBoot.current = m.boot_id;
           lastSource.current = m.source;
           if (m.breathing.wave.length) for (const v of m.breathing.wave) buffers.wave.push(v);
           else for (let i = 0; i < WAVE_HZ * TICK_S; i++) buffers.wave.push(null); // keep the time axis true
           for (const row of m.csi) buffers.csi.push(row);
+          const pos = m.position ?? null;
+          buffers.signals.push({
+            t: m.ts,
+            M: m.presence.M,
+            S: m.presence.S,
+            B: m.presence.B,
+            rssi: m.link?.rssi_dbm ?? null,
+            d: pos?.valid ? pos.d_m : null,
+            sd: pos?.valid ? pos.d_sd : null,
+            held: pos?.held ?? false,
+            zone: pos?.zone ?? null,
+            people: pos?.people ?? 0,
+            spot: pos?.spot ? { name: pos.spot.name, p: pos.spot.p, d: pos.spot.d_m } : null,
+            R: pos ? pos.R_db : null,
+          });
           buffers.version++;
           const ps = m.presence.state;
           if (serverPresence.current) {
@@ -178,20 +221,21 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           });
         }
       };
-      ws.onclose = () => {
+      // EventSource retries on its own only for some failures; reconnect with backoff ourselves.
+      es.onerror = () => {
         setConnected(false);
-        ws = null;
+        es?.close();
+        es = null;
         if (closed) return;
         const delay = Math.min(5000, 500 * 2 ** attempt++);
         timer = setTimeout(connect, delay);
       };
-      ws.onerror = () => ws?.close();
     };
     connect();
     return () => {
       closed = true;
       if (timer) clearTimeout(timer);
-      ws?.close();
+      es?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

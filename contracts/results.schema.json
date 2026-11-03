@@ -369,6 +369,172 @@
         }
       }
     },
+    "position": {
+      "description": "Experimental (lifefi.position): distance of the moving or breathing body from the link, from the last 10 s of packets. One link gives no direction, so this is a radius. Measured only while the person moves, held while they stay still. null while warming up or without enough packets. Optional: older engines leave it out.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "valid",
+            "d_m",
+            "d_sd",
+            "R_db",
+            "noise_db",
+            "held",
+            "zone",
+            "people"
+          ],
+          "properties": {
+            "valid": {
+              "type": "boolean",
+              "description": "true when the disturbance stands above the noise and d_m is set"
+            },
+            "d_m": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Kalman-smoothed distance in metres (0.2..8)"
+            },
+            "d_sd": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Standard deviation of d_m in metres"
+            },
+            "R_db": {
+              "type": "number",
+              "description": "Body disturbance, dB re 1 dB²"
+            },
+            "noise_db": {
+              "type": "number",
+              "description": "White-noise level left in the 0.25 s bin means, dB re 1 dB²"
+            },
+            "held": {
+              "type": "boolean",
+              "description": "true while the person stands still: d_m is the last distance measured while they moved (stillness would read as far away)"
+            },
+            "zone": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "near",
+                    "middle",
+                    "far"
+                  ]
+                }
+              ],
+              "description": "near < 1.5 m, middle 1.5-3.5 m, far beyond; null without a distance"
+            },
+            "people": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "How many people to mark: the board's own head count from its USB log, at least 1 while presence is present, 0 when empty. One link cannot place them separately."
+            },
+            "spot": {
+              "description": "The taught spot of this room from the spot model (engine/lifefi/spots.py, ml/train_spots.py), next to the distance estimate; null without a model or enough packets. Optional.",
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "p",
+                    "d_m"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "p": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Smoothed probability of that spot"
+                    },
+                    "d_m": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "description": "The distance measured for that spot when it was taught; null for `empty`"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "link": {
+      "description": "The radio link and the board's own view of it. Optional: older engines leave it out.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rssi_dbm",
+        "board"
+      ],
+      "properties": {
+        "rssi_dbm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Mean RSSI of the packets of the last 2 s, null when none arrived"
+        },
+        "board": {
+          "description": "The firmware's own estimate from its USB log line (firmware/src/estimator.c), null when not reading the board over USB or it has not logged for 5 s",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "people"
+              ],
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "calibrating",
+                    "empty",
+                    "present",
+                    "uncertain"
+                  ]
+                },
+                "people": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Head count estimate, null when the board does not know (\"?\")"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
     "events": {
       "type": "array",
       "description": "Only the changes in this window",
