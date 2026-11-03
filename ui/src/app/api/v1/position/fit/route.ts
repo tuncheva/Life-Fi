@@ -1,4 +1,4 @@
-import { engineFail, fail, readBody, write } from "@/server/http";
+import { engineFail, fail, inRange, readBody, write } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic";
 export const POST = write(async (ctx, req) => {
   const body = await readBody(req);
   const d_m = body.d_m;
-  if (typeof d_m !== "number" || d_m < 0.3 || d_m > 8) return fail(400, "bad_request", "d_m must be a distance of 0.3 to 8 m");
-  const seconds = typeof body.seconds === "number" ? body.seconds : 25;
+  if (inRange(d_m, 0.3, 8) === null) return fail(400, "bad_request", "d_m must be a distance of 0.3 to 8 m");
+  const seconds = body.seconds === undefined ? 25 : inRange(body.seconds, 5, 120);
+  if (seconds === null) return fail(400, "bad_request", "seconds must be 5 to 120");
   try {
     const ack = await ctx.engine.send("position_fit", { d_m, seconds });
     ctx.log.info({ ...ack.data, d_m }, "distance fitted");

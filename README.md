@@ -9,6 +9,7 @@ from; where any other document disagrees with it, plan-v2 wins.
 |---|---|
 | [firmware/](firmware/README.md) | ESP32 / ESP32-S3 firmware: CSI capture, presence and people-count estimate on the serial console, raw CSI stream + recorder |
 | [engine/](engine/README.md) | The engine: board (or a recording) in, presence / breathing / breathing-stopped / fall results to the server on TCP 6000. Start everything with `npm run dev`: the board over USB, the engine, and the dashboard with its backend on http://localhost:3000 |
+| [docs/ops/](docs/ops/README.md) | Running it for real: install, `npm run build` + `npm run start` (supervised), health, backup, update, troubleshooting. `npm test` runs every test |
 
 ## docs/plan/ — current, build from these
 

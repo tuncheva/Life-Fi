@@ -3,7 +3,7 @@
 // and kept on globalThis so route bundles and dev hot reloads share one engine socket.
 import { randomBytes } from "node:crypto";
 import { AlertManager } from "./alerts";
-import { config } from "./config";
+import { config, ConfigError, DEFAULT_PIN } from "./config";
 import { buildStatus, type AppContext, type AppState, type EngineStatus } from "./context";
 import { EngineClient } from "./engine-client";
 import { History } from "./history";
@@ -27,6 +27,8 @@ export function getRuntime(): AppContext {
 }
 
 function start(): AppContext {
+  // Not cached by getRuntime: every API call answers 500 "config" with the list (http.ts).
+  if (config.problems.length) throw new ConfigError(config.problems);
   const log = createLogger();
   const profiles = loadProfiles(config.profilesPath);
   const settings = new SettingsStore(config.dataDir, { pin: config.pin, profiles });
@@ -190,6 +192,7 @@ function start(): AppContext {
   rules.start();
   engine.start();
   log.info({ engine: `${config.engineHost}:${config.enginePort}`, profile: settings.value.profile, config_hash: profiles.hash }, "life-fi backend up");
+  if (settings.value.pin === DEFAULT_PIN) log.warn({}, `the PIN is still the default ${DEFAULT_PIN}: change it in Settings`);
 
   const shutdown = () => {
     if (statusPoll) clearInterval(statusPoll);

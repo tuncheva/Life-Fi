@@ -1,12 +1,16 @@
-import { fail, pinOk, read, readBody } from "@/server/http";
+import { fail, pinGate, read, readBody } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
 // Acknowledge: with the PIN (dashboard) or with the one-time token from the phone notification.
+// The token path does not count towards the wrong-PIN limiter.
 export const POST = read<{ id: string }>(async (ctx, req, { id }) => {
   const token = new URL(req.url).searchParams.get("token");
   const viaPhone = !!token && ctx.ackTokens.get(id) === token;
-  if (!viaPhone && !pinOk(ctx, req)) return fail(401, "pin", "wrong or missing X-Lifefi-Pin header");
+  if (!viaPhone) {
+    const denied = pinGate(ctx, req);
+    if (denied) return denied;
+  }
   const body = await readBody(req);
   const by = typeof body.by === "string" && body.by.trim() ? body.by.trim().slice(0, 40) : viaPhone ? "phone notification" : null;
   const r = ctx.alerts.ack(id, by);

@@ -16,16 +16,34 @@ Reads are open on the LAN. **Writes need the PIN**, sent as
 
 Writes: every `POST` and `PUT` below.
 
+Wrong PINs are limited (one bucket for the whole server): 5 wrong PINs within
+60 s lock every write for 60 s (`429` `rate_limited`, `Retry-After: <s>`);
+each further lockout doubles it, up to 1 h. A right PIN outside a lockout
+resets it; so does restarting the server. The phone's one-time ack token is not
+limited.
+
 ## Errors
 
 `{"error": "<code>", "message": "<human text>"}`. Codes: `pin`, `engine_offline`,
-`bad_request`, `not_found`, `conflict`.
+`bad_request`, `not_found`, `conflict`, `rate_limited` (429), `internal` (500,
+an unexpected server error; details only in the server log), `config` (500, the
+server's `LIFEFI_*` environment is invalid; `message` lists every problem).
+
+A body that is present but not JSON is `400 bad_request`; a write body over
+64 KB is `413 bad_request`. Bounds: `calibrate.duration_s` 10–1800,
+`source.speed` 0.1–20, `position/fit` `d_m` 0.3–8 and `seconds` 5–120,
+`settings.retention_days` 1–3650. A replay `file` must be a `.csirec` under
+`firmware/recordings/` or `<data>/sessions/` (relative paths are from the repo
+root; the server sends the engine the absolute path).
 
 ## Endpoints
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
 | GET | `/status` | — | `Status` (below) |
+| GET | `/health?soft=` | — | `Health` (below); `200` when `ok`, else `503` with the same body. `?soft=1` always answers `200` (for pages that poll it) |
+| GET | `/setup` | — | `Setup` (below), always `200` |
+| GET | `/position` | — | `{"fit": PositionFit \| null, "spots": SpotsSummary \| null}` (below) |
 | GET | `/history?from=&to=&fields=` | — | `{"rows": [HistoryRow]}`; `fields` is a comma list of `presence,motion,breathing,posture,count` |
 | GET | `/alerts?state=` | — | `{"alerts": [Alert]}`; `state` is a comma list of `pending,open,acked,resolved,dropped`; default `open,acked` |
 | POST | `/alerts/{id}/ack` | `{"by": "Maria's phone"}` (optional, ≤ 40 chars) | `Alert` with `acked_by` |
@@ -69,6 +87,77 @@ Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `
   "alerts_open": 0
 }
 ```
+
+### `Health`
+
+```json
+{
+  "ok": true,
+  "ready": false,
+  "version": "0.1.0",
+  "uptime_s": 812,
+  "checks": {
+    "engine":      {"ok": true},
+    "board":       {"ok": false, "source": "live", "result_age_s": null, "rate_hz": null, "error": "no USB serial port found"},
+    "calibration": {"ok": false, "state": "none", "id": null, "age_s": null},
+    "storage":     {"ok": true, "db_bytes": 1048576, "free_bytes": 52428800000}
+  }
+}
+```
+
+Every field is always present; unknown is `null`. `board.source` is
+`live | replay`; `result_age_s` is seconds since the last result (server clock,
+1 decimal); `rate_hz` is the last result's rate when it is < 10 s old;
+`board.ok` = engine connected, a result < 5 s old and the watchdog not offline.
+`calibration.state` is `none | running | ok | stale | null` (from the latest
+result, else the engine status); `ok` = `state == "ok"`. `storage.db_bytes` is
+the SQLite file plus its WAL; `storage.ok` = the data dir is writable and
+`free_bytes` is unknown or > 500 MB.
+Top level: `ok` = `engine.ok && storage.ok` (the server can do its job);
+`ready` = `ok && board.ok` (people are being sensed). Calibration never fails
+`ok` or `ready`: it is a setup step, not an outage.
+
+### `Setup`
+
+```json
+{
+  "complete": false,
+  "steps": [
+    {"id": "engine",      "done": true,  "optional": false, "detail": null},
+    {"id": "board",       "done": false, "optional": false, "detail": "no USB serial port found"},
+    {"id": "pin",         "done": false, "optional": false, "detail": "the PIN is still the default"},
+    {"id": "calibration", "done": false, "optional": false, "detail": "no empty-room calibration yet"},
+    {"id": "notify",      "done": false, "optional": true,  "detail": "no ntfy topic set"},
+    {"id": "lan",         "done": false, "optional": true,  "detail": "only this PC can open the dashboard (set LIFEFI_HOST=0.0.0.0)"}
+  ]
+}
+```
+
+Always these six ids in this order. `detail` is a short English reason when
+not done, else `null`; clients key on `id`, never on `detail`. `board` is done
+when `Health.checks.board.ok` and the source is live (a replay is never
+"done": `"replaying a recording, not the board"`). `pin` is done when the PIN
+is not the default `1234`. `calibration` is done when its state is `ok`.
+`notify` is done when an ntfy topic is set. `lan` is done when the dashboard
+listens on more than loopback (`LIFEFI_HOST`). `complete` = every non-optional
+step done.
+
+### `PositionFit` and `SpotsSummary` (`GET /position`)
+
+```json
+{
+  "fit":   {"A": 16.13, "n": 2.0, "d_m": 2.0, "at": 1793463150102},
+  "spots": {"labels": ["close", "middle", "far", "empty"],
+            "distances": {"close": 0.4, "middle": 1.2, "far": 2.2, "empty": null},
+            "loso_bal_acc": 0.21, "session": "spots-…", "trained_at": 1793463150000}
+}
+```
+
+Read from the engine's `position.json` (the saved `position/fit`) and
+`spots_model.json` in the data dir on every request; a missing or broken file
+is `null`. Never the model weights, nor its same-session `holdout_accuracy`; `loso_bal_acc` is the leave-one-session-out balanced accuracy (`null` for a model trained on one session). Times are ms since epoch. The engine writes
+these files next to its `--calibration` path (default `data/`): a non-default
+`LIFEFI_DATA_DIR` needs a matching `--calibration`.
 
 ### `Source`
 
@@ -150,9 +239,16 @@ One row per 5 s. Never contains `csi` or `wave`.
   "dashboard_url": "http://192.168.1.10:8080",
   "retention_days": 30,
   "room_name": "Room 1",
-  "contact_phone": "+359 88 123 4567"
+  "contact_phone": "+359 88 123 4567",
+  "room": {"width_m": 4.0, "depth_m": 3.5, "sensor": {"x_m": 0.2, "y_m": 0.0}, "transmitter": {"x_m": 3.8, "y_m": 3.5} | null} | null
 }
 ```
+
+`room` is the room drawn to scale, `null` until set. Metres; the origin is a
+corner, `x` along the width, `y` along the depth. `width_m`/`depth_m` 1–30, the
+sensor and transmitter inside the room; `PUT {"room": null}` clears it. It is
+for drawing only: the engine does not use it, and one link gives a distance
+from the sensor, never a direction.
 
 The PIN itself is never returned. Changing it: `PUT /settings` with
 `{"pin": "new"}` and the current PIN in the header.

@@ -2,7 +2,9 @@
 //   engine disconnected for > 10 s, no result for > 10 s, rate_hz < 50 for 60 s,
 //   or no device status for 10 s → sensor_offline in every profile. Cleared when
 //   results are healthy for 10 s. The 10 s grace on a disconnect means an engine
-//   restart, or the server starting before the engine, does not notify the phone.
+//   restart, or the server starting before the engine, does not notify the phone. Nothing
+//   is raised in the first 30 s after start-up either: a cold engine start (Python imports
+//   on Windows) can take longer than 10 s, and that is not an outage.
 import type { Result } from "@/lib/contracts.gen";
 
 export interface WatchdogSink {
@@ -17,6 +19,7 @@ export interface WatchdogOptions {
   noStatusMs?: number;
   healthyForMs?: number;
   disconnectGraceMs?: number;
+  startGraceMs?: number;
 }
 
 export class Watchdog {
@@ -27,6 +30,7 @@ export class Watchdog {
   private offline = false;
   private engineConnected = false;
   private disconnectedSince: number;
+  private readonly createdAt: number;
   private timer: NodeJS.Timeout | null = null;
   private readonly opt: Required<WatchdogOptions>;
   reason: string | null = null;
@@ -43,8 +47,10 @@ export class Watchdog {
       noStatusMs: opt.noStatusMs ?? 10_000,
       healthyForMs: opt.healthyForMs ?? 10_000,
       disconnectGraceMs: opt.disconnectGraceMs ?? 10_000,
+      startGraceMs: opt.startGraceMs ?? 30_000,
     };
-    this.disconnectedSince = this.now();
+    this.createdAt = this.now();
+    this.disconnectedSince = this.createdAt;
   }
 
   start(intervalMs = 1000): void {
@@ -86,6 +92,10 @@ export class Watchdog {
   tick(): void {
     const t = this.now();
     let reason: string | null = null;
+    if (t - this.createdAt < this.opt.startGraceMs) {
+      this.healthySince = null; // still starting up: neither healthy nor offline
+      return;
+    }
     if (!this.engineConnected) {
       if (t - this.disconnectedSince < this.opt.disconnectGraceMs) {
         this.healthySince = null; // not healthy, but not offline yet either

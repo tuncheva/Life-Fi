@@ -65,7 +65,7 @@ describe("Watchdog", () => {
     raised = [];
     cleared = 0;
     sink = { raise: (r) => raised.push(r), clear: () => cleared++ };
-    wd = new Watchdog(sink, () => now, { disconnectGraceMs: 0 });
+    wd = new Watchdog(sink, () => now, { disconnectGraceMs: 0, startGraceMs: 0 });
   });
 
   afterEach(() => {
@@ -225,7 +225,7 @@ describe("Watchdog", () => {
 
   it("waits 10 s after a disconnect by default (an engine restart is not an outage)", () => {
     wd.stop();
-    wd = new Watchdog(sink, () => now);
+    wd = new Watchdog(sink, () => now, { startGraceMs: 0 });
     wd.start();
     advance(9000);
     expect(raised).toEqual([]); // the server started first: no alarm yet
@@ -240,7 +240,7 @@ describe("Watchdog", () => {
 
   it("a reconnect inside the grace raises nothing", () => {
     wd.stop();
-    wd = new Watchdog(sink, () => now);
+    wd = new Watchdog(sink, () => now, { startGraceMs: 0 });
     wd.setEngineConnected(true);
     wd.start();
     healthyFor(3000);
@@ -254,7 +254,7 @@ describe("Watchdog", () => {
 
   it("honours custom thresholds", () => {
     wd.stop();
-    wd = new Watchdog(sink, () => now, { noResultMs: 2000, healthyForMs: 3000 });
+    wd = new Watchdog(sink, () => now, { noResultMs: 2000, healthyForMs: 3000, startGraceMs: 0 });
     wd.setEngineConnected(true);
     wd.start();
     wd.onResult(mkResult(now));
@@ -267,5 +267,26 @@ describe("Watchdog", () => {
     expect(cleared).toBe(0);
     healthyFor(1000);
     expect(cleared).toBe(1);
+  });
+
+  it("raises nothing in the first 30 s after start-up (a cold engine start is not an outage)", () => {
+    wd.stop();
+    wd = new Watchdog(sink, () => now);
+    wd.start();
+    advance(25_000);
+    expect(raised).toEqual([]); // the engine never connected, but we are still starting up
+    advance(6000);
+    expect(raised).toEqual(["engine disconnected"]);
+  });
+
+  it("start-up grace also covers a connected engine with no results yet", () => {
+    wd.stop();
+    wd = new Watchdog(sink, () => now);
+    wd.setEngineConnected(true);
+    wd.start();
+    advance(29_000);
+    expect(raised).toEqual([]);
+    advance(2000);
+    expect(raised).toEqual(["no result for 10 s"]);
   });
 });

@@ -11,10 +11,15 @@
     "dev:engine": "node scripts/engine.mjs",
     "dev:app": "npm run dev -w ui",
     "build": "npm run build -w ui",
-    "start": "concurrently -n engine,app -c magenta,green \"npm:dev:engine\" \"npm run start -w ui\"",
+    "start": "node scripts/start.mjs",
+    "start:engine": "node scripts/engine.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",
-    "test": "npm run test -w ui",
-    "lint": "npm run lint -w ui"
+    "test": "node scripts/test-all.mjs",
+    "test:ui": "npm run test -w ui",
+    "test:engine": "node scripts/test-all.mjs --only engine",
+    "typecheck": "npm run typecheck -w ui",
+    "lint": "npm run lint -w ui",
+    "check": "npm run lint && npm run typecheck && npm test"
   },
   "devDependencies": {
     "ajv": "^8.17.1",

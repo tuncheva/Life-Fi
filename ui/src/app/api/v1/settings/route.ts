@@ -1,5 +1,6 @@
-import { fail, read, readBody, write } from "@/server/http";
+import { fail, inRange, read, readBody, write } from "@/server/http";
 import { broadcastStatus } from "@/server/recordings";
+import { parseRoom } from "@/server/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,16 @@ export const PUT = write(async (ctx, req) => {
   if (typeof body.dashboard_url === "string") patch.dashboard_url = body.dashboard_url.trim();
   if (typeof body.room_name === "string" && body.room_name.trim()) patch.room_name = body.room_name.trim().slice(0, 40);
   if (typeof body.contact_phone === "string") patch.contact_phone = body.contact_phone.replace(/[^+\d\s()-]/g, "").trim().slice(0, 30);
-  if (typeof body.retention_days === "number" && body.retention_days >= 1) patch.retention_days = Math.round(body.retention_days);
+  if (body.retention_days !== undefined) {
+    const days = inRange(body.retention_days, 1, 3650);
+    if (days === null) return fail(400, "bad_request", "retention_days must be 1 to 3650");
+    patch.retention_days = Math.round(days);
+  }
+  if (body.room !== undefined) {
+    const room = body.room === null ? null : parseRoom(body.room);
+    if (typeof room === "string") return fail(400, "bad_request", room);
+    patch.room = room;
+  }
   if (body.notify && typeof body.notify === "object") {
     const n = body.notify as Record<string, unknown>;
     const notify: Record<string, unknown> = {};

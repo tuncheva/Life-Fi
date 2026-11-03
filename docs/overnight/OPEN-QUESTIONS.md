@@ -83,3 +83,11 @@ Each item: what was decided in the meantime, and what we need from you.
 - **Voice.** *Decided:* the phone/browser speaks the prompts; optional "also speak
   from the dashboard PC" (Windows voice, off by default). *Need:* which device you
   will carry while recording.
+
+## Track C (production readiness)
+
+- **Distance in history rows.** *Deferred:* needs a SQLite column migration in `store.ts`. *Need:* is it worth it (history shows presence/motion/breathing today)?
+- **PIN hashing.** *Decided:* the PIN stays plain text in `data/settings.json` tonight (migration + recovery story). Wrong PINs are now rate-limited and compared in constant time. *Need:* hash it (and how to recover a forgotten PIN)?
+- **Windows CI.** *Decided:* CI stays on ubuntu. *Need:* add a Windows job (the appliance runs on Windows; `start.mjs` has Windows-only paths)?
+- **JSON logs.** *Decided:* plain text lines in `data/logs/lifefi-<date>.log`. *Need:* a JSON format for a log shipper?
+- **Default bind.** *Decided:* `npm run start` listens on `127.0.0.1` only (reads are open and live presence is personal data); `LIFEFI_HOST=0.0.0.0` opens it to phones. *Need:* confirm, or default to the LAN?

@@ -1,5 +1,5 @@
 import type { CalibrationJob } from "@/server/context";
-import { fail, readBody, write } from "@/server/http";
+import { fail, inRange, readBody, write } from "@/server/http";
 import { broadcastStatus } from "@/server/recordings";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,8 @@ export const POST = write(async (ctx, req) => {
   const body = await readBody(req);
   const kind = typeof body.kind === "string" ? body.kind : "empty";
   if (!["empty", "bed_empty", "bed_occupied"].includes(kind)) return fail(400, "bad_request", "kind must be empty, bed_empty or bed_occupied");
-  const duration = typeof body.duration_s === "number" ? body.duration_s : 120;
+  const duration = body.duration_s === undefined ? 120 : inRange(body.duration_s, 10, 1800);
+  if (duration === null) return fail(400, "bad_request", "duration_s must be 10 to 1800 s");
   if (!ctx.engine.connected) return fail(503, "engine_offline", "engine is not connected");
   if (ctx.state.calibration?.state === "running") return fail(409, "conflict", "a calibration is already running");
   // The ack arrives when the calibration finishes (or at once if refused);

@@ -2,8 +2,8 @@
 // writes session.json at start and appends labels.jsonl. Segments are
 // non-overlapping: starting one ends the open one.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { config } from "./config";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { config, repoRoot } from "./config";
 import { buildStatus, type AppContext } from "./context";
 
 export const SEGMENT_LABELS = ["empty", "standing", "sitting", "lying", "walking", "normal_activity", "in_bed", "bed_empty", "breath_hold"];
@@ -14,6 +14,21 @@ export const validEvent = (e: string) => MARK_EVENTS.includes(e) || /^hard_negat
 export const sessionsDir = () => join(config.dataDir, "sessions");
 export const sessionDir = (s: string) => join(sessionsDir(), s);
 export const labelsPath = (s: string) => join(sessionDir(s), "labels.jsonl");
+
+/**
+ * The absolute path of a replay file the dashboard may ask for, else null: a .csirec under
+ * firmware/recordings/ or the sessions folder (the engine opens any path it is given).
+ * Relative paths are from the repo root, as the engine sees them.
+ */
+export function replayPath(file: string, root = repoRoot, dataDir = config.dataDir): string | null {
+  const p = resolve(root, file);
+  if (!p.toLowerCase().endsWith(".csirec")) return null;
+  const inside = (dir: string) => {
+    const r = relative(dir, p);
+    return r !== "" && !r.startsWith("..") && !isAbsolute(r);
+  };
+  return [resolve(root, "firmware", "recordings"), resolve(dataDir, "sessions")].some(inside) ? p : null;
+}
 
 export function appendLabel(ctx: AppContext, s: string, line: Record<string, unknown>): void {
   mkdirSync(sessionDir(s), { recursive: true });

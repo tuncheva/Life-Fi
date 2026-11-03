@@ -565,3 +565,38 @@ root `package.json`, `.github/workflows/ci.yml`, `ui/src/instrumentation.ts`,
 `ui/test/**`, `contracts/api.md` (outside the ownership table; Track C documents
 its own routes there — report it), `docs/ops/README.md`, root `README.md` (one link),
 `docs/overnight/OPEN-QUESTIONS.md` (append only).
+
+## Worker report
+
+**Shipped (every item, P1-P3):**
+- A: `npm run start` = `scripts/start.mjs` (checks the setup first, supervises engine and app with 1 to 30 s backoff, exit 2 stops it, graceful/forced stop, binds `127.0.0.1` by default). The python lookup moved to `scripts/python.mjs`. `npm run dev` is unchanged.
+- B: `loadConfig()` never throws; it returns `problems`. `runtime.start()` throws `ConfigError`, `instrumentation.ts` logs it and the API answers `500 {"error":"config"}`.
+- C: `GET /api/v1/health` (plus `?soft=1` for B2's polling) and `GET /api/v1/setup`, both with the frozen shapes.
+- J: the watchdog waits 30 s after start before it raises anything.
+- D: every handler returns error JSON (`internal` / `config` / engine); malformed JSON gets 400, bodies over 64 KB get 413; added the bounds; replay paths are allowlisted (`replayPath` in recordings.ts); `/live` goes through `read()`.
+- E: `scripts/test-all.mjs` (10 min timeout per script: test_engine alone takes about 5 min under load); CI uses it, with pip cache, `workflow_dispatch` and `concurrency`.
+- F: `docs/ops/README.md`, linked from the root README.
+- G: the PIN compare is constant time; one global limiter (5 wrong PINs locks writes for 60 s, doubling up to 1 h); a warning is logged while the PIN is the default.
+- K: `GET /api/v1/position`. It returns `loso_bal_acc`, not `holdout_accuracy`, as track A asked.
+- L: `Settings.room`.
+- H: the log tee writes to `data/logs/` and keeps 14 days.
+- I: the lint warning is fixed. The NFT trace warning is left as it is: `turbopackIgnore` is documented only for imports.
+
+**Validator:** `validate.ts` compiles `results.schema.json` at start, so A's schema change is all it takes; it does need an app restart to load. The new `test/validate.test.ts` checks every fixture, including `position_quality.json`.
+
+**Checks:** tsc clean, lint clean (0 warnings), vitest 12+ files pass, check-contracts ok, `npm test` 16 pass / 1 skip / 0 fail, `npm run build` passes (port 3000 was free).
+
+**Live run on port 3100 with a replay:**
+- health: ready=true; setup: board done=false with the replay reason; position works; SSE streams.
+- Malformed JSON and `../../Windows/win.ini` both get 400.
+- Killing the engine gave "restarting in 1 s" and it reconnected.
+- `--bogus-flag` exits 2 with no restart.
+- `LIFEFI_ENGINE_PORT=abc` makes the API answer 500 config JSON.
+- After `taskkill /T` nothing is left running.
+
+**Not verified:**
+- A console Ctrl+C: it could not be sent from the agent shell.
+- CI on GitHub.
+- The board, the driver and Task Scheduler.
+
+**Other tracks:** B can use `/setup`, `/health?soft=1`, `/position` and `Settings.room`. `contracts/api.md` was edited (outside the ownership table).
