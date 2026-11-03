@@ -3,10 +3,10 @@
 // a short timeline of what happened and what was done about it. Short events
 // that cleared before alerting are hidden unless asked for.
 import { useEffect, useState } from "react";
-import { getAlerts, getSettings, type Alert } from "@/lib/api";
-import { useLive } from "@/lib/live";
+import { getAlerts, getSettings, type Alert, type ProfileName } from "@/lib/api";
+import { useLiveSlow } from "@/lib/live";
 import { roomName, alertTitle, clearedText, clock, duration, levelText } from "@/lib/words";
-import { Icon, Notice, Pill, type PillTone } from "@/components/ui";
+import { Icon, Notice, Pill, Skeleton, type PillTone } from "@/components/ui";
 
 const STATE: Record<Alert["state"], { text: string; tone: PillTone }> = {
   pending: { text: "Checking", tone: "warn" },
@@ -66,8 +66,15 @@ function story(a: Alert, phoneSetUp: boolean | null): { steps: Step[]; summary: 
   return { steps, summary };
 }
 
+/** What would raise an alert, per profile (contracts/profiles.yml), for the empty state. */
+const RAISES: Record<ProfileName, string> = {
+  home: "An alert opens for a possible fall, no movement after a fall, breathing that seems to stop, a long time without movement, or the sensor going offline.",
+  clinic: "An alert opens for a possible fall, breathing that seems to stop, leaving the bed at night, or the sensor going offline.",
+  school: "An alert opens for a possible fall, someone in the room after hours, or the sensor going offline.",
+};
+
 export default function AlertsPage() {
-  const { alerts: live, status } = useLive();
+  const { alerts: live, status } = useLiveSlow();
   const [history, setHistory] = useState<Alert[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [showDropped, setShowDropped] = useState(false);
@@ -112,12 +119,22 @@ export default function AlertsPage() {
       </div>
 
       {failed && <Notice tone="danger">Can&apos;t load the alert history. Check that this device can reach the Life-Fi box.</Notice>}
-      {!history && !failed && <p className="text-sm text-muted">Loading alerts…</p>}
+      {!history && !failed && (
+        <div className="space-y-3" aria-busy="true">
+          <span className="sr-only" role="status">
+            Loading alerts…
+          </span>
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-24 w-full rounded-card" />
+          <Skeleton className="h-24 w-full rounded-card" />
+        </div>
+      )}
       {history && list.length === 0 && (
         <div className="rounded-card border border-line bg-surface p-6 text-center">
           <Icon name="check" className="mx-auto h-8 w-8 text-ok" />
           <p className="mt-2 font-semibold">No alerts yet</p>
           <p className="text-sm text-muted">When something happens it is listed here, with when the phone was told and who acknowledged it.</p>
+          <p className="mt-2 text-sm text-muted">{RAISES[status?.server.profile ?? "home"]}</p>
         </div>
       )}
 

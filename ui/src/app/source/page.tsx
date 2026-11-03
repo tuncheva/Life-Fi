@@ -4,14 +4,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getRecordings, setSource, startRecording, stopRecording, type RecordingInfo } from "@/lib/api";
-import { useLive } from "@/lib/live";
+import { useLiveSlow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
-import { Card, Notice, Pill, btn, inputCls } from "@/components/ui";
+import { Card, Notice, PageSkeleton, Pill, btn, inputCls } from "@/components/ui";
 
 const SPEEDS = [0.5, 1, 2, 4];
 
 export default function SourcePage() {
-  const { status } = useLive();
+  const { status } = useLiveSlow();
   const { withPin } = usePin();
   const source = status?.source;
   const [recordings, setRecordings] = useState<RecordingInfo[]>([]);
@@ -46,6 +46,8 @@ export default function SourcePage() {
 
   const replay = source?.mode === "replay";
   const files = recordings.filter((r) => r.file);
+
+  if (!status) return <PageSkeleton title="Source & replay" />;
 
   return (
     <div className="grid gap-4 md:grid-cols-2">

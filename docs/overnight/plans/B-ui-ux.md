@@ -400,3 +400,54 @@ only if time is left.
 | B2 | B2.1 15, B2.2 75, B2.3 20, B2.4 20, verify 15 | ≈ 2 h 25 |
 
 Not done at the hard stop → "not done" in the report.
+
+## Worker B2 report
+
+**Shipped**
+- B2.1 nav: consumer nav is Room + Alerts; Setup menu (icon-only summary on phones, `aria-expanded` mirrors `<details>`, items ≥ 44 px, scrolls if tall) lists Set up this room, Source & replay, Labelling, Settings, Spot model view (/model), Emergency (building demo, simulated), Presentation mode, sound, theme. Status pills are a leaf (`useResult`), header reads `useLiveSlow`. "Sensor software not running" bar steps back when a `sensor_offline` alert is open/acked; replay bar unchanged. Sound question is now an inline notice at the top of `<main>` (`SoundQuestion` in layout), never on /present, never fixed. `AlertBanner`, `sound.tsx` on `useLiveSlow`.
+- B2.2 `/setup` wizard (`app/setup/page.tsx` in Suspense, `components/setup/*`, `lib/setup.ts`): vertical stepper, `?step=` opens + scrolls to a step, live check list (`role="status"`), C's `/health` + `/setup` polled every 5 s while visible (verified live: both answer; 503 body of /health read as data), falls back to the live stream on 404/error. Steps: sensor, room + transmitter (`writeRoomGeometry`, room name via `updateSettings` + PIN), calibration (60/120 s, countdown + outcome from `calibration_job`, 409 joins, 503 → back to step 1), distance fit (25 s countdown then `POST /position/fit`, local `fitDistance`), spots link card, done (summary, C's pin/notify/lan todos, stores `lifefi.setup`). "Finish setup" pill in the header (server `complete`, else local record + calibration), fetched on mount and on calibration/local change.
+- B2.3: `app/error.tsx` (Next 16 `retry` prop), `app/not-found.tsx`; skeletons on settings/alerts/source/label; alerts empty state says what raises an alert per profile; Settings "Re-run setup" + "Recalibrate" → `/setup?step=calibrate`, no "—" in the engine card.
+- B2.4: `btn.*` / `btn.segment` ≥ 44 px (`min-h-11`, affects every page using them); `[id]` scroll-margin for the sticky header; global `prefers-reduced-motion` rule. Token contrast measured, all ≥ 4.5:1 (light subtle/surface-2 4.8, dark 5.25), no token change. Step/check ticks use the soft tokens (white on dark-theme `--ok` was 1.7:1).
+
+**Checks**: `npx tsc --noEmit` clean; `npx vitest run` 12 files / 138 tests green (`test/setup.test.ts` 25 new); `npm run lint -w ui` 0 errors (warnings only in B1/C files). Browser: /setup, /alerts, /settings, /source, /label, /emergency, 404 at 375 px `scrollWidth === 375`, light + dark, 1280 light; no hydration errors on /setup.
+
+**Not done / dropped**: did not press Start on calibration or distance fit against the shared replay engine (would rewrite the engine's baseline under B1/A); the POST paths are covered only by type + manual reading. F7 theme-script warning left as is: the Next 16 guide (`preventing-flash-before-hydration.md`) prescribes exactly this inline script; the warning appears only after a client re-render (seen after /present's hydration error). Screenshots skipped. Dev server on :3000 was started by B2 (`npm run dev:app`) and left running for B1; it has since exited (stopped from outside, no error in the log before the exit), so nothing is left on :3000.
+
+**Cross-file requests**
+- B1: `words.ts` reasons → link `/setup?step=transmitter|fit|calibrate|sensor` (all four ids parse). `/present` hydration error on the clock still seen once in this session (may predate B1.5).
+- C: `/api/v1/health` returns 503 while the engine is down, so every 5 s poll logs a red "Failed to load resource" in the browser console on /setup; harmless, but a 200 with `ok:false` would keep consoles clean. Room geometry in server settings (plan §6.1) would let setup save it for all devices.
+
+## Worker B1 report
+
+**Shipped (B1.0–B1.6, all steps):**
+- B1.0 shared contracts (landed first): `lib/room.ts` (`RoomGeometry`, `DEFAULT_ROOM`,
+  `readRoomGeometry` / `writeRoomGeometry`, migrates `lifefi.routerDistance` once, fires a
+  same-tab `lifefi:room` event); `live.tsx` with two real contexts. `useLiveSlow()`,
+  `useResult()`, `useMounted()` (useSyncExternalStore), `positionHeldSince`; `useLive()` API unchanged.
+- B1.1 `positionView()` + `whereText()` / `reasonLinks()` / `REASON_TEXT` in `words.ts`,
+  reading A's optional fields through a narrow local type. `WhereState.here` also carries
+  `reasons`, and the spot carries its taught `d`. `test/room.test.ts`: 20 tests.
+- B1.2 `components/RoomView.tsx`: SVG with the occupancy fill, the quality-labelled distance
+  band (CSS `r` transition, off under reduced motion), zone rings, scale bar, transmitter,
+  spot tick (reliable only) and a "Recording" tag. Also exports `useRoomStatus`, `useWhere`, `useRoomGeometry`.
+- B1.3 RoomCard where-block (aria-live sentence, drawing, "Fix" links to
+  `/setup?step=transmitter|fit|calibrate|sensor`), F4 band removed for `sensor_offline`, F1 grids.
+- B1.4 LiveViews is a closed `<details>`, mounted only when open (no three.js on `/` verified),
+  open by default on `/model`. Room3D takes the transmitter distance from the room geometry and shows the quality word.
+- B1.5 /present: NOT WATCHING / STARTING / REPLAY / LIVE pill, clock only after mount, RoomView +
+  where-sentence, made responsive (375 px no overflow).
+- B1.6 Timeline ResizeObserver. Dashboards and pages read `useLiveSlow()`.
+
+**Checks:** tsc clean; vitest 12 files / 138 tests pass; lint clean. Browser: `/`, `/present`,
+`/model` at 375 and 1280, light and dark, with the engine offline and on the spots replay:
+scrollWidth equals clientWidth, no hydration errors on a fresh load. `next build` not run
+(orchestrator runs it).
+
+**Not verified:** the distance band live. On the spots replay the engine sent
+`position: null` all through (A's side), so only the unit tests cover the band and quality states.
+
+**Dropped / left:** `/present` page and `RoomCard` still read `result` (via `useRoomStatus`).
+They are leaf-level enough, but /present re-renders at 2 Hz.
+
+**Cross-file requests:** B2: none outstanding (both of its requests were already in).
+C/A: `position` stayed null on `spots-20261031-192549` for the whole replay; worth a look.

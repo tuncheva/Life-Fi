@@ -1,18 +1,20 @@
 "use client";
 // One dashboard per profile (plan-v2 §11). The engine output is the same; the
 // profile decides what is shown. Order by what the reader needs first
-// (docs/plan/ui-ux.md §4.3): room state, then breathing, then the three live
-// views, then the day, then the technical section for installers.
+// (docs/plan/ui-ux.md §4.3): room state and where, then breathing, then the
+// day, then the installer sections (3D views, sensor details), both closed.
+// These components read useLiveSlow() only: the 2 Hz result re-renders the
+// leaf cards, not the page (plan B1.6).
 import { useEffect, useState } from "react";
 import { getProfile, type ProfileView } from "@/lib/api";
-import { useLive, useNow } from "@/lib/live";
+import { useLiveSlow, useNow } from "@/lib/live";
 import { BreathingCard, CsiHeatmap, DetectorCard, HealthCard, RoomCard, SensorDetails } from "./Cards";
 import { LiveViews } from "./LiveViews";
 import type { PositionSource } from "./Room3D";
 import { Timeline } from "./Timeline";
 
 function useProfileView(): ProfileView | null {
-  const { status } = useLive();
+  const { status } = useLiveSlow();
   const [view, setView] = useState<ProfileView | null>(null);
   useEffect(() => {
     getProfile().then(setView).catch(() => {});
@@ -32,13 +34,13 @@ function Details() {
 
 export function HomeDashboard({ source = "distance" }: { source?: PositionSource }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 [&>*]:min-w-0">
       <div className="lg:col-span-2">
         <RoomCard />
       </div>
       <BreathingCard />
-      <LiveViews source={source} />
       <Timeline />
+      <LiveViews source={source} />
       <Details />
     </div>
   );
@@ -46,13 +48,13 @@ export function HomeDashboard({ source = "distance" }: { source?: PositionSource
 
 export function ClinicDashboard({ source = "distance" }: { source?: PositionSource }) {
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 [&>*]:min-w-0">
       <div className="lg:col-span-2">
         <RoomCard />
       </div>
       <BreathingCard />
-      <LiveViews source={source} />
       <Timeline />
+      <LiveViews source={source} />
       <Details />
     </div>
   );
@@ -60,17 +62,17 @@ export function ClinicDashboard({ source = "distance" }: { source?: PositionSour
 
 export function SchoolDashboard({ source = "distance" }: { source?: PositionSource }) {
   const view = useProfileView();
-  const { status } = useLive();
+  const { status } = useLiveSlow();
   const now = useNow(30_000);
   const after = view?.profiles.school.occupancy?.after_hours;
   const inAfterHours = after ? inside(after.from, after.to, minutesOfDayIn(status?.server.time_zone, now)) : false;
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 [&>*]:min-w-0">
       <div className="lg:col-span-3">
         <RoomCard afterHours={after ? { from: after.from, to: after.to, now: inAfterHours } : null} />
       </div>
-      <LiveViews source={source} />
       <Timeline showPosture={false} />
+      <LiveViews source={source} />
       <Details />
     </div>
   );

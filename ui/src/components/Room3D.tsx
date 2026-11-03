@@ -10,6 +10,8 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { useLive } from "@/lib/live";
+import { qualityOf } from "@/lib/room";
+import { useRoomGeometry } from "./RoomView";
 import { attachOrbit, hasWebGL, placeCamera, type Orbit } from "@/lib/orbit";
 import { token, useResolvedTheme } from "@/lib/useTheme";
 
@@ -28,23 +30,13 @@ const ZONE_TEXT = { near: "Near the sensor", middle: "Middle of the room", far: 
 export type PositionSource = "distance" | "model";
 
 const zoneOf = (d: number | null) => (d === null ? null : d < 1.5 ? "near" : d < 3.5 ? "middle" : "far");
-const ROUTER_KEY = "lifefi.routerDistance";
-const ROUTER_CHOICES = [2, 3, 5];
-
-function readRouterDistance(): number {
-  try {
-    const v = Number(localStorage.getItem(ROUTER_KEY));
-    return ROUTER_CHOICES.includes(v) ? v : 3;
-  } catch {
-    return 3;
-  }
-}
 
 export function Room3D({ className = "h-72", source = "distance" }: { className?: string; source?: PositionSource }) {
   const { buffers, result } = useLive();
   const host = useRef<HTMLDivElement>(null);
   const theme = useResolvedTheme();
-  const [routerD, setRouterD] = useState(readRouterDistance);
+  // the transmitter distance is set in /setup (lib/room.ts); 3 m until it is
+  const routerD = useRoomGeometry().tx_m ?? 3;
   const [webgl] = useState(hasWebGL);
 
   useEffect(() => {
@@ -233,14 +225,6 @@ export function Room3D({ className = "h-72", source = "distance" }: { className?
   const pos = result?.position ?? null;
   const n = pos ? Math.max(pos.valid ? 1 : 0, pos.people) : 0;
   const spot = pos?.spot ?? null;
-  const pickRouter = (d: number) => {
-    setRouterD(d);
-    try {
-      localStorage.setItem(ROUTER_KEY, String(d));
-    } catch {
-      /* private mode: just this page */
-    }
-  };
 
   return (
     <div>
@@ -274,7 +258,7 @@ export function Room3D({ className = "h-72", source = "distance" }: { className?
             <>
               {n > 1 ? `${n >= MAX_MARKERS ? `${MAX_MARKERS}+` : n} people · ` : ""}
               {pos.zone ? `${ZONE_TEXT[pos.zone]} · ` : ""}
-              {pos.d_m.toFixed(1)} m <span className="font-normal text-muted">± {pos.d_sd?.toFixed(1) ?? "?"} m</span>
+              {pos.d_m.toFixed(1)} m <span className="font-normal text-muted">± {pos.d_sd?.toFixed(1) ?? "?"} m · quality {qualityOf(pos)}</span>
               {pos.held && <span className="block text-xs font-normal text-muted">Standing still: last position while moving</span>}
             </>
           ) : (
@@ -283,12 +267,12 @@ export function Room3D({ className = "h-72", source = "distance" }: { className?
         </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-subtle">
-        <span>Router</span>
-        {ROUTER_CHOICES.map((d) => (
-          <button key={d} type="button" onClick={() => pickRouter(d)} className={`rounded-md px-2 py-0.5 font-medium ${d === routerD ? "bg-fg text-bg" : "text-muted hover:bg-surface-2"}`}>
-            {d} m
-          </button>
-        ))}
+        <span>
+          Transmitter at {routerD} m{" "}
+          <a href="/setup?step=transmitter" className="text-link hover:underline">
+            change
+          </a>
+        </span>
         <span className="ml-auto">drag to turn · scroll to zoom</span>
       </div>
       <div className="mt-2 flex flex-wrap gap-3 text-xs text-subtle">

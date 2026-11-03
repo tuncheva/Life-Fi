@@ -2,10 +2,10 @@
 // The dashboard again, with the 3D view driven by the taught-spot model
 // (engine/lifefi/spots.py) instead of the distance estimate, to compare the two.
 import { ClinicDashboard, HomeDashboard, SchoolDashboard } from "@/components/Dashboards";
-import { useLive } from "@/lib/live";
+import { useLiveSlow } from "@/lib/live";
 
 export default function ModelDashboardPage() {
-  const { status } = useLive();
+  const { status } = useLiveSlow();
   switch (status?.server.profile) {
     case "clinic":
       return <ClinicDashboard source="model" />;

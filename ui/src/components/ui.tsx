@@ -60,10 +60,10 @@ export const TONE_CLASS: Record<Tone, { solid: string; soft: string; text: strin
 };
 
 export const btn = {
-  primary: "inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
-  secondary: "inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm font-semibold hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40",
-  danger: "inline-flex items-center justify-center gap-2 rounded-lg bg-danger px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40",
-  segment: (on: boolean) => `rounded-md px-2.5 py-1 text-xs font-medium ${on ? "bg-fg text-bg" : "text-muted hover:bg-surface-2"}`,
+  primary: "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
+  secondary: "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm font-semibold hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40",
+  danger: "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-danger px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40",
+  segment: (on: boolean) => `min-h-11 rounded-md px-2.5 py-1 text-xs font-medium ${on ? "bg-fg text-bg" : "text-muted hover:bg-surface-2"}`,
 };
 
 export const inputCls = "mt-1 block w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm placeholder:text-subtle";
@@ -238,3 +238,29 @@ export function Icon({ name, className = "h-5 w-5", ...rest }: { name: IconName 
 }
 
 export const TONE_ICON: Record<Tone, IconName> = { present: "person", empty: "empty", uncertain: "question", offline: "signal-off", connecting: "hourglass" };
+
+/** Placeholder blocks while the first status has not arrived, instead of "—" and wrong defaults. */
+export function Skeleton({ className = "h-4 w-full" }: { className?: string }) {
+  return <div aria-hidden className={`animate-pulse rounded-lg bg-surface-2 ${className}`} />;
+}
+
+/** A page's title with skeleton cards under it, while the box has not answered yet. */
+export function PageSkeleton({ title, cards = 2 }: { title: string; cards?: number }) {
+  return (
+    <div aria-busy="true">
+      <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+      <p className="mt-1 text-sm text-muted" role="status">
+        Connecting to the Life-Fi box…
+      </p>
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {Array.from({ length: cards }, (_, i) => (
+          <div key={i} className="space-y-3 rounded-card border border-line bg-surface p-4 sm:p-5">
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-8 w-2/3" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

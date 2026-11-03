@@ -3,7 +3,7 @@
 // capped at 5 s, a `connected` flag for the "connection lost" state, and
 // ref-held ring buffers for the breathing wave and the CSI heatmap so canvases
 // can draw on requestAnimationFrame without re-rendering React.
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { getAlerts, getHistory, getStatus, LIVE_URL, type Alert, type Status, type WsMessage } from "./api";
 import type { Result } from "./contracts.gen";
 import type { PresenceSince } from "./words";
@@ -89,7 +89,12 @@ export interface LiveState {
   presenceSince: PresenceSince | null;
   buffers: LiveBuffers;
   refreshAlerts: () => Promise<void>;
+  /** When position.held last flipped false → true (the person stood still), null while not held. */
+  positionHeldSince: number | null;
 }
+
+/** Everything but the 2 Hz result: changes only on status, alert and presence changes. */
+export type LiveSlowState = Omit<LiveState, "result">;
 
 const HISTORY_ROW_MS = 5000;
 
@@ -107,7 +112,10 @@ async function seedPresenceSince(state: PresenceSince["state"], now: number): Pr
   }
 }
 
-const LiveContext = createContext<LiveState | null>(null);
+// Two contexts so a component that does not draw the result does not re-render at 2 Hz
+// (plan B1.6): page-level components read useLiveSlow(), only leaf views read useResult().
+const LiveSlowContext = createContext<LiveSlowState | null>(null);
+const LiveResultContext = createContext<Result | null>(null);
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
@@ -116,6 +124,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [cleared, setCleared] = useState<Alert[]>([]);
   const [presenceSince, setPresenceSince] = useState<PresenceSince | null>(null);
+  const [positionHeldSince, setPositionHeldSince] = useState<number | null>(null);
+  const lastHeld = useRef(false);
   const lastPresence = useRef<PresenceSince["state"] | null>(null);
   // Once the server reports presence changes itself (Status.presence), history seeding is not needed.
   const serverPresence = useRef(false);
@@ -170,6 +180,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             buffers.wave.clear();
             buffers.csi.clear();
             buffers.signals.clear();
+            lastHeld.current = false;
+            setPositionHeldSince(null);
           }
           lastBoot.current = m.boot_id;
           lastSource.current = m.source;
@@ -177,6 +189,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           else for (let i = 0; i < WAVE_HZ * TICK_S; i++) buffers.wave.push(null); // keep the time axis true
           for (const row of m.csi) buffers.csi.push(row);
           const pos = m.position ?? null;
+          const held = !!(pos?.valid && pos.held);
+          if (held !== lastHeld.current) {
+            lastHeld.current = held;
+            setPositionHeldSince(held ? m.ts : null);
+          }
           buffers.signals.push({
             t: m.ts,
             M: m.presence.M,
@@ -241,22 +258,45 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const dismissCleared = (id: string) => setCleared((prev) => prev.filter((a) => a.id !== id));
-  const value = useMemo<LiveState>(
-    () => ({ connected, result, status, alerts, cleared, dismissCleared, presenceSince, buffers, refreshAlerts }),
-    [connected, result, status, alerts, cleared, presenceSince, buffers],
+  const slow = useMemo<LiveSlowState>(
+    () => ({ connected, status, alerts, cleared, dismissCleared, presenceSince, buffers, refreshAlerts, positionHeldSince }),
+    [connected, status, alerts, cleared, presenceSince, buffers, positionHeldSince],
   );
-  return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
+  return (
+    <LiveSlowContext.Provider value={slow}>
+      <LiveResultContext.Provider value={result}>{children}</LiveResultContext.Provider>
+    </LiveSlowContext.Provider>
+  );
 }
 
-export function useLive(): LiveState {
-  const v = useContext(LiveContext);
-  if (!v) throw new Error("useLive must be used inside <LiveProvider>");
+/** Everything but the result; does not re-render on every 0.5 s result. */
+export function useLiveSlow(): LiveSlowState {
+  const v = useContext(LiveSlowContext);
+  if (!v) throw new Error("useLiveSlow must be used inside <LiveProvider>");
   return v;
+}
+
+/** The latest result (2 Hz); read it only in leaf components. */
+export function useResult(): Result | null {
+  return useContext(LiveResultContext);
+}
+
+/** The whole live state, result included: re-renders at 2 Hz. */
+export function useLive(): LiveState {
+  const slow = useLiveSlow();
+  const result = useResult();
+  return useMemo(() => ({ ...slow, result }), [slow, result]);
+}
+
+const noSubscribe = () => () => {};
+/** False during the server render and hydration, true after: for values that differ between them (clocks). */
+export function useMounted(): boolean {
+  return useSyncExternalStore(noSubscribe, () => true, () => false);
 }
 
 /** Which optional outputs the engine publishes (get_status outputs); all of them when it does not say. */
 export function usePublished(): { posture: boolean; count: boolean; activity: boolean } {
-  const { status } = useLive();
+  const { status } = useLiveSlow();
   const o = status?.engine.status?.outputs;
   return { posture: o?.posture ?? true, count: o?.count ?? true, activity: o?.activity ?? true };
 }

@@ -6,10 +6,10 @@
 // large "last press" confirmation (docs/plan/ui-ux.md §4.10).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addMark, endSegment, getLabels, startRecording, startSegment, stopRecording, type LabelLine } from "@/lib/api";
-import { useLive, useNow } from "@/lib/live";
+import { useLiveSlow, useNow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
 import { clock } from "@/lib/words";
-import { Card, Kbd, Notice, Pill, btn, inputCls } from "@/components/ui";
+import { Card, Kbd, Notice, PageSkeleton, Pill, btn, inputCls } from "@/components/ui";
 
 const SEGMENTS: { label: string; key: string }[] = [
   { label: "empty", key: "1" },
@@ -40,7 +40,7 @@ function fmtUs(us: number): string {
 }
 
 export default function LabelPage() {
-  const { status } = useLive();
+  const { status } = useLiveSlow();
   const { withPin } = usePin();
   const rec = status?.recording ?? null;
   const live = status?.source.mode === "live";
@@ -131,6 +131,8 @@ export default function LabelPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [rec]);
+
+  if (!status) return <PageSkeleton title="Labelling" />;
 
   if (!rec) {
     const validId = /^[\w-]+$/.test(session);

@@ -3,11 +3,12 @@
 // notifications through ntfy, time zone, dashboard URL for the notification's
 // click / acknowledge action, retention, and the PIN itself.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { API_BASE, getDeviceName, getPin, getSettings, setDeviceName, setPin, setProfile, testNotification, updateSettings, type ProfileName, type PublicSettings } from "@/lib/api";
-import { useLive } from "@/lib/live";
+import { useLiveSlow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
-import { PROFILE_TEXT } from "@/lib/words";
-import { Card, Notice, Pill, btn, inputCls } from "@/components/ui";
+import { calibrationText, PROFILE_TEXT } from "@/lib/words";
+import { Card, Notice, Pill, Skeleton, btn, inputCls } from "@/components/ui";
 
 function randomTopic(): string {
   const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -23,7 +24,7 @@ const PROFILE_DETAIL: Record<ProfileName, string> = {
 };
 
 export default function SettingsPage() {
-  const { status } = useLive();
+  const { status } = useLiveSlow();
   const { withPin } = usePin();
   const [saved, setSaved] = useState<PublicSettings | null>(null);
   const [form, setForm] = useState<PublicSettings | null>(null);
@@ -89,9 +90,14 @@ export default function SettingsPage() {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <div className="md:col-span-2">
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted">Changes need the dashboard PIN.</p>
+      <div className="flex flex-wrap items-end gap-3 md:col-span-2">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+          <p className="text-sm text-muted">Changes need the dashboard PIN.</p>
+        </div>
+        <Link href="/setup" className={btn.secondary}>
+          Re-run setup
+        </Link>
       </div>
 
       <Card title="Where is this sensor installed?" className="md:col-span-2">
@@ -123,7 +129,13 @@ export default function SettingsPage() {
 
       <Card title="Phone notifications" className="md:col-span-2">
         {loadFailed && <Notice tone="danger">Can&apos;t load the settings. Check that this device can reach the Life-Fi box.</Notice>}
-        {!form && !loadFailed && <div className="text-sm text-muted">Loading…</div>}
+        {!form && !loadFailed && (
+          <div className="space-y-3" aria-busy="true">
+            <Skeleton className="h-6 w-1/2" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        )}
         {form && (
           <>
             <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -225,20 +237,31 @@ export default function SettingsPage() {
       </Card>
 
       <Card title="Server and engine">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
-          <dt className="text-muted">Server</dt>
-          <dd>{status?.server.version ?? "—"}</dd>
-          <dt className="text-muted">Engine</dt>
-          <dd>{status?.engine.status?.version ?? (status?.engine.connected === false ? "not running" : "—")}</dd>
-          <dt className="text-muted">Models</dt>
-          <dd>{status?.engine.status?.models.map((m) => `${m.name}${m.loaded ? "" : " (not loaded)"}`).join(", ") || "—"}</dd>
-          <dt className="text-muted">Calibration</dt>
-          <dd>
-            {status?.engine.status?.calibration.state ?? "—"} {status?.engine.status?.calibration.id ?? ""}
-          </dd>
-          <dt className="text-muted">Time zone</dt>
-          <dd>{status?.server.time_zone ?? "—"}</dd>
-        </dl>
+        {!status ? (
+          <div className="space-y-2" aria-busy="true">
+            {[0, 1, 2, 3, 4].map((k) => (
+              <Skeleton key={k} className="h-5 w-full" />
+            ))}
+          </div>
+        ) : (
+          <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1.5 text-sm">
+            <dt className="text-muted">Server</dt>
+            <dd>{status.server.version}</dd>
+            <dt className="text-muted">Engine</dt>
+            <dd>{status.engine.status?.version ?? (status.engine.connected ? "connected" : "not running")}</dd>
+            <dt className="text-muted">Models</dt>
+            <dd>{status.engine.status?.models.map((m) => `${m.name}${m.loaded ? "" : " (not loaded)"}`).join(", ") || "none reported"}</dd>
+            <dt className="text-muted">Calibration</dt>
+            <dd className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>{status.engine.status ? calibrationText(status.engine.status.calibration).text : "unknown while the sensor software is off"}</span>
+              <Link href="/setup?step=calibrate" className="inline-flex min-h-11 items-center font-semibold underline">
+                Recalibrate
+              </Link>
+            </dd>
+            <dt className="text-muted">Time zone</dt>
+            <dd>{status.server.time_zone}</dd>
+          </dl>
+        )}
       </Card>
     </div>
   );

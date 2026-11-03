@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ApiError, ackAlert, getDeviceName, getSettings, type Alert } from "@/lib/api";
-import { useLive, useNow } from "@/lib/live";
+import { useLiveSlow, useNow } from "@/lib/live";
 import { useSound } from "@/lib/sound";
 import { friendlyError, usePin } from "@/lib/pin";
 import { roomName, alertAction, alertTitle, clearedText, clock, duration, levelText, stopwatch } from "@/lib/words";
@@ -17,7 +17,7 @@ import { Icon } from "./ui";
  * by "no movement after a fall" is one situation for the person responding.
  */
 export function useAck() {
-  const { refreshAlerts } = useLive();
+  const { refreshAlerts } = useLiveSlow();
   const { withPin } = usePin();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +81,7 @@ export function usePhoneSetUp(key: unknown): boolean | null {
 }
 
 export function AlertBanner() {
-  const { alerts, cleared, dismissCleared, status } = useLive();
+  const { alerts, cleared, dismissCleared, status } = useLiveSlow();
   const phoneNumber = status?.server.contact_phone?.trim() || null;
   const path = usePathname();
   const now = useNow();

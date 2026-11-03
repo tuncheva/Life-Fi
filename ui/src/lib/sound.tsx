@@ -9,7 +9,8 @@
 // "Silence" stops the beep for the alerts open now without acknowledging them
 // (no PIN needed); a new alert beeps again.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { useLive } from "./live";
+import { usePathname } from "next/navigation";
+import { useLiveSlow } from "./live";
 
 const KEY = "lifefi.alarm-sound";
 const REPEAT_MS = 2000;
@@ -26,6 +27,8 @@ interface SoundState {
   beeping: boolean;
   /** Stops the beep for the alerts open now, without acknowledging them. */
   silence: () => void;
+  /** True once the saved answer was read and there is none: ask the question. */
+  unanswered: boolean;
 }
 
 const SoundContext = createContext<SoundState | null>(null);
@@ -62,7 +65,7 @@ function saveChoice(c: Choice): void {
 }
 
 export function SoundProvider({ children }: { children: ReactNode }) {
-  const { alerts } = useLive();
+  const { alerts } = useLiveSlow();
   // "loading" on the server render, so the question does not flash before the saved answer is read
   const stored = useSyncExternalStore(subscribeChoice, () => readChoice() ?? memoryChoice ?? "unset", () => "loading");
   const choice: Choice | null | undefined = stored === "loading" ? undefined : stored === "unset" ? null : (stored as Choice);
@@ -151,33 +154,40 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     }
   }, [alerts, choice, beep]);
 
-  const value = useMemo<SoundState>(() => ({ choice: choice ?? null, setChoice, locked, beeping, silence }), [choice, setChoice, locked, beeping, silence]);
+  const value = useMemo<SoundState>(() => ({ choice: choice ?? null, setChoice, locked, beeping, silence, unanswered: choice === null }), [choice, setChoice, locked, beeping, silence]);
   return (
-    <SoundContext.Provider value={value}>
-      {children}
-      {choice === null && <SoundQuestion onAnswer={setChoice} />}
-    </SoundContext.Provider>
+    <SoundContext.Provider value={value}>{children}</SoundContext.Provider>
   );
 }
 
-function SoundQuestion({ onAnswer }: { onAnswer: (c: Choice) => void }) {
+/**
+ * The one-time question, as a calm inline notice at the top of the page (not a
+ * dialog over the content). Never in presentation mode: the projector is not where
+ * the choice is made.
+ */
+export function SoundQuestion() {
+  const { unanswered, setChoice } = useSound();
+  const path = usePathname();
+  if (!unanswered || path.startsWith("/present")) return null;
   return (
-    <div role="dialog" aria-labelledby="sound-q" className="fixed inset-x-4 bottom-4 z-40 mx-auto max-w-md rounded-card border border-line bg-surface p-4 shadow-xl">
-      <p id="sound-q" className="font-semibold">
-        Play a sound when an alarm goes off?
-      </p>
-      <p className="mt-1 text-sm text-muted">
-        A beep repeats until someone presses &ldquo;I&apos;m on it&rdquo;. You can change this later under Setup. Only this browser remembers it.
-      </p>
-      <div className="mt-3 flex gap-2">
-        <button onClick={() => onAnswer("on")} className="flex-1 rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-fg hover:opacity-90">
+    <section aria-labelledby="sound-q" className="mb-4 flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-sm sm:flex-row sm:items-center">
+      <div className="min-w-0 flex-1">
+        <p id="sound-q" className="font-semibold">
+          Play a sound when an alarm goes off?
+        </p>
+        <p className="mt-1 text-sm text-muted">
+          A beep repeats until someone presses &ldquo;I&apos;m on it&rdquo;. You can change this later under Setup. Only this browser remembers it.
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => setChoice("on")} className="min-h-11 flex-1 rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-fg hover:opacity-90 sm:flex-none">
           Yes, beep
         </button>
-        <button onClick={() => onAnswer("off")} className="flex-1 rounded-lg border border-line px-4 py-2.5 font-semibold hover:bg-surface-2">
+        <button onClick={() => setChoice("off")} className="min-h-11 flex-1 rounded-lg border border-line px-4 py-2.5 font-semibold hover:bg-surface-2 sm:flex-none">
           No sound
         </button>
       </div>
-    </div>
+    </section>
   );
 }
 

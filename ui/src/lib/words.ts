@@ -4,6 +4,7 @@
 // (empty / present / uncertain, warmup, stale, S/B/M) reaches a consumer view.
 import type { Result } from "./contracts.gen";
 import type { Alert, ProfileName, Status } from "./api";
+import { distanceRange, REASON_STEP, type QualityReason, type WhereState } from "./room";
 
 /** The room's name comes from the server settings; "Room 1" until the status has arrived. */
 export function roomName(status: Status | null | undefined): string {
@@ -253,4 +254,54 @@ export function alertAction(type: string, profile: ProfileName): string {
 
 export function levelText(level: Alert["level"]): string {
   return level === "high" ? "Urgent" : level === "medium" ? "Needs attention" : "For information";
+}
+
+/** Why the distance is only a rough guess, and where in the setup to fix it. */
+export const REASON_TEXT: Record<QualityReason, string> = {
+  transmitter_not_fixed: "The Wi-Fi transmitter has moved or is a phone: fix it in one place",
+  no_distance_fit: "Distance not tuned for this room yet",
+  no_empty_calibration: "Empty-room calibration missing",
+  low_packet_rate: "Weak signal: too few readings per second",
+};
+
+export function reasonLinks(reasons: QualityReason[]): { text: string; href: string }[] {
+  return reasons.map((r) => ({ text: REASON_TEXT[r], href: `/setup?step=${REASON_STEP[r]}` }));
+}
+
+const metres = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+
+/** "roughly 2 to 3 m from the sensor", "less than 1 m from the sensor" */
+export function distancePhrase(d: number, sd: number): string {
+  if (d < 1) return "less than 1 m from the sensor";
+  const { lo, hi } = distanceRange(d, sd);
+  return `roughly ${metres(lo)} to ${metres(hi)} m from the sensor`;
+}
+
+/**
+ * The where-sentence (plan B1.1): never a number unless the engine rates the distance
+ * "medium", never a spot unless the spot model is reliable for this room.
+ */
+export function whereText(w: WhereState): { headline: string; detail: string | null; reasons: string[] } {
+  switch (w.kind) {
+    case "blind":
+      return { headline: w.reason, detail: null, reasons: [] };
+    case "nobody":
+      return { headline: "Nobody in the room", detail: null, reasons: [] };
+    case "unsure":
+      return { headline: "Not sure if anyone is there", detail: null, reasons: [] };
+  }
+  const who = w.people > 1 ? `${w.people} people here` : "Someone is here";
+  const parts: string[] = [];
+  if (w.people > 1) parts.push("one sensor can't tell them apart");
+  const dist = w.distance;
+  let headline = who;
+  if (!dist) parts.push("we can't tell where in the room right now");
+  else if (dist.quality === "medium") headline = `${who}, ${distancePhrase(dist.d, dist.sd)}`;
+  else parts.push("distance: rough guess only");
+  if (dist?.held) parts.push(dist.heldSince !== null ? `standing still, last measured ${clock(dist.heldSince)}` : "standing still");
+  if (w.spot) parts.push(`probably at the ${w.spot.name.replace(/_/g, " ")}`);
+  const joined = parts.join(" · ");
+  const detail = joined ? joined[0].toUpperCase() + joined.slice(1) : null;
+  const rough = !dist || dist.quality === "low";
+  return { headline, detail, reasons: rough ? w.reasons.map((r) => REASON_TEXT[r]) : [] };
 }

@@ -278,6 +278,24 @@ body {
   border-radius: 6px;
 }
 
+/* Anything scrolled to (a #step link, scrollIntoView) clears the sticky header. */
+[id] {
+  scroll-margin-top: 7rem;
+}
+
+/* Reduced motion: no smooth scrolling, transitions jump, animations play once. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 /* <details> without the default marker; our summaries draw their own chevron. */
 summary {
   list-style: none;

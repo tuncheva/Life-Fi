@@ -8,7 +8,7 @@
 import { useEffect, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
-import { SIGNAL_SECONDS, useLive } from "@/lib/live";
+import { SIGNAL_SECONDS, useLiveSlow } from "@/lib/live";
 import { token, useResolvedTheme } from "@/lib/useTheme";
 
 const fmt = (digits: number, unit = "") => (_u: uPlot, v: number | null) => (v === null || v === undefined || !Number.isFinite(v) ? "–" : `${v.toFixed(digits)}${unit}`);
@@ -21,7 +21,7 @@ const autoRange = (_u: uPlot, lo: number | null, hi: number | null): uPlot.Range
 };
 
 export function SignalsChart({ height = 220 }: { height?: number }) {
-  const { buffers } = useLive();
+  const { buffers } = useLiveSlow();
   const host = useRef<HTMLDivElement>(null);
   const theme = useResolvedTheme();
 
