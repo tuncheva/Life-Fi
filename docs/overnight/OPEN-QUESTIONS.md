@@ -50,3 +50,18 @@ Each item: what was decided in the meantime, and what we need from you.
 6. **Distances on consumer screens (track B).** *Decided:* consumers see rounded
    distances ("about 2 m", "less than 1 m") and zone words; decimals and ± only
    in the installer sections. *Need:* OK, or do you want "2.1 m" on the hero?
+
+**(Track D) Fixed transmitter firmware.**
+
+- **Which spare board?** Builds are prepared for a classic ESP32 dev board
+  (`esp32dev_tx`), an ESP32-S3 DevKitC (`esp32s3_tx`) and a second
+  ESP32-CAM (`esp32cam_tx`). *Need:* which one you have (and whether its
+  LED is on GPIO 2), so the guide's first command is the right one.
+- **Channel.** *Decided:* channel 11 (Espressif's esp-csi default); the
+  receiver sweeps all channels, so changing it is one TX console command.
+  *Need:* which channel your router / neighbours use, if you know.
+- **Priority over Wi-Fi.** *Decided:* when the fixed transmitter is found at
+  boot, the receiver uses it even if Wi-Fi credentials are saved (`tx off`
+  on the receiver restores the old behaviour). *Need:* confirm.
+- **Untested on hardware.** Firmware compiles only; nothing was flashed.
+  *Need:* first morning check per `docs/hardware/fixed-transmitter.md`.
