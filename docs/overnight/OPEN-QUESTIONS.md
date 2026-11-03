@@ -65,3 +65,21 @@ Each item: what was decided in the meantime, and what we need from you.
   on the receiver restores the old behaviour). *Need:* confirm.
 - **Untested on hardware.** Firmware compiles only; nothing was flashed.
   *Need:* first morning check per `docs/hardware/fixed-transmitter.md`.
+
+**(Track F) Teach spots from the dashboard.**
+
+- **Spot names and distances.** *Decided:* default `close 0.5 m`, `middle 1.5 m`,
+  `far 3 m`, editable on /teach and reused for every session. *Need:* the real spots
+  you want (e.g. desk, bed, sofa) and their measured distances, before session 1:
+  all sessions must use the same names.
+- **Session length.** *Decided:* 60 s empty, each spot 45 s, two rounds (second in
+  reverse order), 60 s empty: about 8 min per session; 3 sessions at different times.
+  *Need:* OK, or shorter (1 round, about 5 min)?
+- **Auto-install rule.** *Decided:* a newly trained model is installed only if its
+  cross-session score (above chance) is not worse than the current one by more than
+  2 points; the old model is kept as `data/spots_model.prev.json`; "Install anyway"
+  needs a confirm. Old phone-hotspot sessions are left out of training by default.
+  *Need:* confirm, or always install the newest?
+- **Voice.** *Decided:* the phone/browser speaks the prompts; optional "also speak
+  from the dashboard PC" (Windows voice, off by default). *Need:* which device you
+  will carry while recording.
