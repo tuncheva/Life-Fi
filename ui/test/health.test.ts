@@ -10,12 +10,23 @@ const T0 = 1_700_000_000_000;
 const dir = mkdtempSync(join(tmpdir(), "lifefi-health-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function mkCtx(o: { connected?: boolean; resultAgeMs?: number | null; offline?: boolean; mode?: "live" | "replay"; cal?: string | null; pin?: string; topic?: string; error?: string | null; sourceState?: string } = {}): AppContext {
+interface Extra {
+  device?: Record<string, unknown> | null;
+  breathing?: { valid: boolean; reason?: string | null };
+  heart?: { valid: boolean; reason: string | null } | null;
+}
+
+function mkCtx(o: { connected?: boolean; resultAgeMs?: number | null; offline?: boolean; mode?: "live" | "replay"; cal?: string | null; pin?: string; topic?: string; error?: string | null; sourceState?: string } & Extra = {}): AppContext {
   const age = o.resultAgeMs === undefined ? null : o.resultAgeMs;
   const latest =
     age === null
       ? null
-      : { health: { rate_hz: 88 }, calibration: o.cal === null ? undefined : { state: o.cal ?? "ok", id: "cal-1", age_s: 12.4 } };
+      : {
+          health: { rate_hz: 88 },
+          calibration: o.cal === null ? undefined : { state: o.cal ?? "ok", id: "cal-1", age_s: 12.4 },
+          breathing: o.breathing ?? { valid: true, reason: null },
+          ...(o.heart === undefined ? {} : { heart: o.heart }),
+        };
   return {
     version: "0.1.0",
     engine: { connected: o.connected ?? true },
@@ -25,7 +36,7 @@ function mkCtx(o: { connected?: boolean; resultAgeMs?: number | null; offline?: 
       startedAt: T0 - 812_400,
       latest,
       lastResultAt: age === null ? null : T0 - age,
-      engineStatus: null,
+      engineStatus: o.device === undefined ? null : { engine: {}, device: o.device },
       source: { mode: o.mode ?? "live", file: null, speed: 1, loop: false, state: o.sourceState ?? "running", error: o.error ?? null },
     },
   } as unknown as AppContext;
@@ -54,7 +65,8 @@ describe("health", () => {
     expect(h.ok).toBe(true);
     expect(h.ready).toBe(false);
     expect(h.uptime_s).toBe(812);
-    expect(h.checks.board).toEqual({ ok: false, source: "live", result_age_s: null, rate_hz: null, error: "no USB serial port found" });
+    expect(h.checks.board).toEqual({ ok: false, source: "live", result_age_s: null, rate_hz: null, error: "no USB serial port found", transmitter: null });
+    expect(h.checks.vitals).toBeNull();
     expect(h.checks.calibration).toEqual({ ok: false, state: null, id: null, age_s: null });
     expect(h.checks.storage.ok).toBe(true);
     expect(h.checks.storage.db_bytes).toBe(0);
@@ -80,6 +92,33 @@ describe("health", () => {
     expect(h.ready).toBe(false);
     expect(h.checks.board.ok).toBe(false);
     expect(setup(mkCtx({ resultAgeMs: 500, sourceState: "error", error: "no USB serial port found" }), env()).steps[1].detail).toBe("no USB serial port found");
+  });
+
+  it("transmitter from the engine's device status: fixed, other, unknown", () => {
+    expect(health(mkCtx({ device: { transmitter: "fixed", src_mac: "1a:4c:46:54:58:01" } }), env()).checks.board.transmitter).toBe("fixed");
+    expect(health(mkCtx({ device: { transmitter: "other" } }), env()).checks.board.transmitter).toBe("other");
+    expect(health(mkCtx({ device: null }), env()).checks.board.transmitter).toBeNull();
+    expect(health(mkCtx({ device: { fw_version: "0.1.0" } }), env()).checks.board.transmitter).toBeNull();
+    expect(health(mkCtx({ device: { transmitter: "maybe" } }), env()).checks.board.transmitter).toBeNull();
+  });
+
+  it("vitals copied from a fresh result; heart null when absent; stale result gives null", () => {
+    const h = health(mkCtx({ resultAgeMs: 800, breathing: { valid: false, reason: "motion" }, heart: { valid: false, reason: "warming_up" } }), env());
+    expect(h.checks.vitals).toEqual({ breathing: { valid: false, reason: "motion" }, heart: { valid: false, reason: "warming_up" } });
+    const noHeart = health(mkCtx({ resultAgeMs: 800, breathing: { valid: true } }), env());
+    expect(noHeart.checks.vitals).toEqual({ breathing: { valid: true, reason: null }, heart: null });
+    expect(health(mkCtx({ resultAgeMs: 800, heart: null }), env()).checks.vitals?.heart).toBeNull();
+    expect(health(mkCtx({ resultAgeMs: 10_500, breathing: { valid: true, reason: null } }), env()).checks.vitals).toBeNull();
+  });
+
+  it("vitals and transmitter never change ok, ready or setup", () => {
+    const base = mkCtx({ resultAgeMs: 500, pin: "8642" });
+    const bad = mkCtx({ resultAgeMs: 500, pin: "8642", device: { transmitter: "other" }, breathing: { valid: false, reason: "noise" }, heart: { valid: false, reason: "noise" } });
+    const a = health(base, env());
+    const b = health(bad, env());
+    expect([b.ok, b.ready]).toEqual([a.ok, a.ready]);
+    expect([b.ok, b.ready]).toEqual([true, true]);
+    expect(setup(bad, env())).toEqual(setup(base, env()));
   });
 
   it("an unwritable data dir fails storage and ok", () => {

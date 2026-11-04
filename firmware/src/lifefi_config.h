@@ -2,7 +2,7 @@
  * points to tune on recordings (see docs/research/csi-people-counting.md). */
 #pragma once
 
-#define LIFEFI_FW_VERSION "0.1.0"
+#define LIFEFI_FW_VERSION "0.1.1"
 
 /* ---- Wi-Fi link ------------------------------------------------------- */
 

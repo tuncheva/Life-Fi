@@ -52,3 +52,23 @@ jobs:
       - run: pip install -r engine/requirements.txt
       # every engine/tests/test_*.py and ml/tests/test_*.py; dataset-only ones print SKIPPED
       - run: node scripts/test-all.mjs --only engine
+
+  # UNVERIFIED: added overnight 2026-11-04 without a CI run. Builds the four firmware
+  # envs and runs the host tests (pure C, no board, nothing is flashed).
+  firmware:
+    name: firmware (build all envs + host tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            firmware/.pio
+          key: pio-${{ hashFiles('firmware/platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -d firmware -e esp32dev -e esp32cam -e esp32dev_tx -e esp32cam_tx
+      - run: sh firmware/test/host/run.sh

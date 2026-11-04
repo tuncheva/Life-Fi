@@ -291,3 +291,47 @@ with the default that was built:
    unverified; OPEN-QUESTIONS appended at the end with the built defaults; schema
    description left frozen (new question 7). Ownership list narrowed to the exact
    files touched.
+
+## Worker report (P, phase 1)
+
+Done (no `engine/**` or `contracts/**` touched; `ui/src/server/runtime.ts` not edited):
+
+- **Step 1, firmware watchdog** — `firmware/src/stream.c`: new `usb_write_line()`;
+  `stream_send()` now writes each `@CSI` line with two `uart_write_bytes` calls (line
+  without `\n`, then `"\r\n"`) under `flockfile(stdout)` after an `fflush(stdout)`, so
+  the wire bytes stay `@CSI <b64>\r\n` and no log line can splice in. Falls back to
+  `fputs` when the console is not UART or the driver is not installed.
+  `csi_frame_line()`, watchdog config, task priorities and affinity unchanged.
+  `LIFEFI_FW_VERSION` bumped to `"0.1.1"` (`firmware/src/lifefi_config.h`, step 5).
+  Checks: `pio run` for `esp32dev`, `esp32cam`, `esp32dev_tx`, `esp32cam_tx`: all
+  SUCCESS, no compiler warnings (only the existing "flash memory size mismatch"
+  notice). Host tests (`run.ps1`): ALL HOST TESTS PASSED. **Not flashed, not run on a
+  board.** The owner checks with `pio run -e esp32cam -t upload` + `pio device monitor`
+  for 60 s: expect no `task_wdt` warning, `queue drops` 0, `@CSI` lines still parse.
+- **Step 4, logs** — `scripts/start.mjs`: `prune()` (same regex, 14 days, `logDir`
+  only, try/catch per file) runs at start and on the first line after the local day
+  changes; 50 MB/day cap (counter from `statSync` of today's file, reset on day
+  change), at the cap one `[start] log cap (50 MB) reached: ...` line, then console
+  only until the next day. `appendFileSync` kept. Header comment updated.
+  `node --check` ok; not run (no app started).
+- **Step 3, health (UI part)** — `ui/src/server/health.ts`: `checks.board.transmitter`
+  (`"fixed" | "other" | null` from `engineStatus.device.transmitter`) and
+  `checks.vitals` (`breathing`/`heart` `{valid, reason}` copied from `state.latest`
+  when < 10 s old, `heart: null` when absent, else `null`). Neither is read by `ok`,
+  `ready` or `setup()`. `ui/test/health.test.ts`: updated the `checks.board` `toEqual`,
+  plus tests for fixed/other/unknown/junk transmitter, vitals fresh/heart absent/stale,
+  and "ok/ready/setup unchanged with bad vitals and other transmitter" (13 tests pass).
+  `transmitter` stays `null` until phase 2 makes the engine report it.
+- **Step 6, CI** — `.github/workflows/ci.yml`: new `firmware` job (setup-python 3.12,
+  cache `~/.platformio` + `firmware/.pio`, `pip install platformio`, build the four
+  envs, `sh firmware/test/host/run.sh`). Triggers unchanged. **Unverified** (YAML
+  comment says so); parsed with the `yaml` package: jobs portal/python/firmware.
+
+Checks (repo root): `npm test` exit 0 (vitest 21 files / 225 tests; engine 18 passed,
+1 skipped (dataset-only), 0 failed), `npm run typecheck` clean, `npm run lint` clean.
+
+Remaining for phase 2 (after V's worker report): step 2 transmitter auto-detect
+(`engine/lifefi/link.py`, `engine/tests/test_link.py`, `rules.yaml` line, the three
+`engine.py` edits); docs (`contracts/api.md` health section, `docs/ops/README.md`
+health fields + log policy + `task_wdt` troubleshooting, `docs/hardware/fixed-transmitter.md`);
+Track P section in `OPEN-QUESTIONS.md`; final "## Worker report (P)".

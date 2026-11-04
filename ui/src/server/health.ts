@@ -23,10 +23,24 @@ export interface Health {
   uptime_s: number;
   checks: {
     engine: { ok: boolean };
-    board: { ok: boolean; source: "live" | "replay"; result_age_s: number | null; rate_hz: number | null; error: string | null };
+    /** transmitter: "fixed" when the frames come from the Life-Fi transmitter (engine status), "other" for a hotspot or router, null when unknown. Informational. */
+    board: { ok: boolean; source: "live" | "replay"; result_age_s: number | null; rate_hz: number | null; error: string | null; transmitter: Transmitter };
     calibration: { ok: boolean; state: CalState | null; id: string | null; age_s: number | null };
     storage: { ok: boolean; db_bytes: number; free_bytes: number | null };
+    /** Vital signs of the latest result (< 10 s old, else null). Informational: never read by ok, ready or setup. */
+    vitals: Vitals | null;
   };
+}
+
+type Transmitter = "fixed" | "other" | null;
+interface VitalState {
+  valid: boolean;
+  reason: string | null;
+}
+interface Vitals {
+  breathing: VitalState;
+  /** null when the result has no heart estimate (older engine, or heart.publish off) */
+  heart: VitalState | null;
 }
 
 export interface SetupStep {
@@ -63,6 +77,19 @@ function calibrationOf(ctx: AppContext): Health["checks"]["calibration"] {
   return { ok: state === "ok", state, id: from.id ?? null, age_s: typeof from.age_s === "number" ? Math.round(from.age_s) : null };
 }
 
+function transmitterOf(ctx: AppContext): Transmitter {
+  const t = ctx.state.engineStatus?.device?.transmitter;
+  return t === "fixed" || t === "other" ? t : null;
+}
+
+/** Copies valid + reason of breathing and heart; the reasons are the engine's, never made up here. */
+function vitalsOf(ctx: AppContext, ageMs: number | null): Vitals | null {
+  const r = ctx.state.latest;
+  if (!r?.breathing || ageMs === null || ageMs >= 10_000) return null;
+  const heart = r.heart ? { valid: r.heart.valid === true, reason: r.heart.reason ?? null } : null;
+  return { breathing: { valid: r.breathing.valid === true, reason: r.breathing.reason ?? null }, heart };
+}
+
 export function health(ctx: AppContext, env: HealthEnv = defaultEnv()): Health {
   const { state } = ctx;
   const engineOk = ctx.engine.connected;
@@ -92,9 +119,11 @@ export function health(ctx: AppContext, env: HealthEnv = defaultEnv()): Health {
         result_age_s: ageMs === null ? null : Math.round(ageMs / 100) / 10,
         rate_hz: ageMs !== null && ageMs < 10_000 && state.latest ? state.latest.health.rate_hz : null,
         error: state.source.error,
+        transmitter: transmitterOf(ctx),
       },
       calibration: calibrationOf(ctx),
       storage: { ok: storageOk, db_bytes: memory ? 0 : size(env.dbPath) + size(`${env.dbPath}-wal`), free_bytes: free },
+      vitals: vitalsOf(ctx, ageMs),
     },
   };
 }

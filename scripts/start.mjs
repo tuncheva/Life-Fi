@@ -7,7 +7,8 @@
 // Arguments are passed to engine/run.py. Env: LIFEFI_HOST (default 127.0.0.1, set 0.0.0.0
 // for phones on the LAN), LIFEFI_PORT (3000), and every LIFEFI_* the backend reads.
 // Checks the setup first, restarts a crashed engine or app with backoff (1 s .. 30 s),
-// prefixes their output with [engine] / [app] and copies it to <data>/logs/lifefi-<date>.log.
+// prefixes their output with [engine] / [app] and copies it to <data>/logs/lifefi-<date>.log
+// (at most 50 MB a day; logs older than 14 days are deleted at start and at midnight).
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -76,17 +77,59 @@ const day = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-for (const f of readdirSync(logDir)) {
-  const p = join(logDir, f);
-  if (/^lifefi-.*\.log$/.test(f) && Date.now() - statSync(p).mtimeMs > 14 * 86400_000) unlinkSync(p);
+const LOG_KEEP_MS = 14 * 86400_000;
+const LOG_MAX_BYTES = 50 * 1024 * 1024; // per day; the rest of the day goes to the console only
+/** Deletes lifefi-*.log older than 14 days in logDir (never anything else). Today's file is never that old. */
+function prune() {
+  let names = [];
+  try {
+    names = readdirSync(logDir);
+  } catch {
+    return;
+  }
+  for (const f of names) {
+    if (!/^lifefi-.*\.log$/.test(f)) continue;
+    const p = join(logDir, f);
+    try {
+      if (Date.now() - statSync(p).mtimeMs > LOG_KEEP_MS) unlinkSync(p);
+    } catch {
+      // gone already or locked: try again tomorrow
+    }
+  }
 }
+/** Size of today's log so far (0 when it does not exist yet). */
+function sizeOf(d) {
+  try {
+    return statSync(join(logDir, `lifefi-${d}.log`)).size;
+  } catch {
+    return 0;
+  }
+}
+prune();
 let logBroken = false;
-/** Prints one line and appends it to today's log (a new file after local midnight). */
+let logDay = day();
+let logBytes = sizeOf(logDay);
+let logCapped = false;
+/** Prints one line and appends it to today's log (a new file after local midnight, when old logs are pruned too). */
 function out(line, err = false) {
   (err ? console.error : console.log)(line);
   if (logBroken) return;
+  const today = day();
+  if (today !== logDay) {
+    logDay = today;
+    logBytes = sizeOf(today);
+    logCapped = false;
+    prune();
+  }
+  if (logCapped) return;
+  let text = `${new Date().toTimeString().slice(0, 8)} ${line}\n`;
+  if (logBytes + Buffer.byteLength(text) > LOG_MAX_BYTES) {
+    logCapped = true;
+    text = `${new Date().toTimeString().slice(0, 8)} [start] log cap (50 MB) reached: the rest of today goes to the console only\n`;
+  }
   try {
-    appendFileSync(join(logDir, `lifefi-${day()}.log`), `${new Date().toTimeString().slice(0, 8)} ${line}\n`);
+    appendFileSync(join(logDir, `lifefi-${today}.log`), text);
+    logBytes += Buffer.byteLength(text);
   } catch (e) {
     logBroken = true;
     console.error(`[start] cannot write the log file: ${e.message}`);
