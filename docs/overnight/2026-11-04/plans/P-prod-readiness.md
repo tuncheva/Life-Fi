@@ -335,3 +335,44 @@ Remaining for phase 2 (after V's worker report): step 2 transmitter auto-detect
 `engine.py` edits); docs (`contracts/api.md` health section, `docs/ops/README.md`
 health fields + log policy + `task_wdt` troubleshooting, `docs/hardware/fixed-transmitter.md`);
 Track P section in `OPEN-QUESTIONS.md`; final "## Worker report (P)".
+
+## Worker report (P)
+
+Phase 1 (above, committed in 1315f22) plus phase 2, on top of V's engine (cd11db8):
+
+- **Step 2, transmitter auto-detect** — new `engine/lifefi/link.py` (`TX_PREFIX`,
+  `is_fixed_tx()`, `transmitter_fixed(setting, src_mac)`: `is True`/`is False` force,
+  anything else is auto). `engine/lifefi/engine.py`, only: `link` added to the
+  `from . import` line, `_transmitter_fixed()` (rules value default `"auto"`,
+  `getattr(self, "hdr", None)` guard), `feed()` +3 lines after `self.hdr = hdr`,
+  `status()` `device` + `src_mac` and `transmitter` (`fixed`/`other`).
+  `engine/config/rules.yaml`: `transmitter_fixed: auto` with the comment. New
+  `engine/tests/test_link.py` (21 checks, 2.6 s): prefix match, setting parse incl.
+  YAML round trip, Engine fed `scenarios` frames with the MAC repacked through
+  `csi_recorder.HDR`: hotspot → LFTX → hotspot, and forced `false`. Every existing
+  recording (`data/sessions/spots-*`, `firmware/recordings/*`) has a non-LFTX source
+  MAC (`c2:e6:…`, `f0:33:…`), so replays still report `transmitter_not_fixed`.
+- **Extra (coordinator): NaN-safe motion check** — `engine/lifefi/heart.py`: new
+  `_still(ratio)` = `ratio >= B.MIN_BAND_RATIO`, used as `if not _still(breath_ratio)`;
+  thresholds unchanged. `test_heart.py`: NaN fails, threshold boundary unchanged.
+- **Step 5, docs** — `contracts/api.md` Health: example + paragraph for
+  `board.transmitter` and `vitals` ("never affects ok, ready or Setup").
+  `docs/ops/README.md`: health fields, log policy (Data growth + Logs), troubleshooting
+  row for `task_wdt` / IDLE0 → firmware 0.1.1. `docs/hardware/fixed-transmitter.md`:
+  `auto` detection and the 0.1.1 re-flash note. Version bump to 0.1.1 was done in
+  phase 1.
+- **OPEN-QUESTIONS.md**: "Track P" section, 7 items with the built defaults.
+
+Checks: `npm test` exit 0 (contracts; 19 engine/ml passed, 1 skipped (dataset-only),
+0 failed, incl. test_link, test_heart, test_engine, test_control, test_position,
+test_replay_position, test_occupancy, test_vitals; vitest 22 files / 235 tests),
+`npm run typecheck` clean, `npm run lint` clean. Firmware not flashed; no server
+started; no git state changes.
+
+Notes for others:
+- `ui/src/components/setup/StepRoom.tsx` still says to set
+  `position.transmitter_fixed: true` by hand; with `auto` that is only needed for a
+  router. Not edited (UI file). `/teach` could default its transmitter choice from
+  `/api/v1/health` `checks.board.transmitter`.
+- `contracts/results.schema.json` wording for `transmitter_not_fixed` left frozen
+  (OPEN-QUESTIONS P7).

@@ -110,6 +110,18 @@ the live rate should sit near 100 Hz without the multi-second gaps the
 hotspot had. The `.csirec` / USB stream format is unchanged; recordings just
 show `1A:4C:46:54:58:01` as the source.
 
+The engine sees that MAC too: with `position.transmitter_fixed: auto` (the
+default in `engine/config/rules.yaml`) it treats frames from
+`1a:4c:46:54:58:xx` as a fixed transmitter, so position quality loses the
+`transmitter_not_fixed` reason, and `/api/v1/health` shows
+`checks.board.transmitter: "fixed"`. Frames from a hotspot (or an old
+recording) stay "not fixed". `true` / `false` only force it, e.g. `true` for a
+router bolted to the wall (it has no Life-Fi MAC).
+
+Firmware 0.1.1 fixes `task_wdt` (IDLE0) warnings while streaming over USB:
+re-flash the receiver with 0.1.1 (the boot log shows the version). The
+transmitter shares the version number and needs no re-flash for it.
+
 Not found: `link: no Life-Fi fixed transmitter found (2.8 s probe)`, then the
 receiver carries on as before, about 3 s later (router / hotspot if
 credentials are saved, else sniffer). Only `tx off` skips the search.

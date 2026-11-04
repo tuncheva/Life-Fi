@@ -63,7 +63,7 @@ occupancy:                  # lifefi.occupancy: room empty / occupied / unsure f
   hold_ticks: 3             # [H] a new state after this many ticks of the same raw state
 
 position:                   # lifefi.position quality
-  transmitter_fixed: false  # true only with a fixed transmitter (router, 2nd board); a phone hotspot moves: quality stays low
+  transmitter_fixed: auto   # auto: from the frames' source MAC (Life-Fi TX 1A:4C:46:54:58:xx); true/false force it (e.g. a router bolted to the wall)
 
 spots:                      # lifefi.spots
   reliable_margin: 0.15     # [H] a spot model is `reliable` when its cross-session balanced accuracy >= 1/k + this

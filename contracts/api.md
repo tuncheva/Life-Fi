@@ -109,9 +109,10 @@ Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `
   "uptime_s": 812,
   "checks": {
     "engine":      {"ok": true},
-    "board":       {"ok": false, "source": "live", "result_age_s": null, "rate_hz": null, "error": "no USB serial port found"},
+    "board":       {"ok": false, "source": "live", "result_age_s": null, "rate_hz": null, "error": "no USB serial port found", "transmitter": null},
     "calibration": {"ok": false, "state": "none", "id": null, "age_s": null},
-    "storage":     {"ok": true, "db_bytes": 1048576, "free_bytes": 52428800000}
+    "storage":     {"ok": true, "db_bytes": 1048576, "free_bytes": 52428800000},
+    "vitals":      null
   }
 }
 ```
@@ -127,6 +128,16 @@ the SQLite file plus its WAL; `storage.ok` = the data dir is writable and
 Top level: `ok` = `engine.ok && storage.ok` (the server can do its job);
 `ready` = `ok && board.ok` (people are being sensed). Calibration never fails
 `ok` or `ready`: it is a setup step, not an outage.
+
+Informational, **never affects `ok`, `ready` or `Setup`**:
+`board.transmitter` is `fixed` when the engine's frames come from the Life-Fi
+fixed transmitter (source MAC `1a:4c:46:54:58:xx`, engine status
+`device.transmitter`), `other` for a hotspot or router, `null` before the first
+frame or with an older engine. `vitals` is `null` unless the latest result is
+< 10 s old; then
+`{"breathing": {"valid": bool, "reason": string|null}, "heart": {"valid": bool, "reason": string|null} | null}`,
+copied from the result (`breathing.reason`, `heart.reason` as in
+`results.schema.json`); `heart` is `null` when the result has none.
 
 ### `Setup`
 

@@ -41,7 +41,7 @@ from collections import deque
 import numpy as np
 import yaml
 
-from . import apnea, breathing, calibration, dsp, fall, heart, models, occupancy, position, posture, presence, spots
+from . import apnea, breathing, calibration, dsp, fall, heart, link, models, occupancy, position, posture, presence, spots
 from . import live as live_mod
 from . import motion as motion_mod
 from .live import LiveF
@@ -209,7 +209,10 @@ class Engine:
             return None
 
     def _transmitter_fixed(self):
-        return bool((self.rules.get("position") or {}).get("transmitter_fixed", False))
+        """rules.yaml position.transmitter_fixed (auto|true|false) and the last frame's source
+        MAC (lifefi.link); load_rules() may run before the first header exists."""
+        return link.transmitter_fixed((self.rules.get("position") or {}).get("transmitter_fixed", "auto"),
+                                      (getattr(self, "hdr", None) or {}).get("src_mac"))
 
     def _fit_distances(self):
         """How many distances the saved position_fit was taken at (one, today)."""
@@ -306,6 +309,9 @@ class Engine:
             self.live.new_segment()
             self.warm_until = host_us / 1e6 + self.rules["warmup_s"]
         self.hdr = hdr
+        fixed = self._transmitter_fixed()            # the board passes one source MAC per lock: last frame wins
+        if fixed != self.position.transmitter_fixed:
+            self.position.transmitter_fixed = fixed
         self.last_host_us = host_us
         t = self.clock.map(hdr["boot_id"], hdr["ts_us"], host_us)
         self.live.add(t, lltf(data, hdr["first_word_invalid"]))
@@ -693,7 +699,8 @@ class Engine:
                   "rssi_dbm": int(h["rssi_dbm"]), "channel": int(h["channel"]), "uptime_s": int(h["ts_us"] // 1_000_000),
                   "rate_hz": health["rate_hz"], "loss_udp": health["loss_udp"], "loss_air": health["loss_air"],
                   "rejected": dict(self.rejected), "queue_drops": 0, "send_errors": 0, "wifi_disconnects": 0,
-                  "ping_rate_hz": 0, "ping_timeouts_last_s": 0, "last_status_us": int(self.last_host_us)}
+                  "ping_rate_hz": 0, "ping_timeouts_last_s": 0, "last_status_us": int(self.last_host_us),
+                  "src_mac": h["src_mac"], "transmitter": "fixed" if link.is_fixed_tx(h["src_mac"]) else "other"}
         return {"engine": engine, "device": device}
 
     # ---- commands (contracts/control.md) --------------------------------

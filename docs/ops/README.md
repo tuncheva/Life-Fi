@@ -100,6 +100,11 @@ sensed": a result less than 5 s old and no `sensor_offline`. Checks:
 `engine`, `board` (source, seconds since the last result, CSI rate, the
 engine's read error), `calibration` (never fails health; it is a setup step),
 `storage` (data folder writable, database size, free disk > 500 MB).
+Two fields are information only and never turn health red or 503:
+`board.transmitter` (`fixed` = the Life-Fi fixed transmitter,
+`other` = hotspot or router, `null` = no frame yet) and `vitals` (whether
+breathing and the experimental heart rate have a reading right now, and the
+engine's reason when not; `null` without a result in the last 10 s).
 
 ```powershell
 curl.exe -s http://127.0.0.1:3000/api/v1/health
@@ -138,13 +143,18 @@ Restore = stop, copy the folder back, start.
 History and alerts older than `retention_days` (Settings, default 30) are
 deleted every hour. Recordings in `data/sessions/` are **never** deleted
 automatically: they are training data; move them off the PC by hand. Logs
-older than 14 days are deleted at each start. Watch `storage.free_bytes` in
+older than 14 days are deleted at start and at midnight; at most 50 MB of log
+is written per day (≤ 700 MB in all). Watch `storage.free_bytes` in
 `/api/v1/health`.
 
 ## Logs
 
 `<data>/logs/lifefi-YYYY-MM-DD.log` (one file per day), the same lines the
-window shows, each with the time. `LIFEFI_LOG=debug` for more.
+window shows, each with the time. `LIFEFI_LOG=debug` for more. Files older
+than 14 days are deleted at start and when the date changes (only
+`lifefi-*.log` in that folder). A day's file stops at 50 MB with the line
+`[start] log cap (50 MB) reached: ...`; the rest of that day is shown in the
+window only, and the next day starts a new file.
 
 ## Troubleshooting
 
@@ -158,6 +168,7 @@ window shows, each with the time. `LIFEFI_LOG=debug` for more.
 | `sensor_offline` alert | the engine has been disconnected, or no result came, for 10 s (30 s grace after start), CSI rate under 50 Hz for 60 s, or the board stopped sending status. Check the board and its power |
 | `[start] engine exited (code …), restarting in …` repeating | read the `[engine]` lines just above it in the log |
 | `life-fi: invalid configuration` | fix the listed `LIFEFI_*` variables and restart |
+| `task_wdt` / `IDLE0` warnings in the board's monitor | fixed in firmware 0.1.1 (the USB stream wrote one character at a time): re-flash the receiver, `pio run -d firmware -e esp32cam -t upload` *(fix compiled, not yet run on a board)* |
 | writes answer `429 rate_limited` | 5 wrong PINs in a minute lock writes (60 s, doubling to 1 h). Browsers that used the right PIN before still get through. Wait, or restart the app |
 
 ## Security notes
