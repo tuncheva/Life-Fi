@@ -2,16 +2,46 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ui",
+      "name": "lifefi-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765"
+      ],
+      "port": 8765
+    },
+    {
+      "name": "app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "ui"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
     },
     {
-      "name": "server",
+      "name": "app-replay",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "concurrently",
+        "-n",
+        "engine,app",
+        "node scripts/engine.mjs --replay data/sessions/spots-20261031-192549/spots-20261031-192549.csirec --loop",
+        "npm run dev -w ui"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "ui-only",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "server"],
-      "port": 8080
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "ui"
+      ],
+      "port": 3000
     }
   ]
 }

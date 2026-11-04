@@ -1,0 +1,26 @@
+{
+  "e8_r1": {
+    "t_fall": 200,
+    "ratio": 0,
+    "impact_found": 0.0,
+    "others_flagged": 0.05
+  },
+  "e8_r2": {
+    "t_fall": 200,
+    "ratio": 0,
+    "impact_found": 0.05,
+    "others_flagged": 0.05
+  },
+  "e8_r3": {
+    "t_fall": 200,
+    "ratio": 0,
+    "impact_found": 0.03,
+    "others_flagged": 0.02
+  },
+  "e8_r4": {
+    "t_fall": 120,
+    "ratio": 0,
+    "impact_found": 0.21,
+    "others_flagged": 0.23
+  }
+}

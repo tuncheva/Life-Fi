@@ -6,10 +6,10 @@
 // large "last press" confirmation (docs/plan/ui-ux.md §4.10).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { addMark, endSegment, getLabels, startRecording, startSegment, stopRecording, type LabelLine } from "@/lib/api";
-import { useLive, useNow } from "@/lib/live";
+import { useLiveSlow, useNow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
 import { clock } from "@/lib/words";
-import { Card, Kbd, Notice, Pill, btn, inputCls } from "@/components/ui";
+import { Card, Kbd, Notice, PageHeader, PageSkeleton, Pill, btn, inputCls, inputRowCls } from "@/components/ui";
 
 const SEGMENTS: { label: string; key: string }[] = [
   { label: "empty", key: "1" },
@@ -40,7 +40,7 @@ function fmtUs(us: number): string {
 }
 
 export default function LabelPage() {
-  const { status } = useLive();
+  const { status } = useLiveSlow();
   const { withPin } = usePin();
   const rec = status?.recording ?? null;
   const live = status?.source.mode === "live";
@@ -132,14 +132,13 @@ export default function LabelPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [rec]);
 
+  if (!status) return <PageSkeleton title="Labelling" />;
+
   if (!rec) {
     const validId = /^[\w-]+$/.test(session);
     return (
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="md:col-span-2">
-          <h1 className="text-2xl font-bold tracking-tight">Labelling</h1>
-          <p className="text-sm text-muted">Record a training session and mark what people do while they do it.</p>
-        </div>
+        <PageHeader className="mb-0! md:col-span-2" title="Labelling" description="Record a training session and mark what people do while they do it." />
         <Card title="Start a labelled session">
           {!live && <Notice tone="warn" className="mb-3">Recording works on the live sensor only. Switch the source back to live first.</Notice>}
           {status && !status.engine.connected && <Notice tone="danger" className="mb-3">The sensor software is not running, so nothing can be recorded.</Notice>}
@@ -298,7 +297,7 @@ export default function LabelPage() {
                 onKeyDown={(e) => e.key === "Escape" && setHardNeg(null)}
                 placeholder="what happened? e.g. sit_hard"
                 aria-label="Hard negative: what happened"
-                className={`${inputCls} mt-0 flex-1`}
+                className={`${inputRowCls} flex-1`}
               />
               <button type="submit" className={btn.primary}>
                 Add

@@ -6,7 +6,7 @@
 // show the moment under the finger in words.
 import { useEffect, useRef, useState } from "react";
 import { getAlerts, getHistory, type Alert, type HistoryRow } from "@/lib/api";
-import { useLive } from "@/lib/live";
+import { useLive, usePublished } from "@/lib/live";
 import { token, useResolvedTheme } from "@/lib/useTheme";
 import { POSTURE_TEXT, activityText, alertTitle, clock } from "@/lib/words";
 import { Card, btn } from "./ui";
@@ -29,8 +29,10 @@ interface Hover {
   text: string;
 }
 
-export function Timeline({ showPosture = true }: { showPosture?: boolean }) {
+export function Timeline({ showPosture: wantPosture = true }: { showPosture?: boolean }) {
   const { alerts: liveAlerts, result } = useLive();
+  const published = usePublished();
+  const showPosture = wantPosture && published.posture;
   const theme = useResolvedTheme();
   const [hours, setHours] = useState(1);
   const [rows, setRows] = useState<HistoryRow[]>([]);
@@ -38,6 +40,15 @@ export function Timeline({ showPosture = true }: { showPosture?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [hover, setHover] = useState<Hover | null>(null);
+  // the canvas is drawn at its pixel size: redraw when the layout changes its width (plan F6)
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const c = canvas.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => setWidth(c.clientWidth));
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, []);
 
   // Refetch on range change, on alert changes, and every 15 s.
   useEffect(() => {
@@ -168,7 +179,7 @@ export function Timeline({ showPosture = true }: { showPosture?: boolean }) {
     // now line
     g.fillStyle = token("--fg");
     g.fillRect(W - 1.5, presenceY - 2, 1.5, h - presenceY - 18);
-  }, [rows, alerts, hours, result, showPosture, theme]);
+  }, [rows, alerts, hours, result, showPosture, theme, width]);
 
   const onPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const c = canvas.current;

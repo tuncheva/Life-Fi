@@ -14,6 +14,16 @@ data/
 *.sqlite-journal
 *.log
 
+# public datasets: ~10 GB, re-download with datasets/download.sh
+# (docs/plan/dataset-preparation.md §4.2)
+datasets/raw/
+datasets/interim/
+datasets/processed/
+
+# trained models: ~14 MB, rebuilt in minutes from datasets/processed
+# (ml/train_gbm.py --final, ml/train_cnn.py --final, ml/export.py)
+ml/models/
+
 # env
 .env
 .env.*

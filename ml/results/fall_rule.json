@@ -1,0 +1,459 @@
+{
+  "t_still": 4.5,
+  "still_s": 3.0,
+  "chosen": {
+    "t_fall": 40,
+    "ratio": 4.0,
+    "t_still": 4.5,
+    "how": "P95 of E1 non-fall impact peaks"
+  },
+  "chosen_report": {
+    "e8": {
+      "stage1_fall": 0.381,
+      "stage1_neg": 0.438,
+      "full_fall": 0.025,
+      "full_neg": 0.303,
+      "falls": 320,
+      "negatives": 1600,
+      "per_label_stage1": {
+        "arm_wave": 0.294,
+        "fall": 0.381,
+        "jump": 0.647,
+        "squat": 0.306,
+        "turn": 0.403,
+        "walk": 0.537
+      }
+    },
+    "e15": {
+      "stage1_fall": 0.0,
+      "stage1_neg": 0.05,
+      "full_fall": 0.0,
+      "full_neg": 0.0,
+      "falls": 5,
+      "negatives": 20,
+      "per_label_stage1": {
+        "fall": 0.0,
+        "sit_down": 0.1,
+        "walk": 0.0
+      }
+    },
+    "e1": {
+      "stage1_fall": null,
+      "stage1_neg": 0.02,
+      "full_fall": null,
+      "full_neg": 0.004,
+      "falls": 0,
+      "negatives": 1318,
+      "fall_apart_stage1": 0.0,
+      "fall_apart_full": 0.0,
+      "per_label_stage1": {
+        "FA": 0.0,
+        "GU": 0.012,
+        "LD": 0.012,
+        "SD": 0.051,
+        "WA": 0.006
+      }
+    },
+    "e9": {
+      "stage1_fall": 0.025,
+      "stage1_neg": 0.023,
+      "full_fall": 0.0,
+      "full_neg": 0.005,
+      "falls": 277,
+      "negatives": 217,
+      "per_label_stage1": {
+        "fall": 0.025,
+        "nonfall": 0.023
+      }
+    }
+  },
+  "peak_over_quiet_level": {
+    "e8 arm_wave": {
+      "25": 24.8,
+      "50": 37.5,
+      "75": 71.6,
+      "95": 224.9
+    },
+    "e8 fall": {
+      "25": 119.9,
+      "50": 186.5,
+      "75": 280.9,
+      "95": 549.9
+    },
+    "e8 jump": {
+      "25": 30.9,
+      "50": 57.4,
+      "75": 130.2,
+      "95": 310.7
+    },
+    "e8 squat": {
+      "25": 15.4,
+      "50": 27.6,
+      "75": 69.4,
+      "95": 275.4
+    },
+    "e8 turn": {
+      "25": 20.0,
+      "50": 34.7,
+      "75": 74.2,
+      "95": 237.5
+    },
+    "e8 walk": {
+      "25": 24.7,
+      "50": 44.5,
+      "75": 96.6,
+      "95": 395.5
+    },
+    "e15 fall": {
+      "25": 16.0,
+      "50": 30.9,
+      "75": 31.8,
+      "95": 33.1
+    },
+    "e15 sit_down": {
+      "25": 2.1,
+      "50": 2.5,
+      "75": 30.3,
+      "95": 51.3
+    },
+    "e15 walk": {
+      "25": 5.4,
+      "50": 8.2,
+      "75": 13.9,
+      "95": 15.8
+    },
+    "e1 FA": {
+      "25": 5.3,
+      "50": 7.1,
+      "75": 9.5,
+      "95": 16.3
+    },
+    "e1 GU": {
+      "25": 7.2,
+      "50": 11.4,
+      "75": 18.4,
+      "95": 29.8
+    },
+    "e1 LD": {
+      "25": 6.5,
+      "50": 11.1,
+      "75": 18.3,
+      "95": 38.8
+    },
+    "e1 SD": {
+      "25": 9.9,
+      "50": 18.5,
+      "75": 30.3,
+      "95": 58.4
+    },
+    "e1 WA": {
+      "25": 3.9,
+      "50": 4.9,
+      "75": 6.5,
+      "95": 11.6
+    },
+    "e9 fall": {
+      "25": 2.2,
+      "50": 3.3,
+      "75": 8.4,
+      "95": 24.1
+    },
+    "e9 nonfall": {
+      "25": 2.2,
+      "50": 2.7,
+      "75": 4.3,
+      "95": 15.7
+    }
+  },
+  "pooled": {
+    "thresholds": {
+      "t_fall": 130,
+      "ratio": 1.5
+    },
+    "limit": 0.1,
+    "report": {
+      "e8": {
+        "stage1_fall": 0.603,
+        "stage1_neg": 0.164,
+        "full_fall": 0.013,
+        "full_neg": 0.089,
+        "falls": 320,
+        "negatives": 1600,
+        "per_label_stage1": {
+          "arm_wave": 0.116,
+          "fall": 0.603,
+          "jump": 0.253,
+          "squat": 0.103,
+          "turn": 0.147,
+          "walk": 0.2
+        }
+      },
+      "e15": {
+        "stage1_fall": 0.0,
+        "stage1_neg": 0.0,
+        "full_fall": 0.0,
+        "full_neg": 0.0,
+        "falls": 5,
+        "negatives": 20,
+        "per_label_stage1": {
+          "fall": 0.0,
+          "sit_down": 0.0,
+          "walk": 0.0
+        }
+      },
+      "e1": {
+        "stage1_fall": null,
+        "stage1_neg": 0.003,
+        "full_fall": null,
+        "full_neg": 0.0,
+        "falls": 0,
+        "negatives": 1318,
+        "fall_apart_stage1": 0.0,
+        "fall_apart_full": 0.0,
+        "per_label_stage1": {
+          "FA": 0.0,
+          "GU": 0.003,
+          "LD": 0.0,
+          "SD": 0.009,
+          "WA": 0.0
+        }
+      },
+      "e9": {
+        "stage1_fall": 0.007,
+        "stage1_neg": 0.0,
+        "full_fall": 0.0,
+        "full_neg": 0.0,
+        "falls": 277,
+        "negatives": 217,
+        "per_label_stage1": {
+          "fall": 0.007,
+          "nonfall": 0.0
+        }
+      }
+    },
+    "leave_one_dataset_out": {
+      "e8": {
+        "thresholds": {
+          "t_fall": 30,
+          "ratio": 4
+        },
+        "limit": 0.05,
+        "picked_on": [
+          "e15",
+          "e1"
+        ],
+        "stage1_fall": 0.322,
+        "stage1_neg": 0.528
+      },
+      "e15": {
+        "thresholds": {
+          "t_fall": 130,
+          "ratio": 1.5
+        },
+        "limit": 0.1,
+        "picked_on": [
+          "e8",
+          "e1"
+        ],
+        "stage1_fall": 0.0,
+        "stage1_neg": 0.0
+      }
+    },
+    "e8_leave_one_room_out": {
+      "e8_r1": {
+        "thresholds": {
+          "t_fall": 200,
+          "ratio": 8
+        },
+        "stage1_fall": 0.1,
+        "stage1_neg": 0.065
+      },
+      "e8_r2": {
+        "thresholds": {
+          "t_fall": 200,
+          "ratio": 1.5
+        },
+        "stage1_fall": 0.438,
+        "stage1_neg": 0.08
+      },
+      "e8_r3": {
+        "thresholds": {
+          "t_fall": 130,
+          "ratio": 1.5
+        },
+        "stage1_fall": 0.725,
+        "stage1_neg": 0.087
+      },
+      "e8_r4": {
+        "thresholds": {
+          "t_fall": 160,
+          "ratio": 1.5
+        },
+        "stage1_fall": 0.412,
+        "stage1_neg": 0.26
+      }
+    }
+  },
+  "grid": {
+    "{\"t_fall\": 15, \"ratio\": 1.5}": {
+      "tune_fall": 0.237,
+      "tune_neg": 0.54
+    },
+    "{\"t_fall\": 15, \"ratio\": 2}": {
+      "tune_fall": 0.237,
+      "tune_neg": 0.509
+    },
+    "{\"t_fall\": 15, \"ratio\": 4}": {
+      "tune_fall": 0.218,
+      "tune_neg": 0.386
+    },
+    "{\"t_fall\": 15, \"ratio\": 8}": {
+      "tune_fall": 0.129,
+      "tune_neg": 0.201
+    },
+    "{\"t_fall\": 20, \"ratio\": 1.5}": {
+      "tune_fall": 0.283,
+      "tune_neg": 0.476
+    },
+    "{\"t_fall\": 20, \"ratio\": 2}": {
+      "tune_fall": 0.283,
+      "tune_neg": 0.455
+    },
+    "{\"t_fall\": 20, \"ratio\": 4}": {
+      "tune_fall": 0.258,
+      "tune_neg": 0.373
+    },
+    "{\"t_fall\": 20, \"ratio\": 8}": {
+      "tune_fall": 0.157,
+      "tune_neg": 0.216
+    },
+    "{\"t_fall\": 30, \"ratio\": 1.5}": {
+      "tune_fall": 0.363,
+      "tune_neg": 0.352
+    },
+    "{\"t_fall\": 30, \"ratio\": 2}": {
+      "tune_fall": 0.36,
+      "tune_neg": 0.344
+    },
+    "{\"t_fall\": 30, \"ratio\": 4}": {
+      "tune_fall": 0.323,
+      "tune_neg": 0.302
+    },
+    "{\"t_fall\": 30, \"ratio\": 8}": {
+      "tune_fall": 0.182,
+      "tune_neg": 0.22
+    },
+    "{\"t_fall\": 40, \"ratio\": 1.5}": {
+      "tune_fall": 0.425,
+      "tune_neg": 0.272
+    },
+    "{\"t_fall\": 40, \"ratio\": 2}": {
+      "tune_fall": 0.422,
+      "tune_neg": 0.269
+    },
+    "{\"t_fall\": 40, \"ratio\": 4}": {
+      "tune_fall": 0.375,
+      "tune_neg": 0.248
+    },
+    "{\"t_fall\": 40, \"ratio\": 8}": {
+      "tune_fall": 0.212,
+      "tune_neg": 0.205
+    },
+    "{\"t_fall\": 60, \"ratio\": 1.5}": {
+      "tune_fall": 0.56,
+      "tune_neg": 0.186
+    },
+    "{\"t_fall\": 60, \"ratio\": 2}": {
+      "tune_fall": 0.548,
+      "tune_neg": 0.184
+    },
+    "{\"t_fall\": 60, \"ratio\": 4}": {
+      "tune_fall": 0.489,
+      "tune_neg": 0.177
+    },
+    "{\"t_fall\": 60, \"ratio\": 8}": {
+      "tune_fall": 0.289,
+      "tune_neg": 0.16
+    },
+    "{\"t_fall\": 80, \"ratio\": 1.5}": {
+      "tune_fall": 0.615,
+      "tune_neg": 0.145
+    },
+    "{\"t_fall\": 80, \"ratio\": 2}": {
+      "tune_fall": 0.588,
+      "tune_neg": 0.145
+    },
+    "{\"t_fall\": 80, \"ratio\": 4}": {
+      "tune_fall": 0.535,
+      "tune_neg": 0.143
+    },
+    "{\"t_fall\": 80, \"ratio\": 8}": {
+      "tune_fall": 0.323,
+      "tune_neg": 0.131
+    },
+    "{\"t_fall\": 100, \"ratio\": 1.5}": {
+      "tune_fall": 0.649,
+      "tune_neg": 0.117
+    },
+    "{\"t_fall\": 100, \"ratio\": 2}": {
+      "tune_fall": 0.618,
+      "tune_neg": 0.117
+    },
+    "{\"t_fall\": 100, \"ratio\": 4}": {
+      "tune_fall": 0.551,
+      "tune_neg": 0.116
+    },
+    "{\"t_fall\": 100, \"ratio\": 8}": {
+      "tune_fall": 0.345,
+      "tune_neg": 0.107
+    },
+    "{\"t_fall\": 130, \"ratio\": 1.5}": {
+      "tune_fall": 0.594,
+      "tune_neg": 0.091
+    },
+    "{\"t_fall\": 130, \"ratio\": 2}": {
+      "tune_fall": 0.575,
+      "tune_neg": 0.09
+    },
+    "{\"t_fall\": 130, \"ratio\": 4}": {
+      "tune_fall": 0.492,
+      "tune_neg": 0.09
+    },
+    "{\"t_fall\": 130, \"ratio\": 8}": {
+      "tune_fall": 0.311,
+      "tune_neg": 0.086
+    },
+    "{\"t_fall\": 160, \"ratio\": 1.5}": {
+      "tune_fall": 0.52,
+      "tune_neg": 0.071
+    },
+    "{\"t_fall\": 160, \"ratio\": 2}": {
+      "tune_fall": 0.502,
+      "tune_neg": 0.071
+    },
+    "{\"t_fall\": 160, \"ratio\": 4}": {
+      "tune_fall": 0.418,
+      "tune_neg": 0.07
+    },
+    "{\"t_fall\": 160, \"ratio\": 8}": {
+      "tune_fall": 0.268,
+      "tune_neg": 0.068
+    },
+    "{\"t_fall\": 200, \"ratio\": 1.5}": {
+      "tune_fall": 0.366,
+      "tune_neg": 0.052
+    },
+    "{\"t_fall\": 200, \"ratio\": 2}": {
+      "tune_fall": 0.354,
+      "tune_neg": 0.052
+    },
+    "{\"t_fall\": 200, \"ratio\": 4}": {
+      "tune_fall": 0.302,
+      "tune_neg": 0.052
+    },
+    "{\"t_fall\": 200, \"ratio\": 8}": {
+      "tune_fall": 0.194,
+      "tune_neg": 0.052
+    }
+  }
+}

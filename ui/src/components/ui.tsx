@@ -60,13 +60,101 @@ export const TONE_CLASS: Record<Tone, { solid: string; soft: string; text: strin
 };
 
 export const btn = {
-  primary: "inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
-  secondary: "inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm font-semibold hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40",
-  danger: "inline-flex items-center justify-center gap-2 rounded-lg bg-danger px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40",
-  segment: (on: boolean) => `rounded-md px-2.5 py-1 text-xs font-medium ${on ? "bg-fg text-bg" : "text-muted hover:bg-surface-2"}`,
+  primary: "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
+  secondary: "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line bg-surface px-4 py-2.5 text-sm font-semibold hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40",
+  danger: "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-danger px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40",
+  segment: (on: boolean) => `min-h-11 rounded-md px-2.5 py-1 text-xs font-medium ${on ? "bg-fg text-bg" : "text-muted hover:bg-surface-2"}`,
 };
 
-export const inputCls = "mt-1 block w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm placeholder:text-subtle";
+/** Text input / select under a label: 44 px tall, dimmed when disabled, red border with aria-invalid. */
+export const inputCls = "mt-1 block w-full min-h-11 rounded-lg border border-line bg-surface px-3 py-2 text-sm placeholder:text-subtle disabled:opacity-50 aria-[invalid=true]:border-danger";
+
+/** The same input for use inside a flex row (no top margin, can shrink). */
+export const inputRowCls = "w-full min-w-0 min-h-11 rounded-lg border border-line bg-surface px-3 py-2 text-sm placeholder:text-subtle disabled:opacity-50 aria-[invalid=true]:border-danger";
+
+/** A checkbox with its text as one 44 px target; give the checkbox `h-5 w-5 accent-[var(--primary)]`. */
+export const checkLabelCls = "inline-flex min-h-11 items-center gap-2 text-sm";
+
+/** The one page header: title, optional badge next to it, description under it, actions to the right. */
+export function PageHeader({ title, description, badge, actions, className = "" }: { title: ReactNode; description?: ReactNode; badge?: ReactNode; actions?: ReactNode; className?: string }) {
+  return (
+    <header className={`mb-4 flex flex-wrap items-end gap-x-3 gap-y-2 ${className}`}>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          {badge}
+        </div>
+        {description && <p className="mt-1 text-sm text-muted">{description}</p>}
+      </div>
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+    </header>
+  );
+}
+
+/**
+ * A labelled form control. Hint and error sit inside the <label>, so they are part
+ * of the control's accessible name. Callers set aria-invalid on the input.
+ */
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+  className = "",
+  htmlFor,
+}: {
+  label: ReactNode;
+  hint?: ReactNode;
+  error?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  /**
+   * The input's id. With it the label is only the label text, so buttons in the same row stay
+   * out of the input's accessible name; give the input aria-describedby `${htmlFor}-hint`.
+   */
+  htmlFor?: string;
+}) {
+  if (htmlFor)
+    return (
+      <div className={`block text-sm font-medium ${className}`}>
+        <label htmlFor={htmlFor}>{label}</label>
+        {children}
+        {hint && (
+          <span id={`${htmlFor}-hint`} className="mt-1 block text-xs font-normal text-muted">
+            {hint}
+          </span>
+        )}
+        {error && (
+          <span id={`${htmlFor}-error`} className="mt-1 block text-xs font-normal text-danger" aria-live="polite">
+            {error}
+          </span>
+        )}
+      </div>
+    );
+  return (
+    <label className={`block text-sm font-medium ${className}`}>
+      {label}
+      {children}
+      {hint && <span className="mt-1 block text-xs font-normal text-muted">{hint}</span>}
+      {error && (
+        <span className="mt-1 block text-xs font-normal text-danger" aria-live="polite">
+          {error}
+        </span>
+      )}
+    </label>
+  );
+}
+
+/** "Nothing here yet" in a card: icon, short title, one calm sentence. */
+export function EmptyState({ icon, title, children, iconClassName = "text-subtle" }: { icon: IconName; title: ReactNode; children?: ReactNode; iconClassName?: string }) {
+  return (
+    <div className="rounded-card border border-line bg-surface p-6 text-center">
+      <Icon name={icon} className={`mx-auto h-8 w-8 ${iconClassName}`} />
+      <p className="mt-2 font-semibold">{title}</p>
+      {children && <div className="text-sm text-muted">{children}</div>}
+    </div>
+  );
+}
 
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="inline-flex min-w-6 items-center justify-center rounded border border-line bg-surface-2 px-1.5 font-mono text-xs font-semibold text-muted">{children}</kbd>;
@@ -82,7 +170,29 @@ export function Notice({ tone, children, className = "" }: { tone: "ok" | "warn"
 }
 
 // Icons: simple strokes drawn for this project (no icon dependency).
-type IconName = "person" | "empty" | "question" | "signal-off" | "alert" | "check" | "bell" | "bell-off" | "chevron" | "wave" | "monitor" | "settings" | "clock" | "bed" | "hourglass";
+export type IconName =
+  | "person"
+  | "empty"
+  | "question"
+  | "signal-off"
+  | "alert"
+  | "check"
+  | "bell"
+  | "bell-off"
+  | "chevron"
+  | "wave"
+  | "monitor"
+  | "settings"
+  | "clock"
+  | "bed"
+  | "hourglass"
+  | "flame"
+  | "rubble"
+  | "shield"
+  | "sound"
+  | "sound-off"
+  | "network"
+  | "chart";
 
 const PATHS: Record<IconName, ReactNode> = {
   person: (
@@ -165,6 +275,53 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M8 3.5c0 4 8 4.5 8 8.5s-8 4.5-8 8.5M16 3.5c0 4-8 4.5-8 8.5s8 4.5 8 8.5" />
     </>
   ),
+  flame: (
+    <>
+      <path d="M12 3c.6 3.4 5.5 5.6 5.5 10.5a5.5 5.5 0 0 1-11 0c0-2.6 1.3-4.3 2.7-5.4.1 1.9 1 3.1 2.3 3.6C11.1 9.2 10.8 6 12 3z" />
+      <path d="M10.2 17.2a1.9 1.9 0 0 0 3.6 0c0-1.3-1-2-1.8-2.9-.8.9-1.8 1.6-1.8 2.9z" />
+    </>
+  ),
+  rubble: (
+    <>
+      <path d="M3 20.5h18" />
+      <path d="M5 20.5V9.5L10 6l1.5 3-2 2.5 2 2-1 2" />
+      <path d="M14 5.5l5 3.5v4" />
+      <path d="M12.5 20.5l1.5-3.5 2.5 1 1.5-2.5 2 5" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M12 3.5 19 6v5.5c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
+      <rect x="9.3" y="11" width="5.4" height="4.2" rx=".8" />
+      <path d="M10.5 11V9.8a1.5 1.5 0 0 1 3 0V11" />
+    </>
+  ),
+  sound: (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+      <path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" />
+    </>
+  ),
+  "sound-off": (
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" />
+      <path d="m16 9.5 5 5M21 9.5l-5 5" />
+    </>
+  ),
+  network: (
+    <>
+      <circle cx="12" cy="5.5" r="2" />
+      <circle cx="5.5" cy="18" r="2" />
+      <circle cx="18.5" cy="18" r="2" />
+      <path d="M11 7.3 6.5 16.2M13 7.3l4.5 8.9M7.5 18h9" />
+    </>
+  ),
+  chart: (
+    <>
+      <path d="M3.5 20.5h17" />
+      <path d="M6.5 17v-4M12 17V9.5M17.5 17V5.5" />
+    </>
+  ),
 };
 
 export function Icon({ name, className = "h-5 w-5", ...rest }: { name: IconName } & SVGProps<SVGSVGElement>) {
@@ -176,3 +333,29 @@ export function Icon({ name, className = "h-5 w-5", ...rest }: { name: IconName 
 }
 
 export const TONE_ICON: Record<Tone, IconName> = { present: "person", empty: "empty", uncertain: "question", offline: "signal-off", connecting: "hourglass" };
+
+/** Placeholder blocks while the first status has not arrived, instead of "—" and wrong defaults. */
+export function Skeleton({ className = "h-4 w-full" }: { className?: string }) {
+  return <div aria-hidden className={`animate-pulse rounded-lg bg-surface-2 ${className}`} />;
+}
+
+/** A page's title with skeleton cards under it, while the box has not answered yet. */
+export function PageSkeleton({ title, cards = 2 }: { title: string; cards?: number }) {
+  return (
+    <div aria-busy="true">
+      <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+      <p className="mt-1 text-sm text-muted" role="status">
+        Connecting to the Life-Fi box…
+      </p>
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {Array.from({ length: cards }, (_, i) => (
+          <div key={i} className="space-y-3 rounded-card border border-line bg-surface p-4 sm:p-5">
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-8 w-2/3" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

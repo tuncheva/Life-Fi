@@ -1,0 +1,253 @@
+{
+  "windows": 2046,
+  "right_no_gates": 0.63,
+  "current": {
+    "valid_share": 0.153,
+    "right_among_valid": 0.949
+  },
+  "per_rate": {
+    "10": {
+      "windows": 682,
+      "right_no_gates": 0.861,
+      "right_among_valid_now": 0.988
+    },
+    "15": {
+      "windows": 682,
+      "right_no_gates": 0.554,
+      "right_among_valid_now": 0.778
+    },
+    "20": {
+      "windows": 682,
+      "right_no_gates": 0.475,
+      "right_among_valid_now": 0.88
+    }
+  },
+  "held_out": [
+    {
+      "min_confidence": 0.5,
+      "min_band_ratio": 1.0,
+      "right_among_valid_picked": 0.991,
+      "right_among_valid_held_out": 0.984,
+      "valid_share_held_out": 0.238
+    },
+    {
+      "min_confidence": 0.5,
+      "min_band_ratio": 1.5,
+      "right_among_valid_picked": 0.99,
+      "right_among_valid_held_out": 0.986,
+      "valid_share_held_out": 0.138
+    }
+  ],
+  "sweep": [
+    {
+      "min_confidence": 0.2,
+      "min_band_ratio": 1.0,
+      "valid_share": 0.422,
+      "right_among_valid": 0.757,
+      "files_with_valid": 58
+    },
+    {
+      "min_confidence": 0.2,
+      "min_band_ratio": 1.5,
+      "valid_share": 0.269,
+      "right_among_valid": 0.796,
+      "files_with_valid": 48
+    },
+    {
+      "min_confidence": 0.2,
+      "min_band_ratio": 2.0,
+      "valid_share": 0.192,
+      "right_among_valid": 0.807,
+      "files_with_valid": 43
+    },
+    {
+      "min_confidence": 0.2,
+      "min_band_ratio": 3.0,
+      "valid_share": 0.088,
+      "right_among_valid": 0.867,
+      "files_with_valid": 25
+    },
+    {
+      "min_confidence": 0.2,
+      "min_band_ratio": 4.0,
+      "valid_share": 0.044,
+      "right_among_valid": 0.857,
+      "files_with_valid": 14
+    },
+    {
+      "min_confidence": 0.25,
+      "min_band_ratio": 1.0,
+      "valid_share": 0.402,
+      "right_among_valid": 0.789,
+      "files_with_valid": 58
+    },
+    {
+      "min_confidence": 0.25,
+      "min_band_ratio": 1.5,
+      "valid_share": 0.257,
+      "right_among_valid": 0.823,
+      "files_with_valid": 48
+    },
+    {
+      "min_confidence": 0.25,
+      "min_band_ratio": 2.0,
+      "valid_share": 0.183,
+      "right_among_valid": 0.837,
+      "files_with_valid": 42
+    },
+    {
+      "min_confidence": 0.25,
+      "min_band_ratio": 3.0,
+      "valid_share": 0.085,
+      "right_among_valid": 0.896,
+      "files_with_valid": 24
+    },
+    {
+      "min_confidence": 0.25,
+      "min_band_ratio": 4.0,
+      "valid_share": 0.043,
+      "right_among_valid": 0.885,
+      "files_with_valid": 14
+    },
+    {
+      "min_confidence": 0.3,
+      "min_band_ratio": 1.0,
+      "valid_share": 0.369,
+      "right_among_valid": 0.833,
+      "files_with_valid": 58
+    },
+    {
+      "min_confidence": 0.3,
+      "min_band_ratio": 1.5,
+      "valid_share": 0.242,
+      "right_among_valid": 0.853,
+      "files_with_valid": 47
+    },
+    {
+      "min_confidence": 0.3,
+      "min_band_ratio": 2.0,
+      "valid_share": 0.175,
+      "right_among_valid": 0.864,
+      "files_with_valid": 39
+    },
+    {
+      "min_confidence": 0.3,
+      "min_band_ratio": 3.0,
+      "valid_share": 0.083,
+      "right_among_valid": 0.905,
+      "files_with_valid": 23
+    },
+    {
+      "min_confidence": 0.3,
+      "min_band_ratio": 4.0,
+      "valid_share": 0.042,
+      "right_among_valid": 0.894,
+      "files_with_valid": 14
+    },
+    {
+      "min_confidence": 0.35,
+      "min_band_ratio": 1.0,
+      "valid_share": 0.335,
+      "right_among_valid": 0.874,
+      "files_with_valid": 56
+    },
+    {
+      "min_confidence": 0.35,
+      "min_band_ratio": 1.5,
+      "valid_share": 0.223,
+      "right_among_valid": 0.897,
+      "files_with_valid": 45
+    },
+    {
+      "min_confidence": 0.35,
+      "min_band_ratio": 2.0,
+      "valid_share": 0.162,
+      "right_among_valid": 0.907,
+      "files_with_valid": 36
+    },
+    {
+      "min_confidence": 0.35,
+      "min_band_ratio": 3.0,
+      "valid_share": 0.078,
+      "right_among_valid": 0.938,
+      "files_with_valid": 21
+    },
+    {
+      "min_confidence": 0.35,
+      "min_band_ratio": 4.0,
+      "valid_share": 0.039,
+      "right_among_valid": 0.938,
+      "files_with_valid": 14
+    },
+    {
+      "min_confidence": 0.4,
+      "min_band_ratio": 1.0,
+      "valid_share": 0.306,
+      "right_among_valid": 0.923,
+      "files_with_valid": 53
+    },
+    {
+      "min_confidence": 0.4,
+      "min_band_ratio": 1.5,
+      "valid_share": 0.21,
+      "right_among_valid": 0.935,
+      "files_with_valid": 41
+    },
+    {
+      "min_confidence": 0.4,
+      "min_band_ratio": 2.0,
+      "valid_share": 0.153,
+      "right_among_valid": 0.949,
+      "files_with_valid": 30
+    },
+    {
+      "min_confidence": 0.4,
+      "min_band_ratio": 3.0,
+      "valid_share": 0.075,
+      "right_among_valid": 0.974,
+      "files_with_valid": 20
+    },
+    {
+      "min_confidence": 0.4,
+      "min_band_ratio": 4.0,
+      "valid_share": 0.037,
+      "right_among_valid": 0.974,
+      "files_with_valid": 14
+    },
+    {
+      "min_confidence": 0.5,
+      "min_band_ratio": 1.0,
+      "valid_share": 0.224,
+      "right_among_valid": 0.987,
+      "files_with_valid": 41
+    },
+    {
+      "min_confidence": 0.5,
+      "min_band_ratio": 1.5,
+      "valid_share": 0.162,
+      "right_among_valid": 0.988,
+      "files_with_valid": 35
+    },
+    {
+      "min_confidence": 0.5,
+      "min_band_ratio": 2.0,
+      "valid_share": 0.122,
+      "right_among_valid": 0.996,
+      "files_with_valid": 25
+    },
+    {
+      "min_confidence": 0.5,
+      "min_band_ratio": 3.0,
+      "valid_share": 0.062,
+      "right_among_valid": 1.0,
+      "files_with_valid": 15
+    },
+    {
+      "min_confidence": 0.5,
+      "min_band_ratio": 4.0,
+      "valid_share": 0.033,
+      "right_among_valid": 1.0,
+      "files_with_valid": 11
+    }
+  ]
+}

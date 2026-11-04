@@ -30,7 +30,7 @@ static const char *TAG = "cmd";
 static void print_help(void)
 {
     ESP_LOGI(TAG, "commands: cal | learn N (1-%d) | forget | status | wifi <ssid> <password> | "
-                  "wifi clear | usbstream | help", LIFEFI_MAX_COUNT);
+                  "wifi clear | tx [on|off] | usbstream | help", LIFEFI_MAX_COUNT);
 }
 
 static void wifi_usage(void)
@@ -97,6 +97,28 @@ static void cmd_wifi(char *args)
     esp_restart();
 }
 
+/* tx on / tx off: look for a fixed transmitter at boot or not (saved, then
+ * restart, like `wifi clear`). tx alone prints the setting. */
+static void cmd_tx(const char *args)
+{
+    if (*args == '\0') {
+        ESP_LOGI(TAG, "fixed transmitter search at boot: %s (`tx on` / `tx off`)",
+                 wifi_link_tx_probe_enabled() ? "on" : "off");
+        return;
+    }
+    bool on = strcmp(args, "on") == 0;
+    if (!on && strcmp(args, "off") != 0) {
+        ESP_LOGW(TAG, "usage: tx  |  tx on  |  tx off");
+        return;
+    }
+    if (wifi_link_set_tx_probe(on) != ESP_OK) {
+        ESP_LOGE(TAG, "could not save the setting");
+        return;
+    }
+    ESP_LOGW(TAG, "fixed transmitter search %s, restarting", on ? "on" : "off");
+    esp_restart();
+}
+
 void commands_handle_line(char *line)
 {
     while (isspace((unsigned char)*line)) {
@@ -139,6 +161,8 @@ void commands_handle_line(char *line)
         estimator_request_status();
     } else if (strcmp(line, "wifi") == 0) {
         cmd_wifi(args);
+    } else if (strcmp(line, "tx") == 0) {
+        cmd_tx(args);
     } else if (strcmp(line, "usbstream") == 0) {
         stream_usb_keepalive();   /* silent: the recorder repeats it every second */
     } else {

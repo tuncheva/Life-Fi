@@ -1,0 +1,16 @@
+# The ML stack in .venv on 2026-10-29 (model-training-plan §9.1).
+#   python -m venv .venv
+#   .venv/Scripts/pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+#   .venv/Scripts/pip install -r ml/requirements.txt
+# torch is installed first, from the cu128 index: the RTX 50-series needs a CUDA 12.8 build.
+numpy==2.5.4
+scipy==1.18.1
+scikit-learn==1.9.1
+lightgbm==4.7.0
+onnx==1.23.2
+onnxmltools==1.16.0
+onnxruntime==1.31.1
+PyYAML==6.0.3
+h5py==3.16.0          # datasets/readers/e9.py (CSI-Bench .h5)
+pyserial==3.5         # engine/run.py --serial
+jsonschema==4.26.0    # engine/tests

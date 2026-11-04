@@ -11,6 +11,7 @@
   "motion": 0.02,
   "posture": {"label": "unknown", "since": 1767225800000, "src": "transitions"},
   "count": null,
+  "activity": {"label": "fall", "p": 0.62, "probs": {"none": 0.05, "walking": 0.08, "sit_down": 0.1, "lie_down": 0.12, "rise": 0.03, "fall": 0.62}, "src": "model"},
   "breathing": {"bpm": null, "confidence": 0.1, "valid": false, "wave": []},
   "csi": [],
   "events": [{"id": 42, "type": "fall", "state": "active", "t": 1767225800100, "data": {"peak": 0.93}}],

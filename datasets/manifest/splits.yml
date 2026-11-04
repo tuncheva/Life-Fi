@@ -1,0 +1,19 @@
+# Splits for the transition model, fixed 2026-10-29 BEFORE any training
+# (dataset-preparation §4.6, model-scope-and-phases §4). Never by window.
+#
+# locked_subjects: never used for training, model selection or tuning.
+#   Scored once, at the end. Chosen by number, not by looking at the data.
+# room_folds: leave-one-room-out. E1 is one room, so only E8's four rooms
+#   can be held out; E1 is always in training for these folds.
+# e1_subject_folds: leave-subjects-out inside E1 (19 usable subjects).
+
+locked_subjects: [e1_s22, e1_s23, e1_s24]
+
+room_folds: [e8_r1, e8_r2, e8_r3, e8_r4]
+
+e1_subject_folds:
+  - [e1_s1, e1_s2, e1_s3, e1_s4]
+  - [e1_s5, e1_s6, e1_s7, e1_s8]
+  - [e1_s9, e1_s10, e1_s11, e1_s12]
+  - [e1_s13, e1_s14, e1_s15, e1_s16]
+  - [e1_s17, e1_s19, e1_s21]

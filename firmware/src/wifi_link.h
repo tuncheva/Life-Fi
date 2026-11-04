@@ -3,14 +3,16 @@
  * Station mode (credentials in wifi_secrets.h): connect to the router and
  * ping the gateway at 100 Hz; every reply is a CSI sample.
  * Sniffer mode (no credentials, or connecting failed): lock onto the
- * strongest access point and take CSI from its beacons and traffic. */
+ * strongest access point and take CSI from its beacons and traffic.
+ * Fixed transmitter (found by a channel probe at boot, ahead of both): CSI
+ * from a second ESP32 running the *_tx firmware (tx_main.c). */
 #pragma once
 
 #include <stdbool.h>
 #include <stddef.h>
 #include "esp_err.h"
 
-typedef enum { LINK_STATION, LINK_SNIFFER } link_mode_t;
+typedef enum { LINK_STATION, LINK_SNIFFER, LINK_FIXED_TX } link_mode_t;
 
 /* Blocks until the CSI source is chosen (connected, or AP locked). */
 esp_err_t wifi_link_start(void);
@@ -24,3 +26,8 @@ void wifi_link_describe(char *buf, size_t len);
 /* Store station credentials in flash; used from the next boot on, ahead of
  * wifi_secrets.h. An empty or NULL ssid erases them (back to sniffer mode). */
 esp_err_t wifi_link_save_credentials(const char *ssid, const char *password);
+
+/* Look for a fixed transmitter at boot (default on). Saved in flash, used
+ * from the next boot on. */
+esp_err_t wifi_link_set_tx_probe(bool on);
+bool wifi_link_tx_probe_enabled(void);

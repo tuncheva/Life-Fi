@@ -1,0 +1,279 @@
+{
+  "rooms": {
+    "room e8_r1": {
+      "before": {
+        "windows": 2450,
+        "macro_f1": 0.42617067637003797,
+        "per_class_f1": {
+          "none": 0.702,
+          "walking": 0.176,
+          "fall": 0.4
+        },
+        "event_clips": 30,
+        "event_found": 1.0,
+        "quiet_clips": 161,
+        "false_event_share": 0.267
+      },
+      "adabn": {
+        "windows": 2450,
+        "macro_f1": 0.4203804034579972,
+        "per_class_f1": {
+          "none": 0.715,
+          "walking": 0.078,
+          "fall": 0.468
+        },
+        "event_clips": 30,
+        "event_found": 0.967,
+        "quiet_clips": 161,
+        "false_event_share": 0.385
+      },
+      "adabn+head": {
+        "windows": 2450,
+        "macro_f1": 0.5832295544754564,
+        "per_class_f1": {
+          "none": 0.905,
+          "walking": 0.0,
+          "fall": 0.845
+        },
+        "event_clips": 30,
+        "event_found": 1.0,
+        "quiet_clips": 161,
+        "false_event_share": 0.0
+      },
+      "gbm before": {
+        "windows": 2450,
+        "macro_f1": 0.550161895217305,
+        "per_class_f1": {
+          "none": 0.852,
+          "walking": 0.159,
+          "fall": 0.64
+        },
+        "event_clips": 30,
+        "event_found": 1.0,
+        "quiet_clips": 161,
+        "false_event_share": 0.037
+      },
+      "gbm +guided": {
+        "windows": 2450,
+        "macro_f1": 0.6221864429020051,
+        "per_class_f1": {
+          "none": 0.863,
+          "walking": 0.191,
+          "fall": 0.812
+        },
+        "event_clips": 30,
+        "event_found": 1.0,
+        "quiet_clips": 161,
+        "false_event_share": 0.031
+      }
+    },
+    "room e8_r2": {
+      "before": {
+        "windows": 2999,
+        "macro_f1": 0.3600221882332953,
+        "per_class_f1": {
+          "none": 0.616,
+          "walking": 0.171,
+          "fall": 0.293
+        },
+        "event_clips": 38,
+        "event_found": 1.0,
+        "quiet_clips": 192,
+        "false_event_share": 0.24
+      },
+      "adabn": {
+        "windows": 2999,
+        "macro_f1": 0.38646626130126843,
+        "per_class_f1": {
+          "none": 0.711,
+          "walking": 0.095,
+          "fall": 0.353
+        },
+        "event_clips": 38,
+        "event_found": 0.789,
+        "quiet_clips": 192,
+        "false_event_share": 0.219
+      },
+      "adabn+head": {
+        "windows": 2999,
+        "macro_f1": 0.5455746623241317,
+        "per_class_f1": {
+          "none": 0.859,
+          "walking": 0.096,
+          "fall": 0.682
+        },
+        "event_clips": 38,
+        "event_found": 1.0,
+        "quiet_clips": 192,
+        "false_event_share": 0.052
+      },
+      "gbm before": {
+        "windows": 2999,
+        "macro_f1": 0.4795415901084799,
+        "per_class_f1": {
+          "none": 0.819,
+          "walking": 0.264,
+          "fall": 0.355
+        },
+        "event_clips": 38,
+        "event_found": 0.842,
+        "quiet_clips": 192,
+        "false_event_share": 0.078
+      },
+      "gbm +guided": {
+        "windows": 2999,
+        "macro_f1": 0.6045716617782281,
+        "per_class_f1": {
+          "none": 0.843,
+          "walking": 0.27,
+          "fall": 0.701
+        },
+        "event_clips": 38,
+        "event_found": 1.0,
+        "quiet_clips": 192,
+        "false_event_share": 0.068
+      }
+    },
+    "room e8_r3": {
+      "before": {
+        "windows": 2136,
+        "macro_f1": 0.4026619216595712,
+        "per_class_f1": {
+          "none": 0.789,
+          "walking": 0.079,
+          "fall": 0.34
+        },
+        "event_clips": 18,
+        "event_found": 1.0,
+        "quiet_clips": 143,
+        "false_event_share": 0.091
+      },
+      "adabn": {
+        "windows": 2136,
+        "macro_f1": 0.3299104449358423,
+        "per_class_f1": {
+          "none": 0.629,
+          "walking": 0.048,
+          "fall": 0.312
+        },
+        "event_clips": 18,
+        "event_found": 0.944,
+        "quiet_clips": 143,
+        "false_event_share": 0.371
+      },
+      "adabn+head": {
+        "windows": 2136,
+        "macro_f1": 0.602695703206343,
+        "per_class_f1": {
+          "none": 0.864,
+          "walking": 0.22,
+          "fall": 0.724
+        },
+        "event_clips": 18,
+        "event_found": 1.0,
+        "quiet_clips": 143,
+        "false_event_share": 0.0
+      },
+      "gbm before": {
+        "windows": 2136,
+        "macro_f1": 0.5738635171264642,
+        "per_class_f1": {
+          "none": 0.838,
+          "walking": 0.217,
+          "fall": 0.667
+        },
+        "event_clips": 18,
+        "event_found": 1.0,
+        "quiet_clips": 143,
+        "false_event_share": 0.028
+      },
+      "gbm +guided": {
+        "windows": 2136,
+        "macro_f1": 0.6158512295337287,
+        "per_class_f1": {
+          "none": 0.855,
+          "walking": 0.3,
+          "fall": 0.693
+        },
+        "event_clips": 18,
+        "event_found": 1.0,
+        "quiet_clips": 143,
+        "false_event_share": 0.028
+      }
+    },
+    "room e8_r4": {
+      "before": {
+        "windows": 2001,
+        "macro_f1": 0.33339160196251116,
+        "per_class_f1": {
+          "none": 0.639,
+          "walking": 0.109,
+          "fall": 0.253
+        },
+        "event_clips": 15,
+        "event_found": 1.0,
+        "quiet_clips": 137,
+        "false_event_share": 0.35
+      },
+      "adabn": {
+        "windows": 2001,
+        "macro_f1": 0.4498804140700767,
+        "per_class_f1": {
+          "none": 0.705,
+          "walking": 0.101,
+          "fall": 0.544
+        },
+        "event_clips": 15,
+        "event_found": 1.0,
+        "quiet_clips": 137,
+        "false_event_share": 0.27
+      },
+      "adabn+head": {
+        "windows": 2001,
+        "macro_f1": 0.5165475649346617,
+        "per_class_f1": {
+          "none": 0.861,
+          "walking": 0.005,
+          "fall": 0.684
+        },
+        "event_clips": 15,
+        "event_found": 1.0,
+        "quiet_clips": 137,
+        "false_event_share": 0.022
+      },
+      "gbm before": {
+        "windows": 2001,
+        "macro_f1": 0.5618929140195266,
+        "per_class_f1": {
+          "none": 0.773,
+          "walking": 0.392,
+          "fall": 0.52
+        },
+        "event_clips": 15,
+        "event_found": 0.933,
+        "quiet_clips": 137,
+        "false_event_share": 0.117
+      },
+      "gbm +guided": {
+        "windows": 2001,
+        "macro_f1": 0.6079538533679836,
+        "per_class_f1": {
+          "none": 0.801,
+          "walking": 0.414,
+          "fall": 0.61
+        },
+        "event_clips": 15,
+        "event_found": 0.933,
+        "quiet_clips": 137,
+        "false_event_share": 0.066
+      }
+    }
+  },
+  "mean_macro_f1": {
+    "before": 0.381,
+    "adabn": 0.397,
+    "adabn+head": 0.562,
+    "gbm before": 0.541,
+    "gbm +guided": 0.613
+  }
+}

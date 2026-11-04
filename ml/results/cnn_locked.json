@@ -1,0 +1,25 @@
+{
+  "windows": 4987,
+  "macro_f1": 0.3483145619571136,
+  "transition_f1": 0.14822055218606553,
+  "per_class_f1": {
+    "none": 0.737,
+    "walking": 0.902,
+    "sit_down": 0.236,
+    "lie_down": 0.141,
+    "rise": 0.068,
+    "fall": 0.007
+  },
+  "event_clips": 137,
+  "event_found": 0.175,
+  "event_top1": 0.234,
+  "event_constant": 0.27,
+  "event_found_per_class": {
+    "fall": 0.0,
+    "lie_down": 0.306,
+    "rise": 0.108,
+    "sit_down": 0.281
+  },
+  "quiet_clips": 45,
+  "false_event_share": 0.133
+}

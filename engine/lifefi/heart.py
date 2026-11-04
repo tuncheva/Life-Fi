@@ -109,6 +109,12 @@ def _motion_ratio(spec, top, br, br_ref, notch):
     return float((per_bin * br.sum() / br_ref.sum()).mean())
 
 
+def _still(breath_ratio):
+    """The motion check: breathing band ratio at least breathing.MIN_BAND_RATIO. NaN
+    (a flat or broken window) fails it; `ratio < MIN` alone would let NaN through."""
+    return breath_ratio >= B.MIN_BAND_RATIO
+
+
 def _acf_rate(sig):
     """Rate from the autocorrelation maximum over the band's lags, parabolic-interpolated."""
     s = sig - sig.mean()
@@ -185,7 +191,7 @@ def estimate_heart(ts_us, csi):
                 reasons.append(f"several peaks ({second:.2f})")
             if not abs(acf_bpm - bpm) <= MAX_DISAGREE_BPM:
                 reasons.append("FFT/ACF disagree")
-            if breath_ratio < B.MIN_BAND_RATIO:
+            if not _still(breath_ratio):
                 reasons.append(f"motion ({breath_ratio:.1f})")
             out.append(HeartWindow(float(grid[w0]), bpm, snr, conf, acf_bpm, 60.0 * fb,
                                    not reasons, "; ".join(reasons)))

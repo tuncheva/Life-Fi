@@ -32,8 +32,8 @@ export const MAX_GAP_S = 1.0;
 export const BAND: [number, number] = [0.1, 0.5];       // 6-30 breaths/min
 export const REF_BAND: [number, number] = [0.6, 2.0];   // motion / noise reference
 export const TOP_SUBCARRIERS = 8;
-export const MIN_CONFIDENCE = 0.35;    // [H] share of band power within +-0.02 Hz of the peak
-export const MIN_BAND_RATIO = 2.0;     // [H] breathing band vs 0.6-2 Hz, mean of the top subcarriers
+export const MIN_CONFIDENCE = 0.4;     // [H] share of band power within +-0.02 Hz of the peak; E1 sweep (ml/tune_breathing.py)
+export const MIN_BAND_RATIO = 2.0;     // [H] breathing band vs 0.6-2 Hz, mean of the top subcarriers; 1.5 lets motion through (TS motion test)
 export const MAX_DISAGREE_BPM = 2.0;   // FFT vs autocorrelation
 
 const PAD = 8;

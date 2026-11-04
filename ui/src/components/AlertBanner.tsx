@@ -4,9 +4,11 @@
 // big Acknowledge button. Acknowledged and cleared alerts de-escalate calmly.
 // Presentation mode draws its own full-screen version.
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ApiError, ackAlert, getDeviceName, getSettings, type Alert } from "@/lib/api";
-import { useLive, useNow } from "@/lib/live";
+import { useLiveSlow, useNow } from "@/lib/live";
+import { useSound } from "@/lib/sound";
 import { friendlyError, usePin } from "@/lib/pin";
 import { roomName, alertAction, alertTitle, clearedText, clock, duration, levelText, stopwatch } from "@/lib/words";
 import { Icon } from "./ui";
@@ -16,7 +18,7 @@ import { Icon } from "./ui";
  * by "no movement after a fall" is one situation for the person responding.
  */
 export function useAck() {
-  const { refreshAlerts } = useLive();
+  const { refreshAlerts } = useLiveSlow();
   const { withPin } = usePin();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,10 +61,13 @@ export function situation(open: Alert[]) {
 
 const FILL: Record<Alert["level"], string> = { high: "bg-alert-high", medium: "bg-alert-medium", low: "bg-alert-low" };
 
-/** What happened to the phone notification, from the alert's `notify` outcome (older servers: from notified_at + the topic). */
+/**
+ * What happened to the phone notification, from the alert's `notify` outcome (older servers: from notified_at + the topic).
+ * The banner adds an "Open settings" link when not sent; presentation mode shows the text alone.
+ */
 export function notifiedText(a: Alert, phoneSetUp: boolean | null): { text: string; sent: boolean } {
-  if (a.notify === "failed") return { text: `Phone notification failed: ${a.notify_error ?? "unknown error"} (Setup → Settings)`, sent: false };
-  if (a.notify === "not_configured" || phoneSetUp === false) return { text: "Phone notifications are not set up (Setup → Settings)", sent: false };
+  if (a.notify === "failed") return { text: `Phone notification failed: ${a.notify_error ?? "unknown error"}`, sent: false };
+  if (a.notify === "not_configured" || phoneSetUp === false) return { text: "Phone notifications are not set up", sent: false };
   if (!a.notified_at || a.notify === null) return { text: "Phone not notified yet", sent: false };
   const again = a.escalated_at ? ` · sent again at ${clock(a.escalated_at)} because nobody acknowledged` : "";
   return { text: `Phone notification sent at ${clock(a.notified_at, true)}${again}`, sent: true };
@@ -80,11 +85,12 @@ export function usePhoneSetUp(key: unknown): boolean | null {
 }
 
 export function AlertBanner() {
-  const { alerts, cleared, dismissCleared, status } = useLive();
+  const { alerts, cleared, dismissCleared, status } = useLiveSlow();
   const phoneNumber = status?.server.contact_phone?.trim() || null;
   const path = usePathname();
   const now = useNow();
   const { ack, busy, error } = useAck();
+  const sound = useSound();
   const open = alerts.filter((a) => a.state === "open");
   const acked = alerts.filter((a) => a.state === "acked");
   const phone = usePhoneSetUp(open.length);
@@ -107,7 +113,7 @@ export function AlertBanner() {
                   <span className="font-semibold">{alertTitle(lead.type)}</span>
                   <span className="text-muted"> · {alertAction(lead.type, lead.profile)}</span>
                 </div>
-                <button onClick={() => void ack(open)} disabled={busy} className="rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-2 disabled:opacity-60">
+                <button onClick={() => void ack(open)} disabled={busy} className="inline-flex min-h-11 items-center rounded-lg border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-2 disabled:opacity-60">
                   {busy ? "…" : "Got it"}
                 </button>
                 {error && <p className="w-full text-sm text-danger">{error}</p>}
@@ -133,7 +139,17 @@ export function AlertBanner() {
                   <p className="mt-1 text-base font-medium sm:text-lg">{alertAction(lead.type, lead.profile)}</p>
                   <p className="mt-2 flex items-center gap-1.5 text-sm opacity-95">
                     <Icon name={n.sent ? "bell" : "bell-off"} className="h-4 w-4 shrink-0" />
-                    {n.text}
+                    <span>
+                      {n.text}
+                      {!n.sent && n.text !== "Phone not notified yet" && (
+                        <>
+                          {". "}
+                          <Link href="/settings" className="font-semibold underline">
+                            Open settings
+                          </Link>
+                        </>
+                      )}
+                    </span>
                   </p>
                 </div>
               </div>
@@ -145,6 +161,11 @@ export function AlertBanner() {
                 >
                   {busy ? "Acknowledging…" : "I'm on it · Acknowledge"}
                 </button>
+                {sound.beeping && (
+                  <button onClick={sound.silence} className="rounded-lg border-2 border-white/80 px-5 py-3.5 text-lg font-bold text-alert-fg hover:bg-white/10 sm:py-3">
+                    Silence beep
+                  </button>
+                )}
                 {phoneNumber && (
                   <a href={`tel:${phoneNumber.replace(/\s+/g, "")}`} className="rounded-lg border-2 border-white/80 px-5 py-3.5 text-center text-lg font-bold text-alert-fg hover:bg-white/10 sm:py-3">
                     Call {phoneNumber}
@@ -179,7 +200,7 @@ export function AlertBanner() {
           <div className="flex-1 text-sm">
             <span className="font-semibold">All clear at {clock(recent[0].resolved_at!)}:</span> {recent.map((a) => clearedText(a.type)).join(", ")}.
           </div>
-          <button onClick={() => recent.forEach((a) => dismissCleared(a.id))} className="rounded-md px-2 py-1 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10">
+          <button onClick={() => recent.forEach((a) => dismissCleared(a.id))} className="inline-flex min-h-11 items-center rounded-md px-3 py-1 text-sm font-medium hover:bg-black/5 dark:hover:bg-white/10">
             Dismiss
           </button>
         </section>

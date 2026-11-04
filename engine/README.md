@@ -1,8 +1,79 @@
 # Life-Fi engine (PC side)
 
-Processing of raw CSI recordings on the PC. This is the start of plan-v2's
-`engine/` component (§3.1). Recordings come from
-`firmware/tools/csi_recorder.py` (`.csirec`). Needs Python 3 and numpy.
+The engine reads the board's CSI live (or replays a `.csirec`), turns it
+into the same 50 Hz signal the models were trained on, runs the rules and
+the movement model every 0.5 s, and sends one result to the server on TCP
+127.0.0.1:6000 ([contracts/control.md](../contracts/control.md),
+[results.schema.json](../contracts/results.schema.json)). The dashboard
+and its backend run in one Next.js app (`ui/`), which connects to it.
+
+## Run it
+
+One command starts the engine and the dashboard (with its backend)
+together (`scripts/engine.mjs` finds the `.venv` Python):
+
+```powershell
+.venv\Scripts\pip install -r engine\requirements.txt   # once (ml\requirements.txt has it all)
+npm run dev           # the board on USB: its port is found by itself
+```
+
+Then open http://localhost:3000.
+
+- **The board:** with nobody in the room, start the 2-minute calibration
+  from the dashboard (Setup → Calibration). Until then presence only counts
+  motion and the fall rule uses a provisional quiet level. The calibration
+  is saved to `data/calibration.json` and used again at the next start
+  (reported as `stale` after 24 h). If the board is unplugged, the
+  dashboard says "Can't read the sensor board" and the engine retries every
+  2 s; plugging it back in recovers.
+- **A recording:** real board recordings (`firmware/recordings/*.csirec`,
+  `data/sessions/`) can be replayed from Setup → Source; live is the
+  default and nothing synthetic is ever shown.
+- **Live views:** the dashboard draws a 3D room view (the distance from
+  `lifefi.position`), a 3D surface of the 52 subcarriers and a live
+  signals chart, all from the board's packets. The result's `link` carries
+  the RSSI and the board's own presence/people estimate from its USB log.
+- **Alarm sound:** the dashboard asks once per browser whether it may beep.
+  Urgent alarms then beep every 2 s until someone acknowledges them or
+  presses "Silence beep"; change it under Setup → Alarm sound.
+
+By hand, the engine alone:
+
+```powershell
+.venv\Scripts\python engine\run.py                          # the board over USB, port found by itself
+.venv\Scripts\python engine\run.py --serial COM3            # this port
+.venv\Scripts\python engine\run.py --esp 192.168.100.111    # over Wi-Fi (--esp alone: broadcast)
+.venv\Scripts\python engine\run.py --replay firmware\recordings\usb-test.csirec --loop   # a real recording
+```
+
+The dashboard's technical section ("Sensor details") also shows the
+movement model's guess (walking, sitting down, …), marked experimental: it
+does worse than a constant guess on people it was not trained on, and no
+alarm uses it.
+
+## What runs, and where the numbers come from
+
+Every threshold is in [config/rules.yaml](config/rules.yaml), with where
+it comes from next to it. All of them are set from downloaded public data
+only (decision 2026-10-30, [docs/models.md](../docs/models.md)).
+
+| Output | Code | State |
+|---|---|---|
+| Signal F (50 Hz, dB) | [lifefi/live.py](lifefi/live.py) on [lifefi/dsp.py](lifefi/dsp.py) | the training pipeline's code; live F equals an offline run (`tests/test_live.py`) |
+| Motion 0-1 | [lifefi/motion.py](lifefi/motion.py), `presence.motion_level` | 0.1 = presence's "someone moved" = the server's `MOTION_ON` |
+| Presence | [lifefi/presence.py](lifefi/presence.py), [lifefi/calibration.py](lifefi/calibration.py) | checked on E4; leaving the room only on synthetic data |
+| Breathing rate | [lifefi/breathing.py](lifefi/breathing.py) | gates checked on E1 |
+| Breathing stopped | [lifefi/apnea.py](lifefi/apnea.py) | 0 false alerts on E1; latency from synthetic holds only |
+| Fall → fainted | [lifefi/fall.py](lifefi/fall.py) | **not validated**: no public fall passes it; thresholds are a false-alarm guard |
+| Movement model, posture | [lifefi/models.py](lifefi/models.py), [lifefi/posture.py](lifefi/posture.py) | runs, but posture is hidden (`posture.publish: false`) |
+
+Tests (no board, no datasets): `tests/test_live.py`, `test_presence.py`,
+`test_apnea.py`, `test_posture.py`, `test_engine.py` (the whole engine on
+the five synthetic scenarios, every result checked against the schema),
+`test_control.py` (the TCP protocol). `test_features_vectors.py` needs
+`ml/models/`.
+
+## Offline tools
 
 | Path | What |
 |---|---|
@@ -12,12 +83,15 @@ Processing of raw CSI recordings on the PC. This is the start of plan-v2's
 | [lifefi/heart.py](lifefi/heart.py) | **Experimental** heart rate per 30 s window ([below](#heart-rate-experimental)) |
 | [tools/heart.py](tools/heart.py) | Runs it on a recording and prints every window |
 | [tests/test_heart.py](tests/test_heart.py) | Synthetic pulses between breathing harmonics are found within 2; harmonics alone, noise and motion are never reported |
+| [viz/position.html](viz/position.html) | **Experimental** 3D view of distance from the ESP32 ([below](#3d-position-view-experimental)) |
+| [tools/inventory.py](tools/inventory.py) | One line per recording: length, rate, loss, pauses, RSSI, breathing and heart results, and what it can feed |
 
 ```powershell
 python engine\tools\breathing.py firmware\recordings\<file>.csirec
 python engine\tests\test_breathing.py
 python engine\tools\heart.py firmware\recordings\<file>.csirec
 python engine\tests\test_heart.py
+python engine\tools\inventory.py            # every .csirec in firmware\recordings\
 ```
 
 ### TypeScript version ([ts/](ts/))
@@ -132,3 +206,42 @@ To give it a real chance:
 - record 2 minutes.
 
 Assistive, not medical (plan-v2 §7.4).
+
+## 3D position view (experimental)
+
+[viz/position.html](viz/position.html) is one self-contained page (three.js
+from a CDN, no build). Drop a `.csirec` on it to see the ESP32, the router,
+the link's first Fresnel zone and a person figure at the estimated distance,
+with playback and a distance/disturbance chart. To load a recording by URL,
+serve the repository and add `?src=`:
+
+```powershell
+python -m http.server 8765
+# http://localhost:8765/engine/viz/position.html?src=/firmware/recordings/<file>.csirec
+```
+
+**What it can and cannot show.** One link and one antenna measure no
+direction, so the page draws a ring of every possible position at distance d.
+The figure stands at an assumed direction, which you can set. Distance is a
+proxy:
+
+- **R:** how strongly the body changes the subcarriers. It is the variance in
+  dB² of 0.25 s means of gain-free dB in a 10 s window, minus the white noise
+  estimated from neighbouring frames. A still, breathing person needs ≥ 10 s;
+  with 4 s windows they sat at the noise level.
+- **Distance:** d = 10^((A − R)/(10·n)), smoothed with a constant-velocity
+  Kalman filter. A = −14 dB and n = 2 are guesses until calibrated. Pause at a
+  known distance and add a point: one point fits A, two or more fit A and n
+  by least squares. It is a 2-parameter regression, not a neural network.
+  There are no labelled recordings to train one on.
+- **Movement raises R as much as closeness does.**
+  - On 2026-10-28, the still recording gave a steady 1.1–1.4 m with the
+    default guesses.
+  - The recordings with movement dropped to the 0.2 m minimum while people
+    moved.
+  - Calibrate sitting still, and read moving stretches as "moving", not
+    "close".
+
+Real position (zone, direction) needs 3–4 links; a pose network needs those
+plus camera labels ([upgrade-roadmap.md](../docs/plan/upgrade-roadmap.md),
+upgrades 3–4).

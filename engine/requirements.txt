@@ -1,0 +1,8 @@
+# What engine/run.py needs (the ML stack in ml/requirements.txt includes all of it).
+#   .venv/Scripts/pip install -r engine/requirements.txt
+numpy==2.5.4
+scipy==1.18.1
+PyYAML==6.0.3
+onnxruntime==1.31.1   # the movement model; without it the rules still run
+pyserial==3.5         # --serial (the board over USB)
+jsonschema==4.26.0    # engine/tests: results checked against contracts/results.schema.json

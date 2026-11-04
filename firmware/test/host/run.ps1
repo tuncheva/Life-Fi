@@ -48,6 +48,7 @@ $tests = [ordered]@{
     'test_commands'   = @("$src/commands.c", "$src/estimator.c")
     'test_pipeline'   = @("$src/csi_window.c", "$src/estimator.c")
     'test_csi_frame'  = @("$src/csi_frame.c")
+    'test_tx_match'   = @("$src/tx_match.c")
 }
 
 # Native tools write warnings to stderr; judge them by exit code only

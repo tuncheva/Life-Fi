@@ -1,0 +1,788 @@
+"""The engine: CSI packets in, one result per tick out (plan-v2 §3; contracts/).
+
+`Engine` has no sockets and no clock of its own: `feed(packet, host_us)`
+takes every frame the board sends, `tick(now_s)` returns the next result
+(contracts/results.schema.json), and `handle(cmd, reply)` answers the
+commands of contracts/control.md. lifefi.control puts it on TCP 6000;
+the tests drive it directly, faster than real time.
+
+Per tick:
+1. lifefi.live turns the packets into F (the training pipeline's code);
+2. motion M on the last `fall.window_s` of F;
+3. breathing (lifefi.breathing) and the experimental heart rate
+   (lifefi.heart) every 5 s on the same 30 s of raw CSI;
+4. presence (lifefi.presence) from M, breathing energy B and S;
+5. `no_breathing` (lifefi.apnea), the fall rule (lifefi.fall) and its
+   escalation to `fainted_suspected`;
+6. the movement model and posture (hidden unless rules.yaml says so);
+7. room occupancy (lifefi.occupancy, every tick, no calibration needed),
+   the experimental distance from the link (lifefi.position) with its
+   quality, and the link itself: RSSI and the board's own presence/people
+   estimate.
+
+The engine reports conditions; the server decides alerts (plan-v2 design
+rule 5). Every threshold is in engine/config/rules.yaml (rule 6).
+
+The empty-room calibration belongs to the signal it was taken on: live and
+replay each keep their own, and only the live one is saved to disk
+(`calibration_path`) and loaded again at the next start.
+"""
+
+import dataclasses
+import hashlib
+import json
+import pathlib
+import struct
+import sys
+import time
+import warnings
+from collections import deque
+
+import numpy as np
+import yaml
+
+from . import apnea, breathing, calibration, dsp, fall, heart, link, models, occupancy, position, posture, presence, spots
+from . import live as live_mod
+from . import motion as motion_mod
+from .live import LiveF
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "firmware" / "tools"))
+import csi_recorder  # noqa: E402  (frame header, .csirec format)
+
+VERSION = "0.1.0"
+RULES = ROOT / "engine" / "config" / "rules.yaml"
+PROFILES = ROOT / "contracts" / "profiles.yml"
+MODELS = ROOT / "ml" / "models"
+LLTF = np.array(csi_recorder.LLTF_PAIRS)
+CLOCK_WINDOW_S = 60.0
+FALL_EDGE_S = 5.0            # fall candidates this close to the window start are skipped (filter start-up)
+CALIBRATION = ROOT / "data" / "calibration.json"
+ACTIVITY_LABELS = ("none", "walking", "sit_down", "lie_down", "rise", "fall")   # results.schema.json activityLabel
+HEART_DEFAULTS = {"publish": True, "history_s": 60.0, "min_still_s": 30.0, "require_breathing": True}
+
+
+def lltf(data, first_word_invalid):
+    """csi_recorder.lltf_complex, vectorised: the 52 LLTF subcarriers, k = -26..-1, +1..+26."""
+    p = np.frombuffer(bytes(data[:128]), dtype=np.int8).reshape(64, 2)[LLTF].astype(np.float32)
+    c = p[:, 1] + 1j * p[:, 0]                       # pairs are [imag, real]
+    if first_word_invalid:
+        c[26] = c[27]
+    return c.astype(np.complex64)
+
+
+def _window_reason(w):
+    """lifefi.breathing / lifefi.heart window reason text -> contract enum (noise | unstable).
+    Motion is NOT taken from the window text: the engine's own motion gate decides it, so the
+    reason never says "motion" while the dashboard's motion level shows the person still.
+    The only place that reads the estimators' reason texts (engine/tests/test_vitals.py pins them)."""
+    if w is None or w.valid:
+        return None
+    parts = [p.strip() for p in w.reason.split(";") if p.strip()]
+    if parts and all(p.startswith("FFT/ACF disagree") for p in parts):
+        return "unstable"
+    return "noise"
+
+
+class Clock:
+    """ESP time -> host time per boot: the lower envelope of host - ts (delivery only adds delay)."""
+
+    def __init__(self):
+        self.boot = None
+        self.win = deque()                           # (host_us, d) with d increasing: sliding minimum
+
+    def map(self, boot_id, ts_us, host_us):
+        if boot_id != self.boot:
+            self.boot = boot_id
+            self.win.clear()
+        d = host_us - ts_us
+        while self.win and self.win[-1][1] >= d:
+            self.win.pop()
+        self.win.append((host_us, d))
+        while self.win[0][0] < host_us - CLOCK_WINDOW_S * 1e6:
+            self.win.popleft()
+        return (ts_us + self.win[0][1]) / 1e6
+
+
+class Events:
+    """`active` holds one event per type. Ids start from a number taken from the start time, so
+    a restarted engine never reuses an id the server may still hold an alert for (control.md)."""
+
+    def __init__(self, first_id=None):
+        self.next_id = int(time.time()) % 1_000_000 * 1000 + 1 if first_id is None else first_id
+        self.active = {}
+        self.changes = []
+
+    def set(self, kind, on, t_ms, data=None):
+        ev = self.active.get(kind)
+        if on and ev is None:
+            ev = {"id": self.next_id, "type": kind, "t": t_ms, "data": data or {}}
+            self.next_id += 1
+            self.active[kind] = ev
+            self.changes.append({**ev, "state": "active"})
+        elif not on and ev is not None:
+            del self.active[kind]
+            self.changes.append({"id": ev["id"], "type": kind, "state": "cleared", "t": t_ms, "data": data or {}})
+
+    def clear_all(self, t_ms, data=None):
+        for kind in list(self.active):
+            self.set(kind, False, t_ms, data)
+
+    def pop(self):
+        out, self.changes = self.changes, []
+        return out
+
+
+class Engine:
+    def __init__(self, rules_path=RULES, models_dir=MODELS, mode="live", calibration_path=None):
+        """calibration_path: where the live calibration is saved and loaded (None: memory only)."""
+        self.rules_path, self.models_dir = pathlib.Path(rules_path), pathlib.Path(models_dir)
+        self.calibration_path = pathlib.Path(calibration_path) if calibration_path else None
+        self.mode = mode
+        self.source_hook = None                      # set by lifefi.control: (mode, file, speed, loop) -> None
+        self.source_info_hook = None                 # set by lifefi.control: () -> get_status source_info
+        self.events = Events()
+        self.calibrations = {"live": self._load_calibration(), "replay": None}
+        self.calibration = self.calibrations.get(mode)
+        self.cal_pending = self.calibration is not None   # applied to presence on the first tick
+        self.cal_seq = int(self.calibration.id.split("-")[-1]) if self.calibration else 0
+        self.cal_job = None
+        self.pos_fit_path = self.calibration_path.with_name("position.json") if self.calibration_path else None
+        self.pos_fit = self._load_pos_fit()
+        self.spot_model = None                       # load_spots(), after the rules (its margin)
+        self.recording = None
+        self.started = None
+        self.load_rules()
+        self.load_spots()
+        self.load_models()
+        self._reset_signal()
+        self.boot_id = 0
+        self.hdr = None
+        self.clock = Clock()
+        self.rejected = {"layout": 0, "gain_invalid": 0, "source": 0}
+        self.rx = deque()                            # (host_s, seq, rx_seq) of the last 10 s
+        self.rssi = deque()                          # (host_s, rssi_dbm) of the last 10 s
+        self.board_hook = None                       # set by lifefi.control: () -> the board's own estimate or None
+        self.last_host_us = 0
+        self.heart_ms = deque(maxlen=200)            # lifefi.heart call times (ms); kept across source changes
+
+    # ---- configuration -------------------------------------------------
+    def load_rules(self, t=0.0):
+        text = self.rules_path.read_bytes()
+        self.rules = yaml.safe_load(text)
+        prof = PROFILES.read_bytes() if PROFILES.exists() else b""
+        self.config_hash = hashlib.sha256(text + prof).hexdigest()[:6]
+        r = self.rules
+        self.presence = presence.Presence(r["presence"])
+        if self.calibration is not None:
+            self.presence.calibrate(presence.Levels.from_calibration(self.calibration, self.presence.cfg), t)
+        self.apnea = apnea.NoBreathing(r["apnea"])
+        self.occupancy = occupancy.Occupancy(r["occupancy"]) if r.get("occupancy") else None
+        if self.spot_model is not None:
+            self.spot_model.margin = float((r.get("spots") or {}).get("reliable_margin", 0.15))
+        if hasattr(self, "position"):
+            self.position.transmitter_fixed = self._transmitter_fixed()
+
+    def load_spots(self):
+        """The taught spots of this room (ml/train_spots.py, or /teach), next to the calibration file;
+        without it, the distance estimate alone. A file that does not load keeps the old model."""
+        path = self.calibration_path.with_name("spots_model.json") if self.calibration_path else None
+        try:
+            model = spots.SpotModel.load(path, float((self.rules.get("spots") or {}).get("reliable_margin", 0.15))) if path else None
+        except (OSError, ValueError, KeyError, TypeError) as err:
+            print(f"could not load the spot model {path}: {err}; keeping the previous one")
+            return
+        self.spot_model = model
+
+    def _load_calibration(self):
+        path = self.calibration_path
+        if path is None or not path.exists():
+            return None
+        try:
+            d = json.loads(path.read_text(encoding="utf-8"))
+            d["p_empty"] = np.asarray(d["p_empty"], dtype=np.float32)
+            if d["p_empty"].shape != (52,):
+                raise ValueError("p_empty must have 52 values")
+            return calibration.Calibration(**d)
+        except (OSError, ValueError, TypeError, KeyError) as err:
+            print(f"ignoring {path}: {err}")
+            return None
+
+    def _transmitter_fixed(self):
+        """rules.yaml position.transmitter_fixed (auto|true|false) and the last frame's source
+        MAC (lifefi.link); load_rules() may run before the first header exists."""
+        return link.transmitter_fixed((self.rules.get("position") or {}).get("transmitter_fixed", "auto"),
+                                      (getattr(self, "hdr", None) or {}).get("src_mac"))
+
+    def _fit_distances(self):
+        """How many distances the saved position_fit was taken at (one, today)."""
+        fit = self.pos_fit
+        if fit is None or fit.get("d_m") is None:
+            return 0
+        return len(set(fit["d_m"])) if isinstance(fit["d_m"], list) else 1
+
+    def _load_pos_fit(self):
+        """The saved distance fit {A, n, d_m, at} (position_fit), or None."""
+        path = self.pos_fit_path
+        if path is None or not path.exists():
+            return None
+        try:
+            d = json.loads(path.read_text(encoding="utf-8"))
+            return {"A": float(d["A"]), "n": float(d["n"]), "d_m": d.get("d_m"), "at": d.get("at")}
+        except (OSError, ValueError, TypeError, KeyError) as err:
+            print(f"ignoring {path}: {err}")
+            return None
+
+    def _save_calibration(self, cal):
+        if self.calibration_path is None:
+            return
+        try:
+            self.calibration_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.calibration_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(cal.to_dict()), encoding="utf-8")
+            tmp.replace(self.calibration_path)
+        except OSError as err:
+            print(f"could not save the calibration to {self.calibration_path}: {err}")
+
+    def _use_calibration(self, cal, t):
+        """Presence starts again from EMPTY with these levels, or with none (motion only)."""
+        self.calibration = cal
+        self.presence = presence.Presence(self.rules["presence"])
+        if cal is not None:
+            self.presence.calibrate(presence.Levels.from_calibration(cal, self.presence.cfg), t)
+        self.position.calibrate(*(cal.pos_p50, cal.pos_p95) if cal is not None else (None, None))
+
+    def load_models(self):
+        self.model, self.model_status = models.load(self.models_dir, self.rules.get("movement_model", "gbm"))
+        labels = self.model.labels if self.model else ["none", "walking", "sit_down", "lie_down", "rise", "fall"]
+        self.posture = posture.Posture(labels, self.rules["posture"])
+
+    def _reset_signal(self):
+        self.live = LiveF()
+        self.segment = self.live.segment
+        fit = getattr(self, "pos_fit", None)
+        self.position = position.Position(**({"A": fit["A"], "n": fit["n"]} if fit else {}),
+                                          transmitter_fixed=self._transmitter_fixed(), fit_distances=self._fit_distances())
+        if self.rules.get("occupancy"):
+            self.occupancy = occupancy.Occupancy(self.rules["occupancy"])
+        cal = getattr(self, "calibration", None)
+        if cal is not None:
+            self.position.calibrate(cal.pos_p50, cal.pos_p95)
+        self.pos_out = None
+        self.warm_until = -np.inf
+        self.breath = None
+        self.breath_at = None
+        self.next_breath = -np.inf
+        self.breath_valid = False
+        self.heart_hist = deque()                    # (now, HeartWindow) while still, the last history_s
+        self.heart_last = None                       # the newest heart window, valid or not
+        self.heart_new = None                        # a window not yet judged by _heart_step
+        self.heart_gate = False
+        self.vitals_since = -np.inf                  # breathing windows from before this belong to an old segment
+        self.m_hist = deque()                        # (t, M) for the provisional quiet level
+        self.last_motion = None
+        self.fall_done = []
+        self.fall_t = None
+        self.still_run = 0.0
+        self.motion_run = 0.0
+
+    # ---- input ----------------------------------------------------------
+    def feed(self, packet, host_us, source="live"):
+        """One frame from the board (or the replay), with its host receive time in µs."""
+        if source != self.mode:
+            self.rejected["source"] += 1
+            return
+        parsed = csi_recorder.parse_frame(packet)
+        if parsed is None:
+            self.rejected["layout"] += 1
+            return
+        hdr, data = parsed
+        if self.recording is not None:
+            self.recording["fh"].write(csi_recorder.RECORD.pack(len(packet), host_us) + packet)
+            self.recording["frames"] += 1
+            self.recording["t_end_us"] = host_us
+        if not hdr["csi_parts"] & 1 or hdr["cwb"] != 0 or len(data) < 128:
+            self.rejected["layout"] += 1             # HT40 or no LLTF: not what the models know
+            return
+        if hdr["boot_id"] != self.boot_id:
+            self.boot_id = hdr["boot_id"]
+            self.live.new_segment()
+            self.warm_until = host_us / 1e6 + self.rules["warmup_s"]
+        self.hdr = hdr
+        fixed = self._transmitter_fixed()            # the board passes one source MAC per lock: last frame wins
+        if fixed != self.position.transmitter_fixed:
+            self.position.transmitter_fixed = fixed
+        self.last_host_us = host_us
+        t = self.clock.map(hdr["boot_id"], hdr["ts_us"], host_us)
+        self.live.add(t, lltf(data, hdr["first_word_invalid"]))
+        self.rx.append((host_us / 1e6, hdr["seq"], hdr["rx_seq"]))
+        while self.rx and self.rx[0][0] < host_us / 1e6 - 10.0:
+            self.rx.popleft()
+        self.rssi.append((host_us / 1e6, hdr["rssi_dbm"]))
+        while self.rssi and self.rssi[0][0] < host_us / 1e6 - 10.0:
+            self.rssi.popleft()
+
+    # ---- one tick -------------------------------------------------------
+    def tick(self, now):
+        """The result for host time `now` (s)."""
+        r = self.rules
+        if self.started is None:
+            self.started = now
+            self.warm_until = max(self.warm_until, now + r["warmup_s"])
+        if self.cal_pending:
+            self.cal_pending = False
+            self._use_calibration(self.calibration, now)
+        self.live.update()
+        lv = self.live
+        if lv.segment != self.segment:               # a gap: everything that looks back starts again
+            self.segment = lv.segment
+            self.warm_until = max(self.warm_until, now + r["warmup_s"])
+            self.fall_done = []
+            self.next_breath = -np.inf
+            self.position.reset()
+            self.vitals_since = now
+            self.heart_hist.clear()
+            self.heart_last = self.heart_new = None
+        warm = now < self.warm_until or lv.seconds() < 1.0
+        t_ms = int(round(now * 1000))
+
+        tF, F, V = lv.last(r["fall"]["window_s"])
+        M = motion_mod.motion(F) if len(F) >= int(motion_mod.FS) else None
+        M_now = float(M[-1]) if M is not None else None
+        if M_now is not None:
+            self.m_hist.append((now, M_now))
+            while self.m_hist[0][0] < now - 120.0:
+                self.m_hist.popleft()
+        quiet = self._quiet_level()
+        m_on = self._m_on(quiet)
+        moving = M_now is not None and M_now > m_on
+        if moving:
+            self.last_motion = now
+
+        self._calibration_step(now)
+        self._breathing_step(now)
+
+        B = S = None
+        if lv.seconds() >= presence.B_WIN_S:
+            tB, FB, VB = lv.last(presence.B_WIN_S)
+            if VB.mean() >= 0.9:
+                B = presence.breath_energy(FB)
+        if self.calibration is not None and lv.seconds() >= presence.S_WIN_S:
+            S = presence.static_deviation(lv.last(presence.S_WIN_S)[1], self.calibration.p_empty)
+        if M_now is not None:
+            self.presence.update(now, M_now, B, S, breathing_valid=self.breath_valid)
+        state = self.presence.state
+        present = state == "present"
+        self.events.set("presence_uncertain", state == "uncertain" and not warm, t_ms)
+
+        quiet_for = now - self.last_motion if self.last_motion is not None else now - self.started
+        self.breath_valid = bool(self.breath is not None and self.breath.valid and present and not warm
+                                 and now - self.breath_at <= breathing.STEP_S * 2
+                                 and self.breath_at >= self.vitals_since
+                                 and quiet_for >= r["breathing"]["low_motion_s"])
+        self._heart_step(now, present, warm, quiet_for)
+        still = M_now is not None and M_now / quiet < r["fall"]["t_still"]
+
+        ch = self.apnea.update(now, *lv.raw(45.0), present=present and not warm, still=still)
+        if ch == "active":
+            self.events.set("no_breathing", True, t_ms, {"since_s": getattr(self.apnea, "since_s", None)})
+        elif ch == "cleared":
+            self.events.set("no_breathing", False, t_ms)
+
+        self._fall_step(now, t_ms, F, tF, M, quiet, still, moving, state, warm)
+        post = self._posture_step(now, present)
+        occ = self.occupancy
+        occ_out = None if warm or occ is None else occ.update(now, *lv.raw_amp(occ.window_s + 1.0), state,
+                                                              calibrated=self.calibration is not None)
+        pos = None if warm else self.position.update(now, *lv.raw_amp(position.WIN_S), moving=moving,
+                                                     present=True if present else False if state == "empty" else None)
+        self.pos_out = None if pos is None else {**pos, "people": max(self._people(state), 1 if pos["valid"] else 0)}
+        # the taught-spot model runs next to the distance estimate; the dashboard's model page shows it
+        if self.pos_out is not None and self.spot_model is not None and self.mode == "live":
+            rs = [r for t, r in self.rssi if t >= now - spots.WIN_S]
+            self.pos_out["spot"] = self.spot_model.update(now, *lv.raw_amp(spots.WIN_S), float(np.mean(rs)) if rs else None)
+
+        level = float(presence.motion_level(M_now, m_on, r["presence"]["motion_span"])) if M_now is not None else 0.0
+        return self._result(now, t_ms, state, level, B, S, post, warm, occ_out, quiet_for=quiet_for)
+
+    def _quiet_level(self):
+        """The fall rule's baseline: the empty calibration's P10 of M, else a provisional P10."""
+        if self.calibration is not None:
+            return max(self.calibration.m_p10, 1e-12)
+        if not self.m_hist:
+            return 1.0
+        return max(float(np.percentile([m for _, m in self.m_hist], 10)), 1e-12)
+
+    def _m_on(self, quiet):
+        if self.presence.levels is not None:
+            return self.presence.levels.m_on
+        return self.rules["presence"]["nocal_m_on_x"] * quiet
+
+    def _breathing_step(self, now):
+        if now < self.next_breath:
+            return
+        self.next_breath = now + breathing.STEP_S
+        t_raw, csi = self.live.raw(breathing.WINDOW_S + 0.5)
+        if len(t_raw) < 10 or t_raw[-1] - t_raw[0] < breathing.WINDOW_S:
+            return
+        ts_us = (t_raw * 1e6).astype(np.int64)
+        w = breathing.estimate_breathing(ts_us, csi)
+        if not w:
+            return
+        self.breath, self.breath_at = w[-1], now
+        self.apnea.on_breathing(now, w[-1], *self.live.raw(45.0))
+        if self._heart_cfg()["publish"]:
+            t0 = time.perf_counter()
+            try:
+                with warnings.catch_warnings():      # empty-slice means on real data: the window is judged below
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    hw = heart.estimate_heart(ts_us, csi)
+            except (ValueError, IndexError, np.linalg.LinAlgError):
+                hw = []                              # a numeric edge case must never cost the tick
+            self.heart_ms.append((time.perf_counter() - t0) * 1e3)
+            if hw:
+                w = hw[-1]
+                if not np.isfinite([w.bpm, w.snr, w.confidence, w.acf_bpm]).all():
+                    # NaN compares False, so lifefi.heart's own tests can pass a broken window
+                    w = dataclasses.replace(w, bpm=0.0, snr=0.0, confidence=0.0, valid=False,
+                                            reason="no clear peak (not finite)")
+                self.heart_last = self.heart_new = w
+
+    # ---- vital signs: reasons and the heart rate (EXPERIMENTAL) -------------
+    def _heart_cfg(self):
+        """rules.yaml heart, with defaults for a rules file without the block."""
+        return {**HEART_DEFAULTS, **(self.rules.get("heart") or {})}
+
+    def _heart_step(self, now, present, warm, quiet_for):
+        """Keep the heart windows of the current still stretch: presence, motion or warm-up clear
+        them; an invalid breathing window only drops that heart window (the history stays)."""
+        hr = self._heart_cfg()
+        still = present and not warm and quiet_for >= hr["min_still_s"]
+        breath_ok = self.breath_valid or not hr["require_breathing"]
+        if not still:
+            self.heart_hist.clear()
+        elif self.heart_new is not None and breath_ok:
+            self.heart_hist.append((now, self.heart_new))
+        self.heart_new = None
+        while self.heart_hist and self.heart_hist[0][0] < now - hr["history_s"]:
+            self.heart_hist.popleft()
+        self.heart_gate = bool(still and breath_ok)
+
+    def _vitals_reason(self, now, state, warm, quiet_for, still_s):
+        """The reason breathing and heart share (results.schema.json), first match; None: ask the window."""
+        if (warm or self.breath is None or self.breath_at < self.vitals_since
+                or now - self.breath_at > 2 * breathing.STEP_S):
+            return "warming_up"
+        if state != "present":
+            return "no_person"
+        if quiet_for < still_s:
+            return "motion"
+        return None
+
+    def _breathing_reason(self, now, state, warm, quiet_for):
+        if self.breath_valid:
+            return None
+        return (self._vitals_reason(now, state, warm, quiet_for, self.rules["breathing"]["low_motion_s"])
+                or _window_reason(self.breath) or "unstable")
+
+    def _heart_out(self, now, state, warm, quiet_for, breath_reason):
+        """results.schema.json heart: the median of the valid windows of the last history_s, or why not."""
+        hr = self._heart_cfg()
+        if not hr["publish"]:
+            return None
+        valid_w = [w.bpm for _, w in self.heart_hist if w.valid]
+        share = len(valid_w) / len(self.heart_hist) if self.heart_hist else 0.0
+        valid = bool(self.heart_gate and valid_w and share >= heart.MIN_VALID_SHARE
+                     and max(valid_w) - min(valid_w) <= heart.CONSISTENT_BPM)
+        reason = None
+        if not valid:
+            reason = self._vitals_reason(now, state, warm, quiet_for, hr["min_still_s"])
+            if reason is None and hr["require_breathing"] and not self.breath_valid:
+                reason = breath_reason
+            if reason is None and not self.heart_hist:
+                reason = _window_reason(self.heart_last) or "unstable"
+            if reason is None:
+                reason = _window_reason(self.heart_hist[-1][1]) or "unstable"
+        last = self.heart_last
+        return {"bpm": round(float(np.median(valid_w)), 1) if valid else None, "valid": valid,
+                "confidence": round(float(np.clip(last.confidence, 0, 1)), 3) if last is not None else 0.0,
+                "snr": round(float(max(last.snr, 0.0)), 2) if last is not None else None,
+                "valid_share": round(float(share), 3), "reason": reason}
+
+    def _fall_step(self, now, t_ms, F, tF, M, quiet, still, moving, state, warm):
+        f = self.rules["fall"]
+        tick = self.rules["tick_s"]
+        if M is not None and len(F) >= 4 * motion_mod.FS:
+            cands = fall.detect(F, quiet, t_fall=f["t_fall"], ratio=f["ratio"], t_still=f["t_still"],
+                                still_s=f["still_s"], M=M)
+            for c in cands:
+                t_abs = float(tF[0] + c.t_peak)
+                # M restarts at the window's first sample: a window that begins mid-movement shows a
+                # false onset there. Those moments were judged on earlier ticks, deep inside the window.
+                if t_abs < tF[0] + FALL_EDGE_S or any(abs(t_abs - d) < 1.0 for d in self.fall_done):
+                    continue
+                if c.fall and state != "empty" and not warm:
+                    self.fall_done.append(t_abs)
+                    if "fall" not in self.events.active:
+                        self.events.set("fall", True, t_ms, {"peak": round(c.peak, 1), "burst_s": round(c.burst_s, 2),
+                                                             "ratio": round(c.ratio, 1), "t_peak": int(t_abs * 1000)})
+                        self.fall_t, self.still_run, self.motion_run = now, 0.0, 0.0
+                elif now - t_abs > c.burst_s + 1.0 + f["still_s"] + 2.0:
+                    self.fall_done.append(t_abs)      # did not settle into stillness: not a fall
+            self.fall_done = [d for d in self.fall_done if d > now - f["window_s"] - 5.0]
+        if "fall" in self.events.active:
+            self.still_run = self.still_run + tick if still else 0.0
+            self.motion_run = self.motion_run + tick if moving else 0.0
+            if self.still_run >= f["fainted_after_s"] and self.fall_t is not None:
+                self.events.set("fainted_suspected", True, t_ms, {"still_s": round(now - self.fall_t, 1)})
+            if self.motion_run >= f["clear_motion_s"]:
+                self.events.set("fall", False, t_ms)
+                self.events.set("fainted_suspected", False, t_ms)
+                self.fall_t = None
+
+    def _posture_step(self, now, present):
+        p = None
+        if self.model is not None and self.live.seconds() >= self.model.window / dsp.FS:
+            tW, FW, VW = self.live.last(self.model.window / dsp.FS)
+            if len(FW) == self.model.window and VW.mean() >= 0.9:
+                p = self.model.predict(FW)
+        self.last_p = p
+        return self.posture.update(now, p, present)
+
+    # ---- calibration ----------------------------------------------------
+    def start_calibration(self, now, kind, duration_s, done):
+        """done(ok, data, error) is called when it finishes (contracts/control.md: the ack comes then)."""
+        if kind != "empty":
+            return done(False, {}, f"calibration kind '{kind}' is not supported (only 'empty')")
+        if duration_s < calibration.MIN_S:
+            return done(False, {}, f"calibration needs at least {calibration.MIN_S:.0f} s, got {duration_s}")
+        if self.cal_job is not None:
+            return done(False, {}, "a calibration is already running")
+        self.cal_job = {"start": now, "until": now + duration_s, "done": done}
+
+    def _calibration_step(self, now):
+        job = self.cal_job
+        if job is None or now < job["until"]:
+            return
+        self.cal_job = None
+        sel = (self.live.t >= job["start"]) & (self.live.t <= job["until"])
+        # lifefi.live clears F at every gap, so a short calibration window means the signal stopped
+        if sel.sum() < 0.9 * (job["until"] - job["start"] - live_mod.BUFFER_S) * dsp.FS:
+            return job["done"](False, {}, f"only {sel.sum() / dsp.FS:.0f} s of continuous signal during "
+                                          f"the {job['until'] - job['start']:.0f} s calibration")
+        self.cal_seq += 1
+        cal_id = f"cal-{self.cal_seq:04d}"
+        try:
+            cal = calibration.from_empty(self.live.F[sel], self.live.valid[sel], cal_id, now)
+        except calibration.Refused as err:
+            return job["done"](False, {}, str(err))
+        cal.pos_p50, cal.pos_p95 = self.position.levels(job["start"], job["until"])
+        self.calibration = self.calibrations[self.mode] = cal
+        self.presence.calibrate(presence.Levels.from_calibration(cal, self.presence.cfg), now)
+        self.position.calibrate(cal.pos_p50, cal.pos_p95)
+        if self.mode == "live":
+            self._save_calibration(cal)
+        job["done"](True, {"id": cal_id}, None)
+
+    # ---- output ---------------------------------------------------------
+    def _health(self, now, warm):
+        while self.rx and self.rx[0][0] < now - 10.0:     # a silent board must show 0 Hz, not its last rate
+            self.rx.popleft()
+        rx = list(self.rx)
+        rate = sum(1 for x in rx if x[0] >= now - 2.0) / 2.0
+        lost_udp = lost_air = 0
+        for (_, s0, r0), (_, s1, r1) in zip(rx, rx[1:]):
+            lost_udp += max(0, s1 - s0 - 1) if s1 > s0 else 0
+            d = (r1 - r0) % 4096
+            lost_air += d - 1 if 1 < d < 1000 else 0
+        n = max(len(rx), 1)
+        _, _, V = self.live.last(3.0)
+        return {"rate_hz": round(rate, 1), "loss_udp": round(min(1.0, lost_udp / (n + lost_udp)), 4),
+                "loss_air": round(min(1.0, lost_air / (n + lost_air)), 4),
+                "invalid_ratio": round(float(1.0 - V.mean()), 4) if len(V) else 0.0,
+                "rejected": dict(self.rejected), "warmup": bool(warm)}
+
+    def _people(self, state):
+        """How many to mark: the board's own head count (USB log), at least 1 while present, 0 when empty."""
+        if state == "empty":
+            return 0
+        board = self.board_hook() if self.board_hook is not None and self.mode == "live" else None
+        n = board["people"] if board is not None and time.time() - board["t"] <= 5.0 and board["people"] is not None else 0
+        return max(n, 1) if state == "present" else n
+
+    def _link(self, now):
+        """Mean RSSI of the last 2 s of packets and the board's own estimate from its log (USB only)."""
+        rs = [r for t, r in self.rssi if t >= now - 2.0]
+        board = self.board_hook() if self.board_hook is not None and self.mode == "live" else None
+        if board is not None and now - board["t"] > 5.0:
+            board = None                             # the board stopped logging: not current any more
+        return {"rssi_dbm": round(float(np.mean(rs)), 1) if rs else None,
+                "board": None if board is None else {"state": board["state"], "people": board["people"]}}
+
+    def _calibration_status(self, now):
+        if self.cal_job is not None:
+            return {"state": "running", "id": None, "age_s": None}
+        if self.calibration is None:
+            return {"state": "none", "id": None, "age_s": None}
+        age = max(0.0, now - self.calibration.at)
+        stale = age > self.rules["calibration"]["stale_after_h"] * 3600
+        return {"state": "stale" if stale else "ok", "id": self.calibration.id, "age_s": round(age, 1)}
+
+    def _activity(self):
+        """The movement model's guess (results.schema.json activity), or None."""
+        p = self.last_p
+        if p is None or self.model is None or len(p) != len(self.model.labels):
+            return None
+        labels = self.model.labels
+        if not set(labels) <= set(ACTIVITY_LABELS):     # an older model's classes: not in the contract
+            return None
+        p = np.clip(np.nan_to_num(np.asarray(p, dtype=np.float64)), 0.0, 1.0)
+        k = int(np.argmax(p))
+        return {"label": labels[k], "p": round(float(p[k]), 3),
+                "probs": {lab: round(float(v), 3) for lab, v in zip(labels, p)}, "src": "model"}
+
+    def outputs(self):
+        """Which optional result fields this engine fills (get_status engine.outputs)."""
+        return {"posture": bool(self.rules["posture"]["publish"]), "count": False, "activity": self.model is not None}
+
+    def _result(self, now, t_ms, state, level, B, S, post, warm, occ_out=None, quiet_for=0.0):
+        b = self.breath
+        breath_reason = self._breathing_reason(now, state, warm, quiet_for)
+        wave = []
+        if b is not None and b.v is not None:
+            r = apnea.projected(*self.live.raw(45.0), b.v)
+            if r is not None:
+                g, y = r
+                wave = [round(float(x), 3) for x in y[g > g[-1] - self.rules["tick_s"]]]
+        show_posture = self.rules["posture"]["publish"] and post is not None
+        return {
+            "type": "result", "v": 2, "ts": t_ms, "t_rx_last_us": int(self.last_host_us),
+            "node": int(self.hdr["node_id"]) if self.hdr else 1, "boot_id": int(self.boot_id),
+            "source": self.mode, "config_hash": self.config_hash, "pipeline_version": dsp.PIPELINE_VERSION,
+            "health": self._health(now, warm),
+            "calibration": self._calibration_status(now),
+            "presence": {"value": state == "present", "state": state, "S": round(float(S or 0.0), 4),
+                         "B": round(float(B or 0.0), 5), "M": round(level, 3)},
+            "motion": round(level, 3),
+            "posture": {"label": post[0], "since": int(post[1] * 1000), "src": post[2]} if show_posture else None,
+            "count": None,
+            "activity": self._activity(),
+            "breathing": {"bpm": round(float(b.bpm), 1) if self.breath_valid else None,
+                          "confidence": round(float(np.clip(b.confidence, 0, 1)), 3) if b is not None else 0.0,
+                          "valid": self.breath_valid, "wave": wave, "reason": breath_reason},
+            "heart": self._heart_out(now, state, warm, quiet_for, breath_reason),
+            "csi": [[round(float(v), 1) for v in row] for row in self.live.F[-5:]],
+            "position": self.pos_out,
+            "occupancy": occ_out,
+            "link": self._link(now),
+            "events": self.events.pop(),
+            "active": [e["id"] for e in self.events.active.values()],
+        }
+
+    def status(self, now):
+        """get_status ack data (contracts/control.md). The firmware sends no status packet, so
+        `device` is built from the CSI frames: last_status_us is the last frame's time."""
+        h = self.hdr
+        engine = {"version": VERSION, "pipeline_version": dsp.PIPELINE_VERSION, "config_hash": self.config_hash,
+                  "source": self.mode, "uptime_s": int(now - self.started) if self.started else 0,
+                  "inference_ms": self.model.timing() if self.model else {"p50": 0.0, "p95": 0.0},
+                  "models": [self.model_status], "calibration": self._calibration_status(now),
+                  "recording": None if self.recording is None else
+                  {"session": self.recording["session"], "frames": self.recording["frames"]},
+                  "active_events": [{k: e[k] for k in ("id", "type", "t", "data")} for e in self.events.active.values()],
+                  "source_info": self.source_info_hook() if self.source_info_hook else
+                  {"name": None, "state": "none", "file": None, "speed": 1.0, "loop": False, "error": None},
+                  "outputs": self.outputs()}
+        if h is None:
+            return {"engine": engine, "device": None}
+        health = self._health(now, False)
+        device = {"node": int(h["node_id"]), "boot_id": int(h["boot_id"]), "fw_version": "unknown",
+                  "rssi_dbm": int(h["rssi_dbm"]), "channel": int(h["channel"]), "uptime_s": int(h["ts_us"] // 1_000_000),
+                  "rate_hz": health["rate_hz"], "loss_udp": health["loss_udp"], "loss_air": health["loss_air"],
+                  "rejected": dict(self.rejected), "queue_drops": 0, "send_errors": 0, "wifi_disconnects": 0,
+                  "ping_rate_hz": 0, "ping_timeouts_last_s": 0, "last_status_us": int(self.last_host_us),
+                  "src_mac": h["src_mac"], "transmitter": "fixed" if link.is_fixed_tx(h["src_mac"]) else "other"}
+        return {"engine": engine, "device": device}
+
+    # ---- commands (contracts/control.md) --------------------------------
+    def handle(self, cmd, reply, now):
+        """reply(ack dict) once per command; calibrate replies when it finishes."""
+        cid = cmd.get("id", -1)
+        kind = cmd.get("type")
+
+        def ack(ok, data=None, error=None):
+            reply({"type": "ack", "id": cid, "ok": ok, "error": error, "data": data or {}})
+
+        try:
+            if kind == "get_status":
+                return ack(True, self.status(now))
+            if kind == "set_source":
+                mode = cmd.get("mode")
+                if mode not in ("live", "replay"):
+                    return ack(False, error="mode must be live or replay")
+                speed = 1.0 if cmd.get("speed") is None else float(cmd["speed"])
+                if speed <= 0:
+                    return ack(False, error="speed must be > 0")
+                if self.source_hook is not None:
+                    self.source_hook(mode, cmd.get("file"), speed, bool(cmd.get("loop")))
+                # they belonged to the old signal; the reason keeps the dashboard from calling it "all clear"
+                self.events.clear_all(int(round(now * 1000)), {"reason": "source changed"})
+                self.mode = mode
+                self._reset_signal()
+                self.rx.clear()
+                self._use_calibration(self.calibrations.get(mode), now)
+                self.cal_pending = False
+                return ack(True)
+            if kind == "calibrate":
+                dur = float(cmd.get("duration_s", self.rules["calibration"]["default_s"]))
+                return self.start_calibration(now, cmd.get("kind", "empty"), dur,
+                                              lambda ok, data, err: ack(ok, data, err))
+            if kind == "record_start":
+                if self.mode != "live":
+                    return ack(False, error="recording is live only")
+                if self.recording is not None:
+                    return ack(False, error="already recording")
+                path = pathlib.Path(cmd["path"])
+                path.parent.mkdir(parents=True, exist_ok=True)
+                fh = open(path, "wb")
+                fh.write(csi_recorder.CSIREC_MAGIC + struct.pack("<HH", 1, 0))
+                self.recording = {"fh": fh, "session": cmd.get("session"), "path": str(path), "frames": 0,
+                                  "t_start_us": int(now * 1e6), "t_end_us": int(now * 1e6)}
+                return ack(True)
+            if kind == "record_stop":
+                if self.recording is None:
+                    return ack(False, error="not recording")
+                rec, self.recording = self.recording, None
+                rec["fh"].close()
+                return ack(True, {"frames": rec["frames"], "t_start_us": rec["t_start_us"], "t_end_us": rec["t_end_us"]})
+            if kind == "reload_models":
+                self.load_models()
+                self.load_spots()
+                sm = self.spot_model
+                return ack(True, {"models": [self.model_status],
+                                  "spots": sm and {"labels": sm.labels, "loso_bal_acc": sm.model_accuracy}})
+            if kind == "reload_rules":
+                self.load_rules(now)
+                return ack(True, {"config_hash": self.config_hash})
+            if kind == "position_fit":
+                # someone has been moving at a measured distance for the last `seconds`
+                d_m, seconds = float(cmd["d_m"]), float(cmd.get("seconds", 25.0))
+                data = self.position.fit(d_m, now - seconds, now)
+                self.pos_fit = {"A": data["A"], "n": data["n"], "d_m": d_m, "at": now}
+                self.position.fit_distances = 1          # A from one distance: n is still a guess
+                if self.mode == "live" and self.pos_fit_path is not None:
+                    self.pos_fit_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.pos_fit_path.write_text(json.dumps(self.pos_fit), encoding="utf-8")
+                return ack(True, data)
+            return ack(False, error=f"unknown command '{kind}'")
+        except Exception as err:                     # a bad argument must never cost the connection
+            return ack(False, error=str(err) if isinstance(err, ValueError) else f"{type(err).__name__}: {err}")
+
+    def close(self):
+        if self.recording is not None:
+            self.recording["fh"].close()
+            self.recording = None
+
+
+def result_json(result):
+    return json.dumps(result, separators=(",", ":"))

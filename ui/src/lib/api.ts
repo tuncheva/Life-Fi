@@ -1,8 +1,10 @@
 // REST client for contracts/api.md. Types here mirror that file by hand;
 // the Result type is generated from the schema (contracts.gen.ts).
 import type { Result } from "./contracts.gen";
+import type { VitalsHistoryReply } from "./vitals-history";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+// The API is served by this Next.js app (src/app/api/v1), so every call is same-origin.
+export const API_BASE = "";
 
 export type ProfileName = "home" | "school" | "clinic";
 export type AlertLevel = "high" | "medium" | "low";
@@ -33,7 +35,9 @@ export interface SourceState {
   file: string | null;
   speed: number;
   loop: boolean;
-  state: "running" | "stopped";
+  state: "running" | "stopped" | "error";
+  /** Why the engine cannot read its source (e.g. no USB serial port found), else null. */
+  error?: string | null;
 }
 
 export interface DeviceStatus {
@@ -65,7 +69,10 @@ export interface EngineStatus {
   models: { name: string; loaded: boolean; pipeline_version: number }[];
   calibration: { state: "none" | "running" | "ok" | "stale"; id: string | null; age_s: number | null };
   recording: unknown;
-  mock?: { scenario: string; phase: string };
+  /** What the engine is reading (contracts/control.md source_info). */
+  source_info?: { name: string | null; state: "running" | "finished" | "error" | "none"; file: string | null; speed: number; loop: boolean; error: string | null };
+  /** Which optional result fields the engine fills; missing from older engines (then: all). */
+  outputs?: { posture: boolean; count: boolean; activity: boolean };
 }
 
 export interface CalibrationJob {
@@ -114,6 +121,9 @@ export interface HistoryRow {
   breathing_valid?: boolean | null;
   posture?: string | null;
   count?: number | null;
+  /** Null unless the heart estimate was valid (track H). */
+  heart_bpm?: number | null;
+  heart_valid?: boolean | null;
 }
 
 export interface RecordingInfo {
@@ -223,8 +233,10 @@ export const updateSettings = (patch: SettingsPatch) => api<PublicSettings>("/se
 export const testNotification = () => api<{ sent: boolean }>("/settings/test-notification", { method: "POST", body: "{}", pin: true });
 export const getHistory = (from: number, to: number, fields?: string) =>
   api<{ rows: HistoryRow[] }>(`/history?from=${from}&to=${to}${fields ? `&fields=${fields}` : ""}`);
+/** Breathing, heart and movement per bucket over the last 1, 6 or 24 h (track H). */
+export const getVitalsHistory = (hours: number) => api<VitalsHistoryReply>(`/history/vitals?hours=${hours}`);
 export const getSource = () => api<SourceState>("/source");
-export const setSource = (s: Omit<SourceState, "state">) => api<SourceState>("/source", { method: "PUT", body: JSON.stringify(s), pin: true });
+export const setSource = (s: Omit<SourceState, "state" | "error">) => api<SourceState>("/source", { method: "PUT", body: JSON.stringify(s), pin: true });
 export const getRecordings = () =>
   api<{ recordings: RecordingInfo[]; recording: RecordingState | null; vocabulary: { segments: string[]; marks: string[] } }>("/recordings");
 export const getLabels = (session?: string) => api<{ session: string; labels: LabelLine[]; open_segment: OpenSegment | null }>(`/recordings/labels${session ? `?session=${session}` : ""}`);
@@ -236,22 +248,41 @@ export const startSegment = (label: string, count: number, subject: string, spot
 export const endSegment = () => api<{ open_segment: null }>("/recordings/segment", { method: "POST", body: JSON.stringify({ action: "end" }), pin: true });
 export const addMark = (event: string, subject: string) => api<LabelLine>("/recordings/mark", { method: "POST", body: JSON.stringify({ event, subject }), pin: true });
 
-// Dev-only (mock engine)
-export interface ScenarioInfo {
-  name: string;
-  description: string;
-  duration_s: number;
-  loop: boolean;
-}
-export const devScenarios = async () => {
-  const res = await fetch(`${API_BASE}/dev/scenarios`);
-  if (!res.ok) throw new ApiError(res.status, "dev", "dev endpoints unavailable");
-  return (await res.json()) as { scenarios: ScenarioInfo[]; current: string; phase: string };
-};
-export const devSetScenario = (name: string) =>
-  fetch(`${API_BASE}/dev/scenario`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+/** Server-Sent Events stream of status, results and alert transitions. */
+export const LIVE_URL = `${API_BASE}/api/v1/live`;
 
-export function wsUrl(): string {
-  const base = API_BASE || (typeof window !== "undefined" ? window.location.origin : "");
-  return base.replace(/^http/, "ws") + "/ws/live";
+/** Caregiver agent (track FB): summary, explain an alert, chat over the stored events. */
+export interface AgentReply {
+  text: string;
+  provider: string;
+  model: string;
+  tool_calls: number;
 }
+export interface AgentTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+export interface AgentStatus {
+  configured: boolean;
+  provider: "anthropic" | "gemini";
+  model: string;
+  store: "firestore" | "memory";
+  firebase: { project: string; prefix: string; emulator: boolean } | null;
+}
+export const getAgentStatus = () => api<AgentStatus>("/agent/status");
+
+/** A stored event (track FB): a state change, or one agent run with its question and answer in `data`. */
+export type EventKind = "presence" | "posture" | "count" | "agent";
+export interface StoredEvent {
+  t: number;
+  kind: EventKind;
+  from?: string | number | null;
+  to?: string | number | null;
+  data?: Record<string, unknown>;
+}
+/** Sends the saved PIN, if any: assistant questions and answers come back only with it (or the trust cookie). */
+export const getEvents = (hours = 24, kind?: EventKind) =>
+  api<{ from: number; to: number; total: number; private: boolean; events: StoredEvent[] }>(`/events?hours=${hours}${kind ? `&kind=${kind}` : ""}`, { pin: !!getPin() });
+export const agentSummary = (hours = 24) => api<AgentReply>("/agent/summary", { method: "POST", body: JSON.stringify({ hours }), pin: true });
+export const agentExplain = (alert_id: string) => api<AgentReply>("/agent/explain", { method: "POST", body: JSON.stringify({ alert_id }), pin: true });
+export const agentChat = (messages: AgentTurn[]) => api<AgentReply>("/agent/chat", { method: "POST", body: JSON.stringify({ messages }), pin: true });

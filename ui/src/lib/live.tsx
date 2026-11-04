@@ -1,16 +1,45 @@
 "use client";
-// One WebSocket for the whole dashboard (plan-v2 §8): exponential backoff
+// One live stream (Server-Sent Events) for the whole dashboard (plan-v2 §8): exponential backoff
 // capped at 5 s, a `connected` flag for the "connection lost" state, and
 // ref-held ring buffers for the breathing wave and the CSI heatmap so canvases
 // can draw on requestAnimationFrame without re-rendering React.
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { getAlerts, getHistory, getStatus, wsUrl, type Alert, type Status, type WsMessage } from "./api";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { api, getAlerts, getHistory, getStatus, LIVE_URL, type Alert, type Status, type WsMessage } from "./api";
 import type { Result } from "./contracts.gen";
+import { mergeSeed, TREND_CAPACITY, trendSample, type RecentReply, type TrendSample } from "./model";
+import { spotReliable } from "./room";
 import type { PresenceSince } from "./words";
 
 export const WAVE_HZ = 10;
+const TICK_S = 0.5; // one result per 0.5 s (contracts/control.md)
 export const WAVE_SECONDS = 300; // ring buffer length; the chart shows 30 s or 5 min of it
 export const CSI_ROWS = 300; // ~30 s at 5 rows per 0.5 s
+export const SIGNAL_SECONDS = 120; // the live signals chart: one sample per result
+
+/** One result's scalar signals, for the live signals chart and the 3D room view. */
+export interface SignalSample {
+  /** Result time, ms since epoch. */
+  t: number;
+  /** Motion level 0..1. */
+  M: number;
+  /** Deviation from the empty-room profile. */
+  S: number;
+  /** Breathing-band energy. */
+  B: number;
+  rssi: number | null;
+  /** Distance from the link (m) and the body disturbance (dB), null without an estimate. */
+  d: number | null;
+  /** Standard deviation of d (m). */
+  sd: number | null;
+  R: number | null;
+  /** d is the last distance measured while moving (the person stands still). */
+  held: boolean;
+  zone: "near" | "middle" | "far" | null;
+  /** How many people to mark (lifefi.position people). */
+  people: number;
+  /** The spot model's answer (lifefi.spots), null without a model; reliable as the engine rates it for this room. */
+  spot: { name: string; p: number; d: number | null; reliable: boolean } | null;
+}
 
 export class RingBuffer<T> {
   private buf: T[];
@@ -27,6 +56,10 @@ export class RingBuffer<T> {
   get length(): number {
     return this.count;
   }
+  /** The newest entry, undefined when empty. */
+  last(): T | undefined {
+    return this.count ? this.buf[(this.head - 1 + this.capacity) % this.capacity] : undefined;
+  }
   /** Oldest → newest. */
   toArray(): T[] {
     const out: T[] = new Array(this.count);
@@ -41,8 +74,12 @@ export class RingBuffer<T> {
 }
 
 export interface LiveBuffers {
-  wave: RingBuffer<number>;
+  /** null = no sample for that moment (the engine had no breathing window): drawn as a gap. */
+  wave: RingBuffer<number | null>;
   csi: RingBuffer<number[]>;
+  signals: RingBuffer<SignalSample>;
+  /** 15 min of lean per-result samples for the vitals sparklines and the /model charts (lib/model.ts). */
+  trend: RingBuffer<TrendSample>;
   /** Bumped on every result; canvases compare it to skip redraws. */
   version: number;
 }
@@ -60,7 +97,12 @@ export interface LiveState {
   presenceSince: PresenceSince | null;
   buffers: LiveBuffers;
   refreshAlerts: () => Promise<void>;
+  /** When position.held last flipped false → true (the person stood still), null while not held. */
+  positionHeldSince: number | null;
 }
+
+/** Everything but the 2 Hz result: changes only on status, alert and presence changes. */
+export type LiveSlowState = Omit<LiveState, "result">;
 
 const HISTORY_ROW_MS = 5000;
 
@@ -78,7 +120,10 @@ async function seedPresenceSince(state: PresenceSince["state"], now: number): Pr
   }
 }
 
-const LiveContext = createContext<LiveState | null>(null);
+// Two contexts so a component that does not draw the result does not re-render at 2 Hz
+// (plan B1.6): page-level components read useLiveSlow(), only leaf views read useResult().
+const LiveSlowContext = createContext<LiveSlowState | null>(null);
+const LiveResultContext = createContext<Result | null>(null);
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
@@ -87,17 +132,23 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [cleared, setCleared] = useState<Alert[]>([]);
   const [presenceSince, setPresenceSince] = useState<PresenceSince | null>(null);
+  const [positionHeldSince, setPositionHeldSince] = useState<number | null>(null);
+  const lastHeld = useRef(false);
   const lastPresence = useRef<PresenceSince["state"] | null>(null);
   // Once the server reports presence changes itself (Status.presence), history seeding is not needed.
   const serverPresence = useRef(false);
   // A stable mutable object (not React state): canvases read it on rAF, React never re-renders on it.
-  const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), version: 0 }));
+  const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), signals: new RingBuffer(SIGNAL_SECONDS / TICK_S), trend: new RingBuffer(TREND_CAPACITY), version: 0 }));
   const lastBoot = useRef<number | null>(null);
+  const lastSource = useRef<Result["source"] | null>(null);
+  // Newest seed time: live results up to it are already in the ring (they were in flight while
+  // /recent answered), so they are skipped once; the first newer one ends the guard.
+  const seededUpTo = useRef(-Infinity);
 
   const refreshAlerts = async () => {
     try {
       const { alerts } = await getAlerts("pending,open,acked");
-      // A WebSocket transition may have arrived while this request was in flight: keep whichever is newer.
+      // A live transition may have arrived while this request was in flight: keep whichever is newer.
       const stamp = (a: Alert) => Math.max(a.created_at, a.opened_at ?? 0, a.acked_at ?? 0, a.resolved_at ?? 0, a.escalated_at ?? 0, a.notified_at ?? 0);
       setAlerts((prev) => {
         const byId = new Map(alerts.map((a) => [a.id, a]));
@@ -108,35 +159,91 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         return [...byId.values()].filter((a) => a.state === "pending" || a.state === "open" || a.state === "acked").sort((a, b) => b.created_at - a.created_at);
       });
     } catch {
-      /* server unreachable; the ws state shows it */
+      /* server unreachable; the live state shows it */
     }
   };
 
   useEffect(() => {
-    let ws: WebSocket | null = null;
+    let es: EventSource | null = null;
     let attempt = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let closed = false;
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(wsUrl());
-      ws.onopen = () => {
+      es = new EventSource(LIVE_URL);
+      es.onopen = () => {
         attempt = 0;
         setConnected(true);
         void refreshAlerts();
         getStatus().then(setStatus).catch(() => {});
+        // The server keeps the last 15 min in memory: start the trend charts filled on mount, and on a
+        // reconnect fetch only what came after the newest sample this page has (the outage).
+        const have = buffers.trend.last()?.t;
+        api<RecentReply>(`/recent?minutes=15${have !== undefined ? `&since=${have}` : ""}`)
+          .then((rep) => {
+            if (lastBoot.current !== null && (rep.boot_id !== lastBoot.current || rep.source !== lastSource.current)) return;
+            if (!rep.samples.length) return;
+            const merged = mergeSeed(rep.samples, buffers.trend.toArray());
+            seededUpTo.current = merged[merged.length - 1]?.t ?? -Infinity;
+            // remember whose samples these are, so a first live result from another boot clears them
+            if (lastBoot.current === null && rep.boot_id !== null && rep.source !== null) {
+              lastBoot.current = rep.boot_id;
+              lastSource.current = rep.source;
+            }
+            buffers.trend.clear();
+            for (const s of merged) buffers.trend.push(s);
+            buffers.version++;
+          })
+          .catch(() => {});
       };
-      ws.onmessage = (ev) => {
-        const m = JSON.parse(ev.data as string) as WsMessage;
+      es.onmessage = (ev) => {
+        let m: WsMessage;
+        try {
+          m = JSON.parse(ev.data as string) as WsMessage;
+        } catch {
+          return; // one broken frame must not stop the dashboard
+        }
         if (m.type === "result") {
-          if (lastBoot.current !== null && lastBoot.current !== m.boot_id) {
+          // a new board boot or a switch between live and replay: the old signal is not this one
+          if ((lastBoot.current !== null && lastBoot.current !== m.boot_id) || (lastSource.current !== null && lastSource.current !== m.source)) {
             buffers.wave.clear();
             buffers.csi.clear();
+            buffers.signals.clear();
+            buffers.trend.clear();
+            seededUpTo.current = -Infinity;
+            lastHeld.current = false;
+            setPositionHeldSince(null);
           }
           lastBoot.current = m.boot_id;
-          for (const v of m.breathing.wave) buffers.wave.push(v);
+          lastSource.current = m.source;
+          if (m.breathing.wave.length) for (const v of m.breathing.wave) buffers.wave.push(v);
+          else for (let i = 0; i < WAVE_HZ * TICK_S; i++) buffers.wave.push(null); // keep the time axis true
           for (const row of m.csi) buffers.csi.push(row);
+          const pos = m.position ?? null;
+          const held = !!(pos?.valid && pos.held);
+          if (held !== lastHeld.current) {
+            lastHeld.current = held;
+            setPositionHeldSince(held ? m.ts : null);
+          }
+          buffers.signals.push({
+            t: m.ts,
+            M: m.presence.M,
+            S: m.presence.S,
+            B: m.presence.B,
+            rssi: m.link?.rssi_dbm ?? null,
+            d: pos?.valid ? pos.d_m : null,
+            sd: pos?.valid ? pos.d_sd : null,
+            held: pos?.held ?? false,
+            zone: pos?.zone ?? null,
+            people: pos?.people ?? 0,
+            spot: pos?.spot ? { name: pos.spot.name, p: pos.spot.p, d: pos.spot.d_m, reliable: spotReliable(pos) } : null,
+            R: pos ? pos.R_db : null,
+          });
+          if (m.ts > seededUpTo.current) {
+            seededUpTo.current = -Infinity;
+            buffers.trend.push(trendSample(m));
+          }
           buffers.version++;
           const ps = m.presence.state;
           if (serverPresence.current) {
@@ -159,7 +266,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         } else if (m.type === "alert") {
           // "All clear" only when the condition really ended, not when the engine or sensor went away.
           const closedBy = String(m.alert.data.closed_by ?? "");
-          if (m.alert.state === "resolved" && !/restart|stopped reporting/.test(closedBy)) setCleared((prev) => [m.alert, ...prev.filter((a) => a.id !== m.alert.id)].slice(0, 5));
+          if (m.alert.state === "resolved" && !/restart|stopped reporting|source changed/.test(closedBy)) setCleared((prev) => [m.alert, ...prev.filter((a) => a.id !== m.alert.id)].slice(0, 5));
           setAlerts((prev) => {
             const next = prev.filter((a) => a.id !== m.alert.id);
             if (m.alert.state === "pending" || m.alert.state === "open" || m.alert.state === "acked") next.unshift(m.alert);
@@ -167,36 +274,67 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           });
         }
       };
-      ws.onclose = () => {
+      // EventSource retries on its own only for some failures; reconnect with backoff ourselves.
+      es.onerror = () => {
         setConnected(false);
-        ws = null;
+        es?.close();
+        es = null;
         if (closed) return;
         const delay = Math.min(5000, 500 * 2 ** attempt++);
         timer = setTimeout(connect, delay);
       };
-      ws.onerror = () => ws?.close();
     };
     connect();
     return () => {
       closed = true;
       if (timer) clearTimeout(timer);
-      ws?.close();
+      es?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const dismissCleared = (id: string) => setCleared((prev) => prev.filter((a) => a.id !== id));
-  const value = useMemo<LiveState>(
-    () => ({ connected, result, status, alerts, cleared, dismissCleared, presenceSince, buffers, refreshAlerts }),
-    [connected, result, status, alerts, cleared, presenceSince, buffers],
+  const slow = useMemo<LiveSlowState>(
+    () => ({ connected, status, alerts, cleared, dismissCleared, presenceSince, buffers, refreshAlerts, positionHeldSince }),
+    [connected, status, alerts, cleared, presenceSince, buffers, positionHeldSince],
   );
-  return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
+  return (
+    <LiveSlowContext.Provider value={slow}>
+      <LiveResultContext.Provider value={result}>{children}</LiveResultContext.Provider>
+    </LiveSlowContext.Provider>
+  );
 }
 
-export function useLive(): LiveState {
-  const v = useContext(LiveContext);
-  if (!v) throw new Error("useLive must be used inside <LiveProvider>");
+/** Everything but the result; does not re-render on every 0.5 s result. */
+export function useLiveSlow(): LiveSlowState {
+  const v = useContext(LiveSlowContext);
+  if (!v) throw new Error("useLiveSlow must be used inside <LiveProvider>");
   return v;
+}
+
+/** The latest result (2 Hz); read it only in leaf components. */
+export function useResult(): Result | null {
+  return useContext(LiveResultContext);
+}
+
+/** The whole live state, result included: re-renders at 2 Hz. */
+export function useLive(): LiveState {
+  const slow = useLiveSlow();
+  const result = useResult();
+  return useMemo(() => ({ ...slow, result }), [slow, result]);
+}
+
+const noSubscribe = () => () => {};
+/** False during the server render and hydration, true after: for values that differ between them (clocks). */
+export function useMounted(): boolean {
+  return useSyncExternalStore(noSubscribe, () => true, () => false);
+}
+
+/** Which optional outputs the engine publishes (get_status outputs); all of them when it does not say. */
+export function usePublished(): { posture: boolean; count: boolean; activity: boolean } {
+  const { status } = useLiveSlow();
+  const o = status?.engine.status?.outputs;
+  return { posture: o?.posture ?? true, count: o?.count ?? true, activity: o?.activity ?? true };
 }
 
 /** True when the last result is older than `staleMs`. Re-evaluated on a timer so it flips without new data. */

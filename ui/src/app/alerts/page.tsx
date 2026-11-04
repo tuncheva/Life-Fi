@@ -3,10 +3,11 @@
 // a short timeline of what happened and what was done about it. Short events
 // that cleared before alerting are hidden unless asked for.
 import { useEffect, useState } from "react";
-import { getAlerts, getSettings, type Alert } from "@/lib/api";
-import { useLive } from "@/lib/live";
+import { getAlerts, getSettings, type Alert, type ProfileName } from "@/lib/api";
+import { useLiveSlow } from "@/lib/live";
 import { roomName, alertTitle, clearedText, clock, duration, levelText } from "@/lib/words";
-import { Icon, Notice, Pill, type PillTone } from "@/components/ui";
+import { ExplainAlert } from "@/components/model/AssistantSection";
+import { EmptyState, Icon, Notice, PageHeader, Pill, Skeleton, btn, checkLabelCls, type PillTone } from "@/components/ui";
 
 const STATE: Record<Alert["state"], { text: string; tone: PillTone }> = {
   pending: { text: "Checking", tone: "warn" },
@@ -66,12 +67,23 @@ function story(a: Alert, phoneSetUp: boolean | null): { steps: Step[]; summary: 
   return { steps, summary };
 }
 
+/** What would raise an alert, per profile (contracts/profiles.yml), for the empty state. */
+const RAISES: Record<ProfileName, string> = {
+  home: "An alert opens for a possible fall, no movement after a fall, breathing that seems to stop, a long time without movement, or the sensor going offline.",
+  clinic: "An alert opens for a possible fall, breathing that seems to stop, leaving the bed at night, or the sensor going offline.",
+  school: "An alert opens for a possible fall, someone in the room after hours, or the sensor going offline.",
+};
+
+/** Alerts drawn at once; "Show older" adds this many more. */
+const PAGE = 50;
+
 export default function AlertsPage() {
-  const { alerts: live, status } = useLive();
+  const { alerts: live, status } = useLiveSlow();
   const [history, setHistory] = useState<Alert[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [showDropped, setShowDropped] = useState(false);
   const [phone, setPhone] = useState<boolean | null>(null);
+  const [limit, setLimit] = useState(PAGE);
 
   useEffect(() => {
     getAlerts("pending,open,acked,resolved,dropped")
@@ -90,7 +102,8 @@ export default function AlertsPage() {
   const dropped = history?.filter((a) => a.state === "dropped").length ?? 0;
   const list = (history ?? []).filter((a) => showDropped || a.state !== "dropped");
   const groups: { day: string; items: Alert[] }[] = [];
-  for (const a of list) {
+  // The server lists newest first, so the first `limit` are the most recent.
+  for (const a of list.slice(0, limit)) {
     const day = dayLabel(a.created_at);
     if (groups.at(-1)?.day !== day) groups.push({ day, items: [] });
     groups.at(-1)!.items.push(a);
@@ -98,27 +111,35 @@ export default function AlertsPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Alerts</h1>
-          <p className="text-sm text-muted">What happened in {roomName(status)} and what was done about it, newest first.</p>
-        </div>
-        {dropped > 0 && (
-          <label className="ml-auto flex items-center gap-2 text-sm text-muted">
-            <input type="checkbox" checked={showDropped} onChange={(e) => setShowDropped(e.target.checked)} className="h-4 w-4 accent-[var(--primary)]" />
-            Show {dropped} short event{dropped > 1 ? "s" : ""} that stopped before alerting
-          </label>
-        )}
-      </div>
+      <PageHeader
+        title="Alerts"
+        description={<>What happened in {roomName(status)} and what was done about it, newest first.</>}
+        actions={
+          dropped > 0 && (
+            <label className={`${checkLabelCls} text-muted`}>
+              <input type="checkbox" checked={showDropped} onChange={(e) => setShowDropped(e.target.checked)} className="h-5 w-5 accent-[var(--primary)]" />
+              Show {dropped} short event{dropped > 1 ? "s" : ""} that stopped before alerting
+            </label>
+          )
+        }
+      />
 
       {failed && <Notice tone="danger">Can&apos;t load the alert history. Check that this device can reach the Life-Fi box.</Notice>}
-      {!history && !failed && <p className="text-sm text-muted">Loading alerts…</p>}
-      {history && list.length === 0 && (
-        <div className="rounded-card border border-line bg-surface p-6 text-center">
-          <Icon name="check" className="mx-auto h-8 w-8 text-ok" />
-          <p className="mt-2 font-semibold">No alerts yet</p>
-          <p className="text-sm text-muted">When something happens it is listed here, with when the phone was told and who acknowledged it.</p>
+      {!history && !failed && (
+        <div className="space-y-3" aria-busy="true">
+          <span className="sr-only" role="status">
+            Loading alerts…
+          </span>
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-24 w-full rounded-card" />
+          <Skeleton className="h-24 w-full rounded-card" />
         </div>
+      )}
+      {history && list.length === 0 && (
+        <EmptyState icon="check" iconClassName="text-ok" title="No alerts yet">
+          <p>When something happens it is listed here, with when the phone was told and who acknowledged it.</p>
+          <p className="mt-2">{RAISES[status?.server.profile ?? "home"]}</p>
+        </EmptyState>
       )}
 
       <div className="space-y-6">
@@ -152,9 +173,13 @@ export default function AlertsPage() {
                           </li>
                         ))}
                       </ol>
-                      <p className="mt-3 font-mono text-[11px] text-subtle">
-                        {a.id} · {a.type} · profile {a.profile} · config {a.config_hash}
-                      </p>
+                      {a.state !== "dropped" && <ExplainAlert id={a.id} />}
+                      <details className="mt-2 text-xs text-subtle">
+                        <summary className="inline-flex min-h-11 cursor-pointer items-center">Technical details</summary>
+                        <p className="font-mono text-[11px]">
+                          {a.id} · {a.type} · profile {a.profile} · config {a.config_hash}
+                        </p>
+                      </details>
                     </div>
                   </li>
                 );
@@ -163,6 +188,13 @@ export default function AlertsPage() {
           </section>
         ))}
       </div>
+      {list.length > limit && (
+        <div className="mt-6 text-center">
+          <button onClick={() => setLimit((l) => l + PAGE)} className={btn.secondary}>
+            Show older ({list.length - limit})
+          </button>
+        </div>
+      )}
     </div>
   );
 }

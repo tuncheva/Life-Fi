@@ -4,10 +4,15 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   portal:
-    name: contracts + server + ui
+    name: contracts + ui (dashboard and backend)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,14 +26,49 @@ jobs:
       - name: Generated types are committed and current
         run: |
           node ui/scripts/gen-types.mjs
-          git diff --exit-code -- ui/src/lib/contracts.gen.ts server/src/contracts.gen.ts
-      - name: Server typecheck + tests
-        run: |
-          npm run lint -w server
-          npm test -w server
-      - name: UI lint + static export + typecheck
+          git diff --exit-code -- ui/src/lib/contracts.gen.ts
+      - name: Backend tests
+        run: npm test -w ui
+      - name: UI lint + build + typecheck
         # build first: it generates .next/types, which the typecheck relies on
         run: |
           npm run lint -w ui
           npm run build -w ui
           npm run typecheck -w ui
+
+  python:
+    name: engine + ml (no datasets, no GPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: engine/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pip install -r engine/requirements.txt
+      # every engine/tests/test_*.py and ml/tests/test_*.py; dataset-only ones print SKIPPED
+      - run: node scripts/test-all.mjs --only engine
+
+  # UNVERIFIED: added overnight 2026-11-04 without a CI run. Builds the four firmware
+  # envs and runs the host tests (pure C, no board, nothing is flashed).
+  firmware:
+    name: firmware (build all envs + host tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            firmware/.pio
+          key: pio-${{ hashFiles('firmware/platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -d firmware -e esp32dev -e esp32cam -e esp32dev_tx -e esp32cam_tx
+      - run: sh firmware/test/host/run.sh
