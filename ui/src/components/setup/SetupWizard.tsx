@@ -4,12 +4,14 @@
 // directly (links from the room view's "why it is rough" lines and Settings).
 // While this page is open it asks the server's /health and /setup every 5 s;
 // on an older server (404) the checks come from the live stream instead.
+// `?soft=1`: health answers 200 even with the engine down, so no red 503 every 5 s.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLiveSlow, useResult, useStale } from "@/lib/live";
 import { ROOM_EVENT, ROOM_KEY } from "@/lib/room";
 import { doneSteps, fetchOptional, parseStep, sensorChecks, STEPS, transmitterMoving, type HealthResponse, type SetupResponse, type StepId } from "@/lib/setup";
 import { roomName } from "@/lib/words";
+import { PageHeader } from "../ui";
 import { StepShell } from "./StepShell";
 import { StepSensor } from "./StepSensor";
 import { StepRoom } from "./StepRoom";
@@ -45,7 +47,7 @@ function useServerSetup(): { health: HealthResponse | null; setup: SetupResponse
     let live = true;
     const poll = async () => {
       if (document.visibilityState === "hidden") return;
-      const [health, setup] = await Promise.all([fetchOptional<HealthResponse>("/health"), fetchOptional<SetupResponse>("/setup")]);
+      const [health, setup] = await Promise.all([fetchOptional<HealthResponse>("/health?soft=1"), fetchOptional<SetupResponse>("/setup")]);
       if (live) setV({ health, setup });
     };
     void poll();
@@ -120,9 +122,8 @@ export function SetupWizard() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-2xl font-bold tracking-tight">Set up {status ? roomName(status) : "this room"}</h1>
-      <p className="mt-1 text-sm text-muted">About five minutes. Each step checks itself; you can come back to any of them later.</p>
-      <ol className="mt-5 space-y-2">
+      <PageHeader title={`Set up ${status ? roomName(status) : "this room"}`} description="About five minutes. Each step checks itself; you can come back to any of them later." />
+      <ol className="space-y-2">
         {STEPS.map((s, i) => (
           <StepShell key={s.id} n={i + 1} id={s.id} title={s.title} optional={s.optional} done={done.has(s.id)} open={open === s.id} summary={summary[s.id]} onOpen={() => go(s.id)}>
             {body(s.id)}

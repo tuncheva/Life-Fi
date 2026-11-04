@@ -309,3 +309,14 @@ export function whereText(w: WhereState): { headline: string; detail: string | n
   const rough = !dist || dist.quality === "low";
   return { headline, detail, reasons: rough ? w.reasons.map((r) => REASON_TEXT[r]) : [] };
 }
+
+/**
+ * A whole number typed into a form, or null when it is empty, not a whole number
+ * or outside [min, max]. `Number("")` is 0, which would silently save a zero.
+ */
+export function parseWholeNumber(s: string, min: number, max = Number.MAX_SAFE_INTEGER): number | null {
+  const t = s.trim();
+  if (!/^\d+$/.test(t)) return null;
+  const n = Number(t);
+  return n >= min && n <= max ? n : null;
+}

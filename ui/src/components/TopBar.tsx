@@ -1,8 +1,8 @@
 "use client";
 // Always-visible elements (plan-v2 §8): replay banner that cannot be dismissed,
 // connection lost, sensor silent, warm-up / uncertain.
-// Navigation by audience (docs/plan/ui-ux.md §4.6): "Room" and "Alerts" for
-// everyone; installer pages, presentation mode and theme under "Setup".
+// Navigation by audience (docs/plan/ui-ux.md §4.6): Room, Insights and Alerts for
+// everyone (lib/nav.ts); installer pages, presentation mode and theme under "Setup".
 // One problem, one message (B-ui-ux F4): the bars here step back when an open
 // alert already says the same thing.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -13,18 +13,9 @@ import { fetchOptional, needsSetup, readLocalSetup, type SetupResponse } from "@
 import { useSound } from "@/lib/sound";
 import { applyTheme, type Theme } from "@/lib/theme";
 import { useThemeChoice } from "@/lib/useTheme";
+import { MAIN_NAV, SETUP_NAV, isActive } from "@/lib/nav";
 import { roomName, duration } from "@/lib/words";
 import { Icon, Pill } from "./ui";
-
-const SETUP: { href: string; label: string; hint: string }[] = [
-  { href: "/setup", label: "Set up this room", hint: "Sensor, room size, calibration" },
-  { href: "/source/", label: "Source & replay", hint: "Live sensor or a recording" },
-  { href: "/label/", label: "Labelling", hint: "Record training sessions" },
-  { href: "/teach/", label: "Teach spots", hint: "Record spots with spoken prompts, then train" },
-  { href: "/settings/", label: "Settings", hint: "Phone alerts, profile, PIN" },
-  { href: "/model/", label: "Spot model view", hint: "3D view and live signals, experimental" },
-  { href: "/emergency/", label: "Emergency (building demo, simulated)", hint: "Not real sensor data" },
-];
 
 export function SystemBanners() {
   const { connected, status, alerts } = useLiveSlow();
@@ -152,13 +143,18 @@ export function TopBar() {
   const theme = useThemeChoice();
   const sound = useSound();
   const menu = useRef<HTMLDetailsElement>(null);
+  const summary = useRef<HTMLElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  // Close the Setup menu on a click outside it or on Escape.
+  // Close the Setup menu on a click outside it or on Escape (focus goes back to "Setup").
   useEffect(() => {
     const close = (e: Event) => {
       const m = menu.current;
       if (!m?.open) return;
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !m.contains(e.target as Node)) m.open = false;
+      if (e instanceof KeyboardEvent) {
+        if (e.key !== "Escape") return;
+        m.open = false;
+        summary.current?.focus();
+      } else if (!m.contains(e.target as Node)) m.open = false;
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", close);
@@ -167,17 +163,24 @@ export function TopBar() {
       document.removeEventListener("keydown", close);
     };
   }, []);
+  // Close it on any route change too (back button, a link on the page); a DOM
+  // property, not state: onToggle keeps menuOpen in sync.
+  useEffect(() => {
+    if (menu.current) menu.current.open = false;
+  }, [path]);
   // Presentation mode draws its own header and banners.
   if (path.startsWith("/present")) return null;
 
   const open = alerts.filter((a) => a.state === "open" && a.level !== "low").length;
-  const onSetup = SETUP.some((s) => path.startsWith(s.href.replace(/\/$/, "")));
+  const onSetup = SETUP_NAV.some((s) => isActive(s.href, path));
   const closeMenu = () => {
     if (menu.current) menu.current.open = false;
   };
 
+  // Phones: icon above a small label; from sm: icon and label in a row.
   const navCls = (active: boolean) =>
-    `relative inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${active ? "bg-fg text-bg" : "text-muted hover:bg-surface-2 hover:text-fg"}`;
+    `relative inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[11px] font-medium sm:flex-row sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm ${active ? "bg-fg text-bg" : "text-muted hover:bg-surface-2 hover:text-fg"}`;
+  const badgeCls = "rounded-full bg-alert-high px-1.5 text-xs font-bold text-alert-fg";
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
@@ -187,7 +190,7 @@ export function TopBar() {
           <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-fg">
             <Icon name="wave" className="h-5 w-5" />
           </span>
-          <span className="text-lg font-bold tracking-tight">Life-Fi</span>
+          <span className="text-lg font-bold tracking-tight max-[359px]:sr-only">Life-Fi</span>
           <span className="hidden text-sm text-muted sm:inline">· {roomName(status)}</span>
         </Link>
 
@@ -198,26 +201,40 @@ export function TopBar() {
         </div>
 
         <nav aria-label="Main" className="ml-auto flex items-center gap-1">
-          <Link href="/" className={navCls(path === "/")} aria-current={path === "/" ? "page" : undefined}>
-            Room
-          </Link>
-          <Link href="/alerts/" className={navCls(path.startsWith("/alerts"))} aria-current={path.startsWith("/alerts") ? "page" : undefined}>
-            Alerts
-            {open > 0 && (
-              <span className="rounded-full bg-alert-high px-1.5 text-xs font-bold text-alert-fg" aria-label={`${open} open`}>
-                {open}
-              </span>
-            )}
-          </Link>
+          {MAIN_NAV.map((item) => {
+            const here = isActive(item.href, path);
+            const badge = item.href === "/alerts" && open > 0;
+            return (
+              <Link key={item.href} href={item.href} className={navCls(here)} aria-current={here ? "page" : undefined}>
+                <span className="relative">
+                  {item.icon && <Icon name={item.icon} className="h-5 w-5" />}
+                  {badge && (
+                    <span aria-hidden className={`${badgeCls} absolute -right-2.5 -top-1.5 sm:hidden`}>
+                      {open}
+                    </span>
+                  )}
+                </span>
+                {item.label}
+                {badge && (
+                  <>
+                    <span aria-hidden className={`${badgeCls} hidden sm:inline`}>
+                      {open}
+                    </span>
+                    <span className="sr-only">, {open} open</span>
+                  </>
+                )}
+              </Link>
+            );
+          })}
           <details ref={menu} className="relative" onToggle={(e) => setMenuOpen(e.currentTarget.open)}>
-            <summary className={`${navCls(onSetup)} cursor-pointer list-none [&::-webkit-details-marker]:hidden`} aria-label="Setup menu" aria-expanded={menuOpen}>
+            <summary ref={summary} className={`${navCls(onSetup)} cursor-pointer list-none [&::-webkit-details-marker]:hidden`} aria-label="Setup menu" aria-expanded={menuOpen}>
               <Icon name="settings" className="h-5 w-5" />
-              <span className="hidden sm:inline">Setup</span>
+              <span aria-hidden>Setup</span>
             </summary>
             <div className="absolute right-0 z-30 mt-2 max-h-[min(80vh,40rem)] w-[min(18rem,calc(100vw-2rem))] overflow-y-auto rounded-card border border-line bg-surface p-1.5 shadow-xl">
               <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-subtle">For installers</p>
-              {SETUP.map((s) => {
-                const here = path.startsWith(s.href.replace(/\/$/, ""));
+              {SETUP_NAV.map((s) => {
+                const here = isActive(s.href, path);
                 return (
                   <Link
                     key={s.href}
@@ -232,7 +249,7 @@ export function TopBar() {
                 );
               })}
               <div className="my-1.5 border-t border-line" />
-              <Link href="/present/" onClick={closeMenu} className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-surface-2">
+              <Link href="/present" onClick={closeMenu} className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-surface-2">
                 <Icon name="monitor" className="h-4 w-4" /> Presentation mode
               </Link>
               <div className="px-3 pb-1.5 pt-2">

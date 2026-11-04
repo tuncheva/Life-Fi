@@ -13,10 +13,10 @@ export function StepSpots({ onNext }: { onNext: () => void }) {
         Experimental. A spot is only shown once the trained model is reliable enough.
       </Notice>
       <div className="mt-4 flex flex-wrap gap-2">
-        <Link href="/teach/" className={btn.primary}>
+        <Link href="/teach" className={btn.primary}>
           Teach spots
         </Link>
-        <Link href="/label/" className={btn.secondary}>
+        <Link href="/label" className={btn.secondary}>
           Open Labelling
         </Link>
         <button type="button" onClick={onNext} className={btn.secondary}>

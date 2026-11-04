@@ -277,6 +277,10 @@ body {
   outline-offset: 2px;
   border-radius: 6px;
 }
+/* The skip link moves focus to <main>; the page itself needs no ring. */
+#main:focus-visible {
+  outline: none;
+}
 
 /* Anything scrolled to (a #step link, scrollIntoView) clears the sticky header. */
 [id] {
@@ -306,4 +310,24 @@ summary::-webkit-details-marker {
 }
 details[open] > summary .chev {
   transform: rotate(90deg);
+}
+
+/* --- track M: vitals and model --- */
+/* Chart colours for the vitals card and the /model (Insights) charts; read with token(). */
+:root {
+  --chart-heart: #be123c;
+  --chart-occupancy: #2563eb;
+  --chart-rate: #a16207;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --chart-heart: #fb7185;
+    --chart-occupancy: #60a5fa;
+    --chart-rate: #facc15;
+  }
+}
+:root[data-theme="dark"] {
+  --chart-heart: #fb7185;
+  --chart-occupancy: #60a5fa;
+  --chart-rate: #facc15;
 }

@@ -441,3 +441,34 @@ pending edits, no hydration warning.
     and `manifest.ts` conventions; per-route server `layout.tsx` is the right mechanism.
 12. Tests: added `/present` exclusion, `"/alerts/x"`, upper bound for `parseWholeNumber`,
     `inputRowCls` checks; foreign test failures are reported, not fixed.
+
+## Worker report (U)
+
+**Built (all steps U1–U9; nothing from the cut list was cut).** Paths under `ui/src/` unless noted.
+
+- **U1** new `lib/nav.ts` (`MAIN_NAV` Room / Insights / Alerts, `SETUP_NAV` without `/model` and `/present`, `isActive`). `components/TopBar.tsx`: nav from `MAIN_NAV` with icons (icon above an 11 px label below `sm`, row from `sm`), Alerts badge absolutely on the icon on phones and inline from `sm`, accessible name via sr-only ", N open"; "Setup" label now visible at all widths (summary keeps `aria-label="Setup menu"`); wordmark `max-[359px]:sr-only`; menu closes on route change (DOM property effect); Escape closes and returns focus to the summary; no trailing-slash hrefs (`/present` too). `ui.tsx`: `"chart"` icon.
+- **U2** `app/layout.tsx`: `title: { default, template: "%s · Life-Fi" }`, `applicationName`, skip link, `<main tabIndex={-1}>`; `globals.css`: one `#main:focus-visible { outline: none }` rule next to the global focus rule (above M's marker). New server `layout.tsx` in `alerts, settings, source, label, teach, setup, present, emergency` (title + description).
+- **U3** `ui.tsx` (additive only): `PageHeader`, `Field`, `EmptyState`, `inputRowCls`, `checkLabelCls`; `inputCls` gained `min-h-11 disabled:opacity-50 aria-[invalid=true]:border-danger`. `Card`, `PageSkeleton`, `btn`, `Notice` untouched; no hooks, no `"use client"`.
+- **U4** `AlertBanner.tsx`: "Got it" / "Dismiss" 44 px; `notifiedText` lost "(Setup → Settings)"; banner adds an "Open settings" link when the phone was not told (not for "Phone not notified yet", which is just pending). `/present` shows the shorter text.
+- **U5** `app/alerts/page.tsx`: `PageHeader`, 44 px short-events checkbox, developer line behind "Technical details", `EmptyState`, "Show older (N)" cap at 50 (server list is newest first, checked in `server/alerts.ts:105`).
+- **U6** `PageHeader` on settings, source, label, teach, emergency (badge + actions), `setup/SetupWizard.tsx`. In grid/space-y parents the header uses `mb-0!` so spacing stays as before.
+- **U7** `app/settings/page.tsx` rewritten: number fields as string drafts parsed with new `parseWholeNumber` (`lib/words.ts`), errors + `aria-invalid`, empty room name blocked; one `applySaved` for load/Save/Discard; PIN change no longer overwrites unsaved edits; cards "This room" / "Phone notifications" / "This device" / "Change the dashboard PIN" / "Server and engine"; hints under fields via `Field`; sticky Save/Discard bar in normal flow, success notice fades after 4 s; `beforeunload` while dirty (comment notes in-app navigation is not covered); PIN inputs with `name`/`autoComplete`; `useSyncExternalStore` + nullable drafts for the stored PIN and device name (no hydration mismatch); stale "static export" comment removed.
+- **U8** `app/source/page.tsx`: per-card result notices, recordings list failure shown instead of "No recordings found yet", select in its own `Field`, path input under "Type a path instead" (open when there are no recordings), 44 px Loop checkbox, `inputRowCls` instead of the `mt-0` hack. `label/page.tsx` same hack replaced. `/present` Full screen / Exit 44 px (Full screen still hidden on phones). `SetupWizard` polls `/health?soft=1`. `setup/StepDone.tsx` trailing-slash hrefs fixed.
+- **U9** `app/icon.svg` (dark rounded square, white wave), `app/manifest.ts`.
+- Tests: new `ui/test/shell.test.ts` (isActive, nav order/labels, no trailing slashes, every href has a page, parseWholeNumber) and `ui/test/ui.test.ts` (export guard for track M, 44 px classes). Both import fine under vitest.
+
+**Cut:** nothing.
+
+**Checks (repo root, final run):** `npm run typecheck` green; `npm run lint` green; `npm test` 18 passed, 1 skipped (`test_features_vectors.py`, pre-existing skip), 0 failed. During one intermediate run typecheck failed in `server/health.ts` (missing `transmitter`) and lint in `components/model/sections.tsx` (unescaped `'`): both foreign, mid-edit, and gone on the re-run.
+
+**Known issues / for other tracks:**
+- `components/Cards.tsx:177` (track M) still links to `"/alerts/"` (one 308 per click). Change to `"/alerts"`.
+- `Field` wraps the topic and dashboard-address rows (a `<div>` with input + button) inside a `<label>`, as the old markup did; valid in browsers, not strict HTML content model.
+- Settings card order moved "Dashboard PIN" after "This device"; "Server and engine" now spans both columns.
+- `server/settings.ts` writes non-atomically (not U's; from the plan, report only).
+
+**Browser checks for the orchestrator** (light and dark, 375 and 1280 px; also 320 px for the header):
+- Header on `/`, `/model`, `/alerts`, `/settings`: Room / Insights / Alerts / Setup, exactly one `aria-current` on main pages, Setup highlighted on installer pages; no horizontal scroll at 320/375 with a two-digit alert badge (fallback in plan: Insights label `max-[359px]:sr-only`). Setup menu closes on Back and on the "Finish setup" pill; Escape returns focus to "Setup".
+- Tab titles ("Alerts · Life-Fi", "/" stays "Life-Fi"); first Tab shows "Skip to content", Enter focuses `<main>` without a ring.
+- `/settings`: empty "Send again…" shows the error and disables Save; Discard restores both number fields; change PIN with a pending room-name edit keeps the edit and the bar; hard reload with a stored PIN: no hydration warning; sticky bar does not cover the last card.
+- `/alerts` empty state, "Technical details", short-events checkbox; `/source` per-card notices and "Type a path instead"; `/setup` console clean with the engine stopped (no 503 every 5 s); `/present` buttons; `/icon.svg` and `/manifest.webmanifest` served; AlertBanner "Open settings" link readable on red/orange.

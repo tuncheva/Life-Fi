@@ -7,7 +7,7 @@ import { friendlyError } from "@/lib/pin";
 import type { SpotsOverview } from "@/lib/teach";
 import { TeachRunView, TeachSetup } from "@/components/teach/TeachRecord";
 import { TeachTrain } from "@/components/teach/TeachTrain";
-import { Notice, PageSkeleton } from "@/components/ui";
+import { Notice, PageHeader, PageSkeleton } from "@/components/ui";
 
 export default function TeachPage() {
   const [data, setData] = useState<SpotsOverview | null>(null);
@@ -36,10 +36,7 @@ export default function TeachPage() {
 
   return (
     <div className="grid gap-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Teach spots</h1>
-        <p className="text-sm text-muted">Record where people usually are, then train. Needs the board live and a fixed transmitter.</p>
-      </div>
+      <PageHeader className="mb-0!" title="Teach spots" description="Record where people usually are, then train. Needs the board live and a fixed transmitter." />
       {error && <Notice tone="danger">{error}</Notice>}
       {run ? <TeachRunView run={run} refresh={refresh} onDismiss={() => setDismissed(run.session)} /> : <TeachSetup data={data} refresh={refresh} />}
       {data.teach?.state !== "running" && <TeachTrain data={data} refresh={refresh} />}

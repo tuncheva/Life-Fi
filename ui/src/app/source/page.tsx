@@ -6,9 +6,11 @@ import Link from "next/link";
 import { getRecordings, setSource, startRecording, stopRecording, type RecordingInfo } from "@/lib/api";
 import { useLiveSlow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
-import { Card, Notice, PageSkeleton, Pill, btn, inputCls } from "@/components/ui";
+import { Card, Field, Notice, PageHeader, PageSkeleton, Pill, btn, checkLabelCls, inputCls, inputRowCls } from "@/components/ui";
 
 const SPEEDS = [0.5, 1, 2, 4];
+
+type Where = "live" | "play" | "record";
 
 export default function SourcePage() {
   const { status } = useLiveSlow();
@@ -20,29 +22,38 @@ export default function SourcePage() {
   const [speed, setSpeed] = useState(1);
   const [loop, setLoop] = useState(false);
   const [session, setSession] = useState("");
-  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  // Each card shows the result of its own action, right under it.
+  const [msg, setMsg] = useState<{ text: string; ok: boolean; where: Where } | null>(null);
+  const [listFailed, setListFailed] = useState<string | null>(null);
 
   const reload = () =>
     getRecordings()
       .then((r) => {
         setRecordings(r.recordings);
         setRecording(r.recording?.session ?? null);
+        setListFailed(null);
       })
-      .catch(() => {});
+      .catch((e) => setListFailed(friendlyError(e)));
   useEffect(() => {
     void reload();
   }, [status?.engine.connected]);
 
-  const run = async (fn: () => Promise<unknown>, ok: string) => {
+  const run = async (where: Where, fn: () => Promise<unknown>, ok: string) => {
     setMsg(null);
     try {
       if ((await withPin(fn)) === undefined) return;
-      setMsg({ text: ok, ok: true });
+      setMsg({ text: ok, ok: true, where });
       void reload();
     } catch (e) {
-      setMsg({ text: friendlyError(e), ok: false });
+      setMsg({ text: friendlyError(e), ok: false, where });
     }
   };
+  const note = (where: Where) =>
+    msg?.where === where && (
+      <Notice tone={msg.ok ? "ok" : "danger"} className="mt-3">
+        {msg.text}
+      </Notice>
+    );
 
   const replay = source?.mode === "replay";
   const files = recordings.filter((r) => r.file);
@@ -51,10 +62,11 @@ export default function SourcePage() {
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <div className="md:col-span-2">
-        <h1 className="text-2xl font-bold tracking-tight">Source & replay</h1>
-        <p className="text-sm text-muted">Show the live sensor, or play back a recording (for rehearsals, or as the demo fallback). A replay is always marked on every page.</p>
-      </div>
+      <PageHeader
+        className="mb-0! md:col-span-2"
+        title="Source & replay"
+        description="Show the live sensor, or play back a recording (for rehearsals, or as the demo fallback). A replay is always marked on every page."
+      />
 
       <Card title="Showing now">
         <div className="flex items-center gap-3">
@@ -78,16 +90,16 @@ export default function SourcePage() {
         )}
         <p className="mt-3 text-sm text-muted">While a replay runs, the purple banner stays on every page and cannot be closed, so nobody mistakes it for the live room.</p>
         {replay && (
-          <button onClick={() => void run(() => setSource({ mode: "live", file: null, speed: 1, loop: false }), "Back to the live sensor.")} className={`${btn.primary} mt-3`}>
+          <button onClick={() => void run("live", () => setSource({ mode: "live", file: null, speed: 1, loop: false }), "Back to the live sensor.")} className={`${btn.primary} mt-3`}>
             Back to live
           </button>
         )}
+        {note("live")}
       </Card>
 
       <Card title="Play a recording">
-        <label className="block text-sm font-medium">
-          Recording
-          {files.length > 0 ? (
+        {files.length > 0 ? (
+          <Field label="Recording">
             <select value={file} onChange={(e) => setFile(e.target.value)} className={inputCls}>
               <option value="">Choose a session…</option>
               {files.map((r) => (
@@ -96,11 +108,16 @@ export default function SourcePage() {
                 </option>
               ))}
             </select>
-          ) : (
-            <span className="mt-1 block text-sm font-normal text-muted">No recordings found yet. Type a path:</span>
-          )}
-          <input value={file} onChange={(e) => setFile(e.target.value)} placeholder="data/sessions/s03/s03.csirec" className={`${inputCls} font-mono text-xs`} aria-label="Recording path" />
-        </label>
+          </Field>
+        ) : listFailed ? (
+          <Notice tone="danger">Can&apos;t list the recordings: {listFailed}</Notice>
+        ) : (
+          <p className="text-sm text-muted">No recordings found yet.</p>
+        )}
+        <details open={files.length === 0} className="mt-2">
+          <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm">Type a path instead</summary>
+          <input value={file} onChange={(e) => setFile(e.target.value)} placeholder="data/sessions/s03/s03.csirec" className={`${inputRowCls} font-mono text-xs`} aria-label="Recording path" />
+        </details>
         <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
           <div className="flex items-center gap-1" role="radiogroup" aria-label="Speed">
             <span className="mr-1 text-muted">Speed</span>
@@ -110,32 +127,33 @@ export default function SourcePage() {
               </button>
             ))}
           </div>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} className="h-4 w-4" /> Loop
+          <label className={checkLabelCls}>
+            <input type="checkbox" checked={loop} onChange={(e) => setLoop(e.target.checked)} className="h-5 w-5 accent-[var(--primary)]" /> Loop
           </label>
         </div>
-        <button disabled={!file} onClick={() => void run(() => setSource({ mode: "replay", file, speed, loop }), "Replay started.")} className={`${btn.primary} mt-4`}>
+        <button disabled={!file} onClick={() => void run("play", () => setSource({ mode: "replay", file, speed, loop }), "Replay started.")} className={`${btn.primary} mt-4`}>
           Start replay
         </button>
         <p className="mt-2 text-xs text-muted">The engine then accepts only frames marked as replay.</p>
+        {note("play")}
       </Card>
 
       <Card title="Quick recording (live only)" className="md:col-span-2">
         <p className="mb-3 text-sm text-muted">
           For labelled training sessions use{" "}
-          <Link href="/label/" className="font-medium text-link hover:underline">
+          <Link href="/label" className="font-medium text-link hover:underline">
             Labelling
           </Link>
           . This just records raw data.
         </p>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <input value={session} onChange={(e) => setSession(e.target.value)} placeholder="session id, e.g. s03" disabled={!!recording} className={`${inputCls} mt-0 w-48 font-mono`} aria-label="Session id" />
+          <input value={session} onChange={(e) => setSession(e.target.value)} placeholder="session id, e.g. s03" disabled={!!recording} className={`${inputRowCls} w-48 font-mono`} aria-label="Session id" />
           {recording ? (
-            <button onClick={() => void run(() => stopRecording(), `Stopped ${recording}.`)} className={btn.danger}>
+            <button onClick={() => void run("record", () => stopRecording(), `Stopped ${recording}.`)} className={btn.danger}>
               Stop {recording}
             </button>
           ) : (
-            <button disabled={!/^[\w-]+$/.test(session) || !source || replay} onClick={() => void run(() => startRecording(session, { started_from: "dashboard" }), `Recording ${session}.`)} className={btn.primary}>
+            <button disabled={!/^[\w-]+$/.test(session) || !source || replay} onClick={() => void run("record", () => startRecording(session, { started_from: "dashboard" }), `Recording ${session}.`)} className={btn.primary}>
               Start recording
             </button>
           )}
@@ -152,12 +170,8 @@ export default function SourcePage() {
             ))}
           </ul>
         )}
+        {note("record")}
       </Card>
-      {msg && (
-        <Notice tone={msg.ok ? "ok" : "danger"} className="md:col-span-2">
-          {msg.text}
-        </Notice>
-      )}
     </div>
   );
 }

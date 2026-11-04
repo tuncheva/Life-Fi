@@ -74,10 +74,10 @@ export default function PresentPage() {
         </span>
         {/* the clock differs between the server render and the browser: drawn only once mounted (plan F7) */}
         <span className="ml-auto min-w-[8ch] text-right font-mono tabular-nums text-muted">{mounted ? clock(now, true) : " "}</span>
-        <button onClick={toggleFullscreen} className="hidden rounded-lg border border-line px-3 py-1.5 text-base text-muted hover:bg-surface-2 sm:block">
+        <button onClick={toggleFullscreen} className="hidden min-h-11 items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 text-base text-muted hover:bg-surface-2 sm:inline-flex">
           Full screen <kbd className="font-mono">F</kbd>
         </button>
-        <Link href="/" className="rounded-lg border border-line px-3 py-1.5 text-base text-muted hover:bg-surface-2">
+        <Link href="/" className="inline-flex min-h-11 items-center rounded-lg border border-line px-3 py-1.5 text-base text-muted hover:bg-surface-2">
           Exit
         </Link>
       </div>
