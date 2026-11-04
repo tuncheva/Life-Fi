@@ -4,8 +4,9 @@
 // ref-held ring buffers for the breathing wave and the CSI heatmap so canvases
 // can draw on requestAnimationFrame without re-rendering React.
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { getAlerts, getHistory, getStatus, LIVE_URL, type Alert, type Status, type WsMessage } from "./api";
+import { api, getAlerts, getHistory, getStatus, LIVE_URL, type Alert, type Status, type WsMessage } from "./api";
 import type { Result } from "./contracts.gen";
+import { mergeSeed, TREND_CAPACITY, trendSample, type RecentReply, type TrendSample } from "./model";
 import { spotReliable } from "./room";
 import type { PresenceSince } from "./words";
 
@@ -73,6 +74,8 @@ export interface LiveBuffers {
   wave: RingBuffer<number | null>;
   csi: RingBuffer<number[]>;
   signals: RingBuffer<SignalSample>;
+  /** 15 min of lean per-result samples for the vitals sparklines and the /model charts (lib/model.ts). */
+  trend: RingBuffer<TrendSample>;
   /** Bumped on every result; canvases compare it to skip redraws. */
   version: number;
 }
@@ -131,7 +134,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // Once the server reports presence changes itself (Status.presence), history seeding is not needed.
   const serverPresence = useRef(false);
   // A stable mutable object (not React state): canvases read it on rAF, React never re-renders on it.
-  const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), signals: new RingBuffer(SIGNAL_SECONDS / TICK_S), version: 0 }));
+  const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), signals: new RingBuffer(SIGNAL_SECONDS / TICK_S), trend: new RingBuffer(TREND_CAPACITY), version: 0 }));
   const lastBoot = useRef<number | null>(null);
   const lastSource = useRef<Result["source"] | null>(null);
 
@@ -167,6 +170,21 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         setConnected(true);
         void refreshAlerts();
         getStatus().then(setStatus).catch(() => {});
+        // The server keeps the last 15 min in memory: start the trend charts filled (mount and every reconnect).
+        api<RecentReply>("/recent?minutes=15")
+          .then((rep) => {
+            if (lastBoot.current !== null && (rep.boot_id !== lastBoot.current || rep.source !== lastSource.current)) return;
+            const merged = mergeSeed(rep.samples, buffers.trend.toArray());
+            // remember whose samples these are, so a first live result from another boot clears them
+            if (lastBoot.current === null && rep.boot_id !== null && rep.source !== null) {
+              lastBoot.current = rep.boot_id;
+              lastSource.current = rep.source;
+            }
+            buffers.trend.clear();
+            for (const s of merged) buffers.trend.push(s);
+            buffers.version++;
+          })
+          .catch(() => {});
       };
       es.onmessage = (ev) => {
         let m: WsMessage;
@@ -181,6 +199,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             buffers.wave.clear();
             buffers.csi.clear();
             buffers.signals.clear();
+            buffers.trend.clear();
             lastHeld.current = false;
             setPositionHeldSince(null);
           }
@@ -209,6 +228,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             spot: pos?.spot ? { name: pos.spot.name, p: pos.spot.p, d: pos.spot.d_m, reliable: spotReliable(pos) } : null,
             R: pos ? pos.R_db : null,
           });
+          buffers.trend.push(trendSample(m));
           buffers.version++;
           const ps = m.presence.state;
           if (serverPresence.current) {

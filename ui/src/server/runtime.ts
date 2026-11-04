@@ -8,6 +8,7 @@ import { buildStatus, type AppContext, type AppState, type EngineStatus } from "
 import { EngineClient } from "./engine-client";
 import { History } from "./history";
 import { LiveHub } from "./hub";
+import { recentBuffer } from "./recent";
 import { createLogger } from "./log";
 import { notifyPhone } from "./notify";
 import { loadProfiles } from "./profiles";
@@ -168,6 +169,7 @@ function start(): AppContext {
     guard("alerts", () => alerts.onResult(r));
     guard("server rules", () => rules.onResult(r));
     guard("history", () => history.add(r, profiles.profiles[settings.value.profile].breathing.store));
+    guard("recent", () => recentBuffer().add(r));
     guard("broadcast", () => hub.broadcast(r));
   });
   engine.on("unknown", (msg) => log.debug({ type: msg.type }, "unknown engine message"));

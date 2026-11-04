@@ -61,7 +61,8 @@ export interface Headline {
 }
 
 /** The big state block, shared by the room card and presentation mode. */
-export function StateHeadline({ s, size = "md" }: { s: Headline & { action?: RoomStatus["action"] }; size?: "md" | "xl" }) {
+export function StateHeadline({ s, size = "md", level = 1 }: { s: Headline & { action?: RoomStatus["action"] }; size?: "md" | "xl"; level?: 1 | 2 }) {
+  const H = level === 1 ? "h1" : "h2";
   const t = TONE_CLASS[s.tone];
   const xl = size === "xl";
   return (
@@ -70,9 +71,9 @@ export function StateHeadline({ s, size = "md" }: { s: Headline & { action?: Roo
         <Icon name={TONE_ICON[s.tone]} className={xl ? "h-10 w-10 sm:h-16 sm:w-16" : "h-8 w-8 sm:h-9 sm:w-9"} />
       </span>
       <div className="min-w-0">
-        <h1 aria-live="polite" className={`font-bold leading-tight tracking-tight ${xl ? "text-4xl sm:text-6xl lg:text-7xl" : "text-[1.75rem] sm:text-4xl"}`}>
+        <H aria-live="polite" className={`font-bold leading-tight tracking-tight ${xl ? "text-4xl sm:text-6xl lg:text-7xl" : "text-[1.75rem] sm:text-4xl"}`}>
           {s.headline}
-        </h1>
+        </H>
         {s.detail && <p className={`mt-1 text-muted ${xl ? "text-xl sm:text-3xl" : "text-base sm:text-lg"}`}>{s.detail}</p>}
         {s.action && (
           <Link href={s.action.href} className={`${btn.primary} mt-3`}>
@@ -97,7 +98,8 @@ function clinicHeadline(s: RoomStatus, alerts: Alert[], posture: Result["posture
   return s;
 }
 
-export function RoomCard({ afterHours }: { afterHours?: { from: string; to: string; now: boolean } | null }) {
+/** `headingLevel` 2 where the page has its own h1 (/model). */
+export function RoomCard({ afterHours, headingLevel = 1 }: { afterHours?: { from: string; to: string; now: boolean } | null; headingLevel?: 1 | 2 }) {
   const { result, status, alerts } = useLive();
   const s = useRoomStatus();
   const today = useAlertsToday();
@@ -156,7 +158,7 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
         </span>
       </div>
       <div className="px-4 py-4 sm:px-5 sm:py-5">
-        <StateHeadline s={head} />
+        <StateHeadline s={head} level={headingLevel} />
         {schoolNote && <div className="mt-3">{schoolNote}</div>}
         <WhereBlock />
       </div>

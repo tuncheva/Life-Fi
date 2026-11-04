@@ -8,10 +8,11 @@
 import { useEffect, useState } from "react";
 import { getProfile, type ProfileView } from "@/lib/api";
 import { useLiveSlow, useNow } from "@/lib/live";
-import { BreathingCard, CsiHeatmap, DetectorCard, HealthCard, RoomCard, SensorDetails } from "./Cards";
+import { CsiHeatmap, DetectorCard, HealthCard, RoomCard, SensorDetails } from "./Cards";
 import { LiveViews } from "./LiveViews";
 import type { PositionSource } from "./Room3D";
 import { Timeline } from "./Timeline";
+import { VitalsCard } from "./vitals/VitalsCard";
 
 function useProfileView(): ProfileView | null {
   const { status } = useLiveSlow();
@@ -38,7 +39,7 @@ export function HomeDashboard({ source = "distance" }: { source?: PositionSource
       <div className="lg:col-span-2">
         <RoomCard />
       </div>
-      <BreathingCard />
+      <VitalsCard />
       <Timeline />
       <LiveViews source={source} />
       <Details />
@@ -52,7 +53,7 @@ export function ClinicDashboard({ source = "distance" }: { source?: PositionSour
       <div className="lg:col-span-2">
         <RoomCard />
       </div>
-      <BreathingCard />
+      <VitalsCard />
       <Timeline />
       <LiveViews source={source} />
       <Details />

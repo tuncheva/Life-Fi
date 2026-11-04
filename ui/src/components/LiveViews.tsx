@@ -13,6 +13,8 @@ import { SignalsChart } from "./SignalsChart";
 const Placeholder = () => <div className="h-72 w-full animate-pulse rounded-lg bg-surface-2" />;
 const Room3D = dynamic(() => import("./Room3D").then((m) => m.Room3D), { ssr: false, loading: Placeholder });
 const CsiSurface3D = dynamic(() => import("./CsiSurface3D").then((m) => m.CsiSurface3D), { ssr: false, loading: Placeholder });
+/** The same lazy loaders for /model (three.js loads only when one is rendered). */
+export { Room3D as Room3DLazy, CsiSurface3D as CsiSurface3DLazy };
 
 const KEY = "lifefi.liveviews";
 

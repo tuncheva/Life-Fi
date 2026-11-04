@@ -1,17 +1,8 @@
 "use client";
-// The dashboard again, with the 3D view driven by the taught-spot model
-// (engine/lifefi/spots.py) instead of the distance estimate, to compare the two.
-import { ClinicDashboard, HomeDashboard, SchoolDashboard } from "@/components/Dashboards";
-import { useLiveSlow } from "@/lib/live";
+// Insights: what the sensor sees over the last 15 minutes, in collapsible sections
+// (components/model/InsightsPage.tsx). The URL stays /model for existing links.
+import { InsightsPage } from "@/components/model/InsightsPage";
 
-export default function ModelDashboardPage() {
-  const { status } = useLiveSlow();
-  switch (status?.server.profile) {
-    case "clinic":
-      return <ClinicDashboard source="model" />;
-    case "school":
-      return <SchoolDashboard source="model" />;
-    default:
-      return <HomeDashboard source="model" />;
-  }
+export default function ModelPage() {
+  return <InsightsPage />;
 }

@@ -405,3 +405,75 @@ kept; keyboard-only toggle; network tab: no three.js chunk until the 3D button; 
    moved to the worker report; test file named `model-recent.test.ts` to stay inside the
    `model*` test pattern M owns; explicit "not touched" list extended (`useTheme.ts`,
    `context.ts`, `hub.ts`, `TopBar.tsx`, `present/**`).
+
+## Worker report (M)
+
+### What was built
+
+New
+- `ui/src/lib/vitals.ts`: `vitalsView()`, `vitalsWaiting()`, `reasonText()`, `inRange()`, `BREATH_RANGE` 4..60, `HEART_RANGE` 35..200, sparkline ranges, `BREATH_TYPICAL` 12..20. Precedence as in §4 (blind, count 2, valid and in range, out of range, reason, fallback). `heart` absent or `null` → `heart: null`; an object (e.g. `reason: "warming_up"`) → a view with its reason.
+- `ui/src/lib/model.ts` (no directive): `TrendSample` (plan fields + `spotOn`, so "no spot model" can be told apart from "spot not reliable"), `trendSample`, `trendSeries`, `windowed`, `trendStats`, `secondsWhere`, `spanSeconds`, `minutesText`, `mergeSeed`, `trendSnapshot` (structural `TrendSource`, so the module never imports `live.tsx`), `RecentReply`, section/window storage helpers, `safeStorage`.
+- `ui/src/server/recent.ts` (`RecentBuffer`, `recentBuffer()` on `globalThis[Symbol.for("lifefi.recent")]`, `parseMinutes`) and `ui/src/app/api/v1/recent/route.ts`.
+- `ui/src/components/Section.tsx`: button header with `aria-expanded`/`aria-controls`, chevron `motion-safe:transition-transform`, summary `aria-hidden`, body mounted only when open, `lifefi.section.<id>`, `#id` deep link opens and scrolls.
+- `ui/src/components/vitals/{VitalsCard,Sparkline}.tsx`: card reads `useLiveSlow()` only; numbers, heart column, wave dimming and the polite announcement are leaves on `useResult()`; the `BreathingChart` element is memoised in the slow parent and passed as children, so the 2 Hz leaves never re-render it.
+- `ui/src/components/model/{TrendChart,InsightsPage,sections}.tsx`: generic uPlot trend chart (fixed y ranges, guides, neutral band, ±sd band via uPlot `bands`, presence strip in `drawClear`, gaps over 2 s, empty overlay under 2 points), the page header with the 2/5/15 min window (`lifefi.model.window`), right-now row (VitalsCard + RoomCard), sections 1-7.
+- `ui/src/app/model/layout.tsx`: `metadata.title = "Insights"` (plain string; works with or without a template from U).
+- Tests: `ui/test/{vitals,model,section,model-recent}.test.ts` (36 tests).
+
+Edited
+- `ui/src/lib/live.tsx`: `buffers.trend` (1800), pushed per result, cleared with the others on boot/source change; seed from `/api/v1/recent?minutes=15` in `es.onopen` (accepted only for the same boot/source; when no result has arrived yet, the seed's boot/source is remembered so a first live result from another boot clears it). Nothing renamed or removed.
+- `ui/src/server/runtime.ts`: one import + one line `guard("recent", () => recentBuffer().add(r));`.
+- `ui/src/components/Dashboards.tsx`: `BreathingCard` → `VitalsCard` in Home and Clinic (School unchanged). `BreathingCard` still exported from `Cards.tsx`.
+- `ui/src/components/LiveViews.tsx`: exports `Room3DLazy`, `CsiSurface3DLazy` (same `dynamic()` loaders); behaviour on `/` unchanged.
+- `ui/src/components/Cards.tsx`: additive optional `level` on `StateHeadline` and `headingLevel` on `RoomCard` (default 1), so `/model` has one `h1` ("Insights"). Deviation from §2 (Cards.tsx is M's file, not in the edited list).
+- `ui/src/app/model/page.tsx`: renders `<InsightsPage />` for every profile.
+- `ui/src/app/globals.css`: appended `/* --- track M: vitals and model --- */` with `--chart-heart`, `--chart-occupancy`, `--chart-rate` for light, OS dark and forced dark.
+
+### Cut and why
+- Step 11 (`SensorDetails` / `LiveViews` on `/` switched to `Section`): skipped. It would change the remembered keys (`lifefi.details`, `lifefi.liveviews`) and the `/` look under U's concurrent shell work, for little gain. Everything else up to step 10 is in.
+- No hover tooltip on the trend charts (`cursor.show: false`, legend hidden per §5); values are in the summaries and stat lines.
+
+### Deviations
+- `TrendSample.spotOn` added (see above). Server and client share the type, so the route reply has it too.
+- Heart section decides "engine has no heart estimator" from the ring (`heartOn` in any sample of the window), not from the live result, so it does not re-render at 2 Hz; it flips within 2 s of the first result.
+- Health stat: "Avg N packets/s · loss X % · poor for N min" (avg of `loss_udp`).
+- Where chart y range fixed 0..6 m.
+
+### Checks
+- `npm run typecheck`: pass. `npm run lint`: pass (0 problems).
+- `npm test` (root): 18 passed, 1 skipped (`test_features_vectors.py`, as before), 0 failed; ui vitest 21 files / 225 tests pass.
+- Not run: `next dev/build/start` (per instructions), no browser check by me.
+
+### Text for `contracts/api.md` (track V)
+
+```
+### GET /api/v1/recent?minutes=N
+
+In-memory samples of the last N minutes (1..15, default 15) of results since the current
+boot and source, one per result (2 Hz): `{boot_id, source, now, samples: TrendSample[]}`
+with the `TrendSample` fields from `ui/src/lib/model.ts` (t, presence, occP, breath,
+breathConf, heart, heartOn, motion, d, sd, lowQuality, spotD, spotOn, rateHz, lossUdp,
+lossAir, rssi, warmup). `breath`/`heart` are null unless the engine marked them valid, they
+are within 4..60 / 35..200 per minute and fewer than 2 people are counted. `boot_id` and
+`source` are null before the first result. Kept in server memory only, lost on restart,
+never written to disk; cleared when boot_id or source changes. No PIN (read-only).
+400 `{error: "bad_request", message}` for any other `minutes` (0, 16, 2.5, abc, empty).
+```
+
+### Requests to other tracks
+- U: `/present` and `words.breathingText` can switch to `vitalsView()` later (D4, not tonight).
+- U: the TopBar label for `/model` can say "Insights" (D3).
+
+### Known issues / risks
+- `useVitals()` uses `useRoomStatus()`, which runs a 1 s `useNow` timer per leaf (about 6 leaves on `/model`). Cheap, but noted.
+- The presence strip and the occupancy line share the bottom 8 px of the plot; a level near 0 runs over the strip.
+- `Section` sets `aria-controls` to a body id that exists only while open (by design: closed bodies are unmounted).
+- If `/api/v1/recent` is called while the engine is down, it returns the last boot's samples; the client accepts them only when it has no live boot yet, and the first live result from a new boot clears them.
+
+### What the orchestrator should look at in the browser (replay)
+1. `/` home and clinic: "Vital signs" card beside the room card; breathing number or reason; heart column shows the Experimental pill + reason ("Starting up…" while V's engine warms up) or "Heart rate: not measured by this engine yet" with an older engine; sparklines fill; wave dims when no reading; "See trends →" opens `/model` scrolled to Breathing. School `/` unchanged.
+2. `/model`: tab title "Insights"; header + 2/5/15 min control; sections presence, breathing, heart, movement, where open; health, raw closed. Reload after 2 min of replay → charts already filled (seed). Toggle a section, reload → state kept.
+3. `curl "localhost:3000/api/v1/recent?minutes=2"` → 200 JSON; `?minutes=99` → 400 JSON.
+4. Network: no three.js chunk until "Show 3D room" / "Show 3D surface".
+5. 375 px and dark (OS and forced): no horizontal scroll; the presence strip, breathing band, movement guide line, distance band and health guides readable.
+6. Console: no hydration warnings (window and section state are read after mount).
