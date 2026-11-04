@@ -8,7 +8,7 @@ import numpy as np
 
 
 def synth(seconds, bpm=None, breath_db=0.5, motion=False, gap=None, seed=1, rate=90.0, agc=True,
-          breath_off=None, bursts=(), moving=(), step_db=None):
+          breath_off=None, bursts=(), moving=(), step_db=None, heart_bpm=None, heart_db=0.3):
     """Raw CSI like the ESP32 delivers it: static multipath, an optional
     breathing modulation on ~40 % of subcarriers, per-packet AGC gain,
     receiver noise, jittered timing, and an optional gap.
@@ -22,7 +22,12 @@ def synth(seconds, bpm=None, breath_db=0.5, motion=False, gap=None, seed=1, rate
     broadband change, e.g. an impact; moving is a list of (t0, t1) s in
     which a person moves as with motion=True (walking in or out); step_db =
     (t, db) changes the static multipath for good at t s by a fixed random
-    gain of up to ±db dB per subcarrier (furniture or the transmitter moved)."""
+    gain of up to ±db dB per subcarrier (furniture or the transmitter moved).
+
+    heart_bpm adds a pulse of heart_db dB on ~40 % of subcarriers, off where
+    the breathing is off and while moving (engine tests of lifefi.heart
+    only). It is a pure sine, much easier than a real pulse, and has its own
+    generator: every call without it is bit-identical to before."""
     rng = np.random.default_rng(seed)
     n = int(seconds * rate)
     t = np.cumsum(rng.uniform(0.6, 1.4, n) / rate)
@@ -50,6 +55,17 @@ def synth(seconds, bpm=None, breath_db=0.5, motion=False, gap=None, seed=1, rate
     for t0, t1 in bursts:                        # an impact: strong broadband change for (t1 - t0) s
         inside = (t >= t0) & (t < t1)
         db[inside] += 6.0 * rng.normal(0, 1, (int(inside.sum()), 52))
+    if heart_bpm is not None:                    # its own generator, no draws from rng
+        hr = np.random.default_rng(seed + 2000)
+        affected = hr.random(52) < 0.4
+        sign = hr.choice([-1.0, 1.0], 52)
+        pulse = np.sin(2 * np.pi * heart_bpm / 60 * t + hr.uniform(0, 6.3))
+        if breath_off is not None:
+            for a, b in ([breath_off] if np.isscalar(breath_off[0]) else breath_off):
+                pulse = np.where((t >= a) & (t < b), 0.0, pulse)
+        for a, b in moving:
+            pulse = np.where((t >= a) & (t < b), 0.0, pulse)
+        db += heart_db * np.outer(pulse, sign * affected)
     if step_db is not None:                      # its own generator: the other signals stay as they were
         t_step, size = step_db
         db[t >= t_step] += np.random.default_rng(seed + 1000).uniform(-size, size, 52)

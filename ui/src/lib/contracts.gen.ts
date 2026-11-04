@@ -129,7 +129,7 @@ export interface Result {
     reason?: "warming_up" | "no_person" | "motion" | "noise" | "unstable" | null;
   };
   /**
-   * EXPERIMENTAL heart rate (lifefi.heart): breathing harmonics removed, from the last 30 s of raw CSI every 5 s, only while someone is present and still. One ESP32 link is near its limit for 0.1-0.5 mm chest motion, so this is NOT a medical measurement and the UI must label it experimental. null when the engine has no heart estimator or has not run one yet. Optional: older engines leave it out.
+   * EXPERIMENTAL heart rate (lifefi.heart): breathing harmonics removed, from the last 30 s of raw CSI every 5 s, only while someone is present and still. One ESP32 link is near its limit for 0.1-0.5 mm chest motion, so this is NOT a medical measurement and the UI must label it experimental. null when the engine has no heart estimator or rules.yaml heart.publish is false; before the first window it is an object with bpm null and reason warming_up. Optional: older engines leave it out.
    */
   heart?: null | {
     /**

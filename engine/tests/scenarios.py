@@ -46,13 +46,13 @@ SCENARIOS = {
 }
 
 
-def scenario(name, seed=1):
-    """(ts_us [N], csi [N, 52], expectations) for one scenario."""
+def scenario(name, seed=1, **synth_kw):
+    """(ts_us [N], csi [N, 52], expectations) for one scenario; synth_kw go to synth (e.g. heart_bpm)."""
     seconds, extra, expect = SCENARIOS[name]
     extra = dict(extra)
     off = [(0.0, ENTER[1])] + extra.pop("breath_off_extra", [])
     bpm = None if name == "empty" else 15
-    ts_us, csi = synth(seconds, bpm=bpm, seed=seed, agc=False, breath_off=off if bpm else None, **extra)
+    ts_us, csi = synth(seconds, bpm=bpm, seed=seed, agc=False, breath_off=off if bpm else None, **extra, **synth_kw)
     return ts_us, csi * SCALE, expect
 
 

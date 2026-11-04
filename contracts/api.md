@@ -49,6 +49,7 @@ root; the server sends the engine the absolute path).
 | GET | `/setup` | — | `Setup` (below), always `200` |
 | GET | `/position` | — | `{"fit": PositionFit \| null, "spots": SpotsSummary \| null}` (below) |
 | GET | `/history?from=&to=&fields=` | — | `{"rows": [HistoryRow]}`; `fields` is a comma list of `presence,motion,breathing,posture,count` |
+| GET | `/recent?minutes=N` | — | `Recent` (below): the last N minutes (1..15, default 15) of results, one sample per result; `400` for any other `minutes` |
 | GET | `/alerts?state=` | — | `{"alerts": [Alert]}`; `state` is a comma list of `pending,open,acked,resolved,dropped`; default `open,acked` |
 | POST | `/alerts/{id}/ack` | `{"by": "Maria's phone"}` (optional, ≤ 40 chars) | `Alert` with `acked_by` |
 | GET | `/profile` | — | `{"active": "home", "profiles": {…}}` (the `profiles` block of `profiles.yml`) |
@@ -272,6 +273,18 @@ One row per 5 s. Never contains `csi` or `wave`.
 ```
 
 `breathing_*` are `null` when the active profile has `breathing.store: false`.
+
+### `Recent` (`GET /recent?minutes=N`)
+
+In-memory samples of the last N minutes (1..15, default 15) of results since the current
+boot and source, one per result (2 Hz): `{boot_id, source, now, samples: TrendSample[]}`
+with the `TrendSample` fields from `ui/src/lib/model.ts` (t, presence, occP, breath,
+breathConf, heart, heartOn, motion, d, sd, lowQuality, spotD, spotOn, rateHz, lossUdp,
+lossAir, rssi, warmup). `breath`/`heart` are null unless the engine marked them valid, they
+are within 4..60 / 35..200 per minute and fewer than 2 people are counted. `boot_id` and
+`source` are null before the first result. Kept in server memory only, lost on restart,
+never written to disk; cleared when boot_id or source changes. No PIN (read-only).
+400 `{error: "bad_request", message}` for any other `minutes` (0, 16, 2.5, abc, empty).
 
 ### `Settings`
 

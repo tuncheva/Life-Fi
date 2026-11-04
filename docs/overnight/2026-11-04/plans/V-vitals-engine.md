@@ -413,3 +413,49 @@ test_vitals 15 · eval script 7 · fixtures 3 · docs 5 = 63 min, plus the
 9. **Eval script**: `replay()` doesn't return the engine, so timing is taken by
    wrapping `heart.estimate_heart`; note text updated for the 30 s heart gate.
 10. Contract invariants extended to `valid ⇔ bpm not None`; numpy→Python casts.
+
+## Worker report (V)
+
+Worker, 2026-11-04 (~45 min). No git state changed.
+
+### Built (files)
+- `engine/config/rules.yaml`: new `heart:` block (`publish`, `history_s` 60, `min_still_s` 30, `require_breathing`). `config_hash` changes as expected.
+- `engine/lifefi/engine.py`: calls `heart.estimate_heart` after `apnea.on_breathing`, using the same 30.5 s of raw CSI. Adds `_heart_step`, `_vitals_reason`, `_breathing_reason`, `_heart_out` and the module-level `_window_reason`. `breathing.reason` is the last key of `breathing`, and `heart` comes right after `breathing`. History is cleared when presence or stillness is lost, on warm-up, on a segment change and on a source change. `heart_ms` lives in `__init__`. Defaults apply when `rules.yaml` has no `heart` block. **Addition beyond the plan:** any heart window with a non-finite bpm/snr/confidence/acf is marked invalid ("no clear peak (not finite)" → `noise`), and heart.py's RuntimeWarnings are silenced inside the call. Real spot data produced NaN windows (an empty-slice mean in `heart._motion_ratio`). Without the guard, `NaN` could reach the JSON, and the warnings would spam stderr every 5 s.
+- `contracts/results.schema.json`: only the top-level `heart` description sentence changed. `ui/src/lib/contracts.gen.ts` was regenerated, and its diff is that one comment line.
+- `engine/lifefi/synth.py`: `heart_bpm`/`heart_db` with their own RNG (seed + 2000). Old calls are bit-identical (checked with `np.array_equal` on `synth(60, bpm=15)` and `scenario('leave')`). `engine/tests/scenarios.py`: `scenario(name, seed=1, **synth_kw)`.
+- `engine/tests/test_vitals.py` (new): plan checks 1–11 plus a NaN-window check.
+- `ml/eval_vitals.py` (new) → `ml/results/vitals_eval.json`.
+- `contracts/fixtures/{present_still,warmup,empty,present_live_link}.json` updated as the plan says. `fall.json` and `position_quality.json` are unchanged.
+- `contracts/README.md`: "Vital signs in a result" section. `docs/models.md`: "Heart rate (experimental)" section, `breathing.reason` added to the breathing row, and a heart line under Limits.
+- `ui/src/server/validate.ts`: untouched (no change was needed).
+
+### Real numbers (`ml/results/vitals_eval.json`, heart.py unchanged)
+- Both spot sessions (192549, 193656), `nocal` variant: **0 % valid breathing and 0 % valid heart** on every spot, through the engine. Run ungated, the estimators also give 0 % valid windows for both breathing and heart on every spot. The `middle` spots have no 30 s continuous segment at all (0 windows).
+- Heart reasons per spot (ticks): 192549 close warming_up 53 / no_person 23 / motion 36; middle warming_up 112; far warming_up 37 / motion 75; empty warming_up 71 / motion 41. 193656 close warming_up 46 / no_person 66; middle warming_up 112; far no_person 13 / warming_up 99; empty warming_up 58 / no_person 54. Most `warming_up` comes from gaps in the recordings: there is no breathing window in the last 10 s.
+- Why the ungated heart windows fail, in order: at noise floor, near breathing harmonic, no clear peak, several peaks, FFT/ACF disagree.
+- Uncalibrated, presence calls the 192549 `empty` spot `present` for all 112 ticks. This is a pre-existing nocal false positive. Vitals still show no value there.
+- `fresh` variant: the engine refuses the calibration (37 % / 78 % valid signal), the same as in `position_eval.json`, so only `nocal` is scored.
+- Timing: `estimate_heart` takes 20.6 / 16.8 ms mean and 66.7 / 27.4 ms max on the spot replays. On synthetic runs it takes 13–18 ms mean and ≤ 80 ms max. Mean tick is 20.7 / 27.5 ms.
+- Synthetic: 82.0 and 66.0 /min are reported exactly, starting 30 s after the walk-in (first value at 170.5 s), with 121 valid ticks in 200–260 s. With no pulse there is never a value.
+
+### Cut / changed vs the plan
+- **Run B was dropped** to meet the orchestrator's ≤ 2 min target (it measured 3m27s under load with 4 runs). The 66 /min pulse moved to run D (leave), with ≥ 20 values in 170–200 s, all within ±3. Check 9 (gap) runs at the end of A, before check 8 (source switch).
+- Check 2 was too strict as written. Breathing is valid after 20 s still, but heart needs 30 s, so between those two points heart correctly says `motion`. The test now requires noise/unstable only from `ENTER[1] + 40`, and allows noise/unstable/motion before that.
+- Check 6: "both no_person" is asserted on ticks from 240 s where presence is not `present`, plus no value of either from 210 s on. Presence can stay `present` for a while after leaving (exit rule).
+- Everything in the plan's cut list stays cut: `outputs.heart`, `/history`, threshold changes, CPU work.
+
+### Checks
+- `npm test` (repo root): **18 passed, 1 skipped (test_features_vectors, pre-existing), 0 failed**. vitest: 225 passed. `test_vitals.py` took **90 s** inside `npm test` and 2m10–2m22 standalone while other tracks were loading the machine. Existing tests passed unchanged (test_engine 185 s).
+- `npm run check:contracts`: ok. `npm run test -w ui -- validate`: 7/7. `npm run typecheck`: clean. `npm run lint`: clean.
+
+### Known issues
+- `heart._motion_ratio` returns NaN when the notches cover the whole 0.6–2 Hz reference. `NaN < MIN_BAND_RATIO` is False, so heart.py's motion check silently passes on that window. The engine guard catches NaN only in bpm/snr/confidence/acf, not in this internal ratio. A fix in heart.py is a one-liner (treat a non-finite ratio as motion), but I did not touch heart.py, per the plan.
+- Gaps in a recording show as `warming_up` (the enum has no "signal" reason). On a live board with a steady rate this should be rare.
+- Track M must handle `heart` missing (older engines), `null` (`publish: false`) and an object with `bpm: null`.
+
+### Questions for the owner (default built)
+1. Should heart.py treat a NaN breathing band ratio as motion (heart.py change)? Default: no change, and the engine guard only catches NaN outputs.
+2. Should gaps get their own reason instead of `warming_up`? (That would be a contract enum change.) Default: `warming_up`.
+3. Keep `heart.publish: true` even though real data never produced a value? Default: true, and the UI shows "no reading" with the reason.
+
+`contracts/api.md`: M's "Worker report (M)" text for `GET /api/v1/recent` was added verbatim as a `Recent` section, plus a row in the endpoints table (`/recent?minutes=N`).

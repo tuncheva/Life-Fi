@@ -12,7 +12,8 @@
   "posture": null,
   "count": null,
   "activity": null,
-  "breathing": {"bpm": null, "confidence": 0.0, "valid": false, "wave": []},
+  "breathing": {"bpm": null, "confidence": 0.0, "valid": false, "wave": [], "reason": "warming_up"},
+  "heart": {"bpm": null, "valid": false, "confidence": 0.0, "snr": null, "valid_share": 0.0, "reason": "warming_up"},
   "csi": [],
   "events": [],
   "active": []

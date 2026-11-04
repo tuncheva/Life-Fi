@@ -9,7 +9,8 @@ the tests drive it directly, faster than real time.
 Per tick:
 1. lifefi.live turns the packets into F (the training pipeline's code);
 2. motion M on the last `fall.window_s` of F;
-3. breathing (lifefi.breathing) every 5 s on 30 s of raw CSI;
+3. breathing (lifefi.breathing) and the experimental heart rate
+   (lifefi.heart) every 5 s on the same 30 s of raw CSI;
 4. presence (lifefi.presence) from M, breathing energy B and S;
 5. `no_breathing` (lifefi.apnea), the fall rule (lifefi.fall) and its
    escalation to `fainted_suspected`;
@@ -27,18 +28,20 @@ replay each keep their own, and only the live one is saved to disk
 (`calibration_path`) and loaded again at the next start.
 """
 
+import dataclasses
 import hashlib
 import json
 import pathlib
 import struct
 import sys
 import time
+import warnings
 from collections import deque
 
 import numpy as np
 import yaml
 
-from . import apnea, breathing, calibration, dsp, fall, models, occupancy, position, posture, presence, spots
+from . import apnea, breathing, calibration, dsp, fall, heart, models, occupancy, position, posture, presence, spots
 from . import live as live_mod
 from . import motion as motion_mod
 from .live import LiveF
@@ -56,6 +59,7 @@ CLOCK_WINDOW_S = 60.0
 FALL_EDGE_S = 5.0            # fall candidates this close to the window start are skipped (filter start-up)
 CALIBRATION = ROOT / "data" / "calibration.json"
 ACTIVITY_LABELS = ("none", "walking", "sit_down", "lie_down", "rise", "fall")   # results.schema.json activityLabel
+HEART_DEFAULTS = {"publish": True, "history_s": 60.0, "min_still_s": 30.0, "require_breathing": True}
 
 
 def lltf(data, first_word_invalid):
@@ -65,6 +69,19 @@ def lltf(data, first_word_invalid):
     if first_word_invalid:
         c[26] = c[27]
     return c.astype(np.complex64)
+
+
+def _window_reason(w):
+    """lifefi.breathing / lifefi.heart window reason text -> contract enum (noise | unstable).
+    Motion is NOT taken from the window text: the engine's own motion gate decides it, so the
+    reason never says "motion" while the dashboard's motion level shows the person still.
+    The only place that reads the estimators' reason texts (engine/tests/test_vitals.py pins them)."""
+    if w is None or w.valid:
+        return None
+    parts = [p.strip() for p in w.reason.split(";") if p.strip()]
+    if parts and all(p.startswith("FFT/ACF disagree") for p in parts):
+        return "unstable"
+    return "noise"
 
 
 class Clock:
@@ -147,6 +164,7 @@ class Engine:
         self.rssi = deque()                          # (host_s, rssi_dbm) of the last 10 s
         self.board_hook = None                       # set by lifefi.control: () -> the board's own estimate or None
         self.last_host_us = 0
+        self.heart_ms = deque(maxlen=200)            # lifefi.heart call times (ms); kept across source changes
 
     # ---- configuration -------------------------------------------------
     def load_rules(self, t=0.0):
@@ -253,6 +271,11 @@ class Engine:
         self.breath_at = None
         self.next_breath = -np.inf
         self.breath_valid = False
+        self.heart_hist = deque()                    # (now, HeartWindow) while still, the last history_s
+        self.heart_last = None                       # the newest heart window, valid or not
+        self.heart_new = None                        # a window not yet judged by _heart_step
+        self.heart_gate = False
+        self.vitals_since = -np.inf                  # breathing windows from before this belong to an old segment
         self.m_hist = deque()                        # (t, M) for the provisional quiet level
         self.last_motion = None
         self.fall_done = []
@@ -311,6 +334,9 @@ class Engine:
             self.fall_done = []
             self.next_breath = -np.inf
             self.position.reset()
+            self.vitals_since = now
+            self.heart_hist.clear()
+            self.heart_last = self.heart_new = None
         warm = now < self.warm_until or lv.seconds() < 1.0
         t_ms = int(round(now * 1000))
 
@@ -347,6 +373,7 @@ class Engine:
         self.breath_valid = bool(self.breath is not None and self.breath.valid and present and not warm
                                  and now - self.breath_at <= breathing.STEP_S * 2
                                  and quiet_for >= r["breathing"]["low_motion_s"])
+        self._heart_step(now, present, warm, quiet_for)
         still = M_now is not None and M_now / quiet < r["fall"]["t_still"]
 
         ch = self.apnea.update(now, *lv.raw(45.0), present=present and not warm, still=still)
@@ -369,7 +396,7 @@ class Engine:
             self.pos_out["spot"] = self.spot_model.update(now, *lv.raw_amp(spots.WIN_S), float(np.mean(rs)) if rs else None)
 
         level = float(presence.motion_level(M_now, m_on, r["presence"]["motion_span"])) if M_now is not None else 0.0
-        return self._result(now, t_ms, state, level, B, S, post, warm, occ_out)
+        return self._result(now, t_ms, state, level, B, S, post, warm, occ_out, quiet_for=quiet_for)
 
     def _quiet_level(self):
         """The fall rule's baseline: the empty calibration's P10 of M, else a provisional P10."""
@@ -391,11 +418,89 @@ class Engine:
         t_raw, csi = self.live.raw(breathing.WINDOW_S + 0.5)
         if len(t_raw) < 10 or t_raw[-1] - t_raw[0] < breathing.WINDOW_S:
             return
-        w = breathing.estimate_breathing((t_raw * 1e6).astype(np.int64), csi)
+        ts_us = (t_raw * 1e6).astype(np.int64)
+        w = breathing.estimate_breathing(ts_us, csi)
         if not w:
             return
         self.breath, self.breath_at = w[-1], now
         self.apnea.on_breathing(now, w[-1], *self.live.raw(45.0))
+        if self._heart_cfg()["publish"]:
+            t0 = time.perf_counter()
+            try:
+                with warnings.catch_warnings():      # empty-slice means on real data: the window is judged below
+                    warnings.simplefilter("ignore", RuntimeWarning)
+                    hw = heart.estimate_heart(ts_us, csi)
+            except (ValueError, IndexError, np.linalg.LinAlgError):
+                hw = []                              # a numeric edge case must never cost the tick
+            self.heart_ms.append((time.perf_counter() - t0) * 1e3)
+            if hw:
+                w = hw[-1]
+                if not np.isfinite([w.bpm, w.snr, w.confidence, w.acf_bpm]).all():
+                    # NaN compares False, so lifefi.heart's own tests can pass a broken window
+                    w = dataclasses.replace(w, bpm=0.0, snr=0.0, confidence=0.0, valid=False,
+                                            reason="no clear peak (not finite)")
+                self.heart_last = self.heart_new = w
+
+    # ---- vital signs: reasons and the heart rate (EXPERIMENTAL) -------------
+    def _heart_cfg(self):
+        """rules.yaml heart, with defaults for a rules file without the block."""
+        return {**HEART_DEFAULTS, **(self.rules.get("heart") or {})}
+
+    def _heart_step(self, now, present, warm, quiet_for):
+        """Keep the heart windows of the current still stretch: presence, motion or warm-up clear
+        them; an invalid breathing window only drops that heart window (the history stays)."""
+        hr = self._heart_cfg()
+        still = present and not warm and quiet_for >= hr["min_still_s"]
+        breath_ok = self.breath_valid or not hr["require_breathing"]
+        if not still:
+            self.heart_hist.clear()
+        elif self.heart_new is not None and breath_ok:
+            self.heart_hist.append((now, self.heart_new))
+        self.heart_new = None
+        while self.heart_hist and self.heart_hist[0][0] < now - hr["history_s"]:
+            self.heart_hist.popleft()
+        self.heart_gate = bool(still and breath_ok)
+
+    def _vitals_reason(self, now, state, warm, quiet_for, still_s):
+        """The reason breathing and heart share (results.schema.json), first match; None: ask the window."""
+        if (warm or self.breath is None or self.breath_at < self.vitals_since
+                or now - self.breath_at > 2 * breathing.STEP_S):
+            return "warming_up"
+        if state != "present":
+            return "no_person"
+        if quiet_for < still_s:
+            return "motion"
+        return None
+
+    def _breathing_reason(self, now, state, warm, quiet_for):
+        if self.breath_valid:
+            return None
+        return (self._vitals_reason(now, state, warm, quiet_for, self.rules["breathing"]["low_motion_s"])
+                or _window_reason(self.breath) or "unstable")
+
+    def _heart_out(self, now, state, warm, quiet_for, breath_reason):
+        """results.schema.json heart: the median of the valid windows of the last history_s, or why not."""
+        hr = self._heart_cfg()
+        if not hr["publish"]:
+            return None
+        valid_w = [w.bpm for _, w in self.heart_hist if w.valid]
+        share = len(valid_w) / len(self.heart_hist) if self.heart_hist else 0.0
+        valid = bool(self.heart_gate and valid_w and share >= heart.MIN_VALID_SHARE
+                     and max(valid_w) - min(valid_w) <= heart.CONSISTENT_BPM)
+        reason = None
+        if not valid:
+            reason = self._vitals_reason(now, state, warm, quiet_for, hr["min_still_s"])
+            if reason is None and hr["require_breathing"] and not self.breath_valid:
+                reason = breath_reason
+            if reason is None and not self.heart_hist:
+                reason = _window_reason(self.heart_last) or "unstable"
+            if reason is None:
+                reason = _window_reason(self.heart_hist[-1][1]) or "unstable"
+        last = self.heart_last
+        return {"bpm": round(float(np.median(valid_w)), 1) if valid else None, "valid": valid,
+                "confidence": round(float(np.clip(last.confidence, 0, 1)), 3) if last is not None else 0.0,
+                "snr": round(float(max(last.snr, 0.0)), 2) if last is not None else None,
+                "valid_share": round(float(share), 3), "reason": reason}
 
     def _fall_step(self, now, t_ms, F, tF, M, quiet, still, moving, state, warm):
         f = self.rules["fall"]
@@ -533,8 +638,9 @@ class Engine:
         """Which optional result fields this engine fills (get_status engine.outputs)."""
         return {"posture": bool(self.rules["posture"]["publish"]), "count": False, "activity": self.model is not None}
 
-    def _result(self, now, t_ms, state, level, B, S, post, warm, occ_out=None):
+    def _result(self, now, t_ms, state, level, B, S, post, warm, occ_out=None, quiet_for=0.0):
         b = self.breath
+        breath_reason = self._breathing_reason(now, state, warm, quiet_for)
         wave = []
         if b is not None and b.v is not None:
             r = apnea.projected(*self.live.raw(45.0), b.v)
@@ -556,7 +662,8 @@ class Engine:
             "activity": self._activity(),
             "breathing": {"bpm": round(float(b.bpm), 1) if self.breath_valid else None,
                           "confidence": round(float(np.clip(b.confidence, 0, 1)), 3) if b is not None else 0.0,
-                          "valid": self.breath_valid, "wave": wave},
+                          "valid": self.breath_valid, "wave": wave, "reason": breath_reason},
+            "heart": self._heart_out(now, state, warm, quiet_for, breath_reason),
             "csi": [[round(float(v), 1) for v in row] for row in self.live.F[-5:]],
             "position": self.pos_out,
             "occupancy": occ_out,

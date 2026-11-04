@@ -30,6 +30,12 @@ presence:                   # lifefi.presence (plan-v2 §6.1, E4 deviation in it
 breathing:
   low_motion_s: 20.0        # breathing is shown only after this long without motion (plan-v2 §6.3)
 
+heart:                      # lifefi.heart, EXPERIMENTAL (not validated against a pulse sensor)
+  publish: true             # false: `heart` is null in every result
+  history_s: 60.0           # contract: bpm = median of the valid windows of the last 60 s
+  min_still_s: 30.0         # the whole 30 s heart window must be after the last motion
+  require_breathing: true   # heart only while breathing is valid (harmonic removal needs its rate)
+
 apnea:                      # lifefi.apnea, `no_breathing` (plan-v2 §6.4)
   hold_s: 15.0              # plan-v2 12 s gave 2 false alerts in 0.47 armed h on E1; 15 s: 0 (ml/check_apnea.py)
   prominence_x: 0.25        # plan-v2 0.4

@@ -110,7 +110,7 @@ there is no room-B test that could justify showing it.
 | Presence (moving) | E4 | Every E4 recording with a person: PRESENT ~2 s after they walk in, held to the end; empty recordings never PRESENT (`presence_e4.json`, replay) | E4 never shows anyone leaving: the exit rule is checked on synthetic data only |
 | Presence (still person) | E4, 2-min calibration | Breathing energy from a 2-min empty calibration finds a still person in 67-76 % of 30 s windows with 0-2.6 % of empty windows flagged, on days not used to pick the threshold | Directional antenna through a wall, not our board; the static profile S drifts too much to use |
 | Motion 0-1 | E4 | Empty room and a still person read 0; walking peaks at 0.65-0.72; 0.1 means the same as presence's motion threshold | — |
-| Breathing rate | E1 (66 paced files) | 95 % of valid 30 s windows within ±2 /min of the metronome; 15 % of windows valid (`breathing_e1.json`) | Targets, not a chest reference; one person, still, near the link |
+| Breathing rate | E1 (66 paced files) | 95 % of valid 30 s windows within ±2 /min of the metronome; 15 % of windows valid (`breathing_e1.json`) | Targets, not a chest reference; one person, still, near the link. When no rate is shown, `breathing.reason` says why (warming_up / no_person / motion / noise / unstable, contracts/README.md) |
 | Breathing stopped | E1 (false alerts), synthetic (latency) | 0 false alerts on E1 in the 0.47 h (28 min, 22 of 66 files) it was armed, i.e. able to fire (`apnea_e1.json`); every synthetic 25 s hold caught ~15 s after the last breath | No public breath-hold data: never seen a real one. Settings picked and scored on the same E1 files |
 | Fall → fainted | E1, E4 (thresholds); E8, E15, E9 (check) | **Not validated.** The full rule fires on 0.4 % of E1's ordinary movements but on 30 % of E8's (more often than on E8's own falls), and catches 2.5 % of E8 falls, 0 % of E15 and 0 % of E9 (`fall_rule.json`) | See below |
 
@@ -124,6 +124,36 @@ E1's sit-downs, lie-downs, get-ups and walks: E1 is closest to our chain),
 and `t_still` comes from E4's still people. Whether a fall on our board
 triggers it is untested; a hard sit-down followed by sitting still can.
 The team chose not to test it on the board for now (2026-10-30).
+
+## Heart rate (experimental, 2026-11-04)
+
+**Not a medical measurement, and not validated against anything.**
+`engine/lifefi/heart.py` (unchanged tonight) looks for a pulse in the
+0.75-2 Hz band (45-120 /min) of the same 30 s of raw CSI breathing uses,
+every 5 s: it estimates the breathing rate, fits and subtracts its
+harmonics, notches every bin within 0.035 Hz of them, and takes the FFT
+peak of the first principal component of the 8 best subcarriers. A window
+is valid only with SNR ≥ 6, a clear single peak, FFT and autocorrelation
+within 5 /min, at least 3.6 /min from any breathing harmonic, and a
+breathing band ratio that says "still".
+
+The engine (`rules.yaml heart`) keeps those windows only while the person
+is `present` and has not moved for 30 s (the whole window), and only while
+breathing is valid (the harmonic removal needs the breathing rate). The
+published `heart.bpm` is the median of the valid windows of the last 60 s,
+when at least 30 % of them are valid and they agree within 8 /min; leaving,
+moving, a gap or a source change empties the history. Otherwise `bpm` is
+null and `heart.reason` says why. One `estimate_heart` call costs about
+13-21 ms mean, up to ~80 ms worst, per 5 s (synthetic tests and the spot
+replays below), next to a mean tick of ~21-28 ms on the spot replays.
+
+| Check | Data | Result | Limit |
+|---|---|---|---|
+| Wiring and gating | Synthetic sitting person, 15 /min breathing, a pure-sine pulse of 0.3 dB at 82 or 66 /min (`engine/tests/test_vitals.py`) | 82.0 and 66.0 /min reported after 30 s still; never a value without a pulse, while empty, moving, after leaving, a gap or a source change | A pure sine is far easier than a real pulse: this checks the plumbing, not accuracy |
+| Plausibility on our board | The two spot sessions (4 × 60 s each, phone hotspot), `ml/eval_vitals.py` → `ml/results/vitals_eval.json` | **0 % of windows valid**, for heart and for breathing, both through the engine and with the estimators run ungated on every spot. Most ticks are `warming_up` (the recordings have gaps, so few full 30 s windows exist), then `motion` / `no_person`; the ungated heart windows fail mostly on "at noise floor", "near breathing harmonic", "no clear peak" and "several peaks" | No pulse-oximeter or breathing-belt reference; 60 s spots leave at most ~25 s that could show a value; the fresh 30 s calibration is refused on both sessions (too few valid packets), so only the uncalibrated replay is scored |
+
+No threshold was changed to get more readings: on the only recordings of
+our board there is nothing to tune against.
 
 ## Position and spots (2026-11-03)
 
@@ -236,6 +266,9 @@ middle / far (+ empty), as `ml/eval_position.py` expects.
   None of the datasets is our board or our rooms.
 - The movement model's `fall` class detects E8-style falls only
   (model-audit B.5). The fall alarm is the rule, not this class.
+- Heart rate: no reference recording; plausibility only, and on our two
+  spot sessions it never produced a value (`vitals_eval.json`). Shown as
+  experimental, never as a medical reading.
 - Not a medical device. Fall, fainted and breathing-stopped alerts are a
   demonstration and must not be relied on for anyone's safety. Say "demo"
   when showing them.
