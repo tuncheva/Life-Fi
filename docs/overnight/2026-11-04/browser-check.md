@@ -33,3 +33,20 @@ horizontal scroll at 375 px; titles "Insights · Life-Fi" etc. work.
    next to the tall room card. Acceptable; consider `self-start`.
 8. "1 packets/s" in the Sensor health header — plural for 1. (The replay itself
    ran at 4–40 packets/s; that is the recording, not a bug.)
+
+## Round 2 — 02:42–02:47, after the fix round, with track V's engine
+
+- Real replay (spots-20261031-192549): vitals card shows a fixed "—" with
+  "Starting up: needs about 30 s of signal" / "Nobody to measure" — matches the
+  engine's reasons; no contradiction with Movement.
+- **Synthetic test recording** (test only, written to the scratchpad from
+  `engine/tests/scenarios.py` `sitting` with `heart_bpm=82`, never in
+  `data/`): ~30 s after the walk-in the card shows **15 breaths/min** and
+  **82 beats/min** (Experimental, "Rough reading"); the breathing wave is
+  clean; Insights shows breathing 15 and heart 82 trend lines, "read 21 % of
+  the time", Movement "very still" with the guide line at 0.1 labelled on the
+  left; Where says "rough guess, about 8.0 m" (synthetic data has no distance).
+  Evenly spaced x ticks (15, 12, 9, 6, 3 min, now).
+- Request rate on `/` over 10 s: 1 alerts + 1 history request (no polling storm).
+- The test replays wrote rows into `data/lifefi.sqlite`; the database was
+  restored from a copy taken at 02:41 (integrity ok, original schema).

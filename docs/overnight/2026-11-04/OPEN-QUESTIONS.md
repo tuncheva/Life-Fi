@@ -34,3 +34,31 @@ from you. Last night's list is still in [../OPEN-QUESTIONS.md](../OPEN-QUESTIONS
    `transmitter_not_fixed` as "rules.yaml position.transmitter_fixed is false".
    **Left unchanged** (contract frozen tonight); reword with the next contract change
    (it now also means "frames not from the Life-Fi transmitter").
+
+## Track V — vital signs in the engine
+
+1. **Heart rate on the screen even though real data never produced one.** On both
+   recorded spot sessions (phone hotspot, gappy) breathing *and* heart rate were valid
+   0 % of the time — through the engine and also with the estimators run ungated
+   (`ml/results/vitals_eval.json`). On synthetic data with a known pulse the engine
+   reports it exactly (82 and 66 /min). **Built:** `heart.publish: true` in
+   `engine/config/rules.yaml`; the UI shows "—" with the reason and an *Experimental*
+   label. Set `publish: false` to hide heart rate everywhere. *Need:* keep it on for
+   the demo? It needs a fixed transmitter and a still person to ever show a number.
+2. **Signal gaps are reported as "Starting up".** The reason enum has no "signal gap"
+   code, so a gap in the packets reads as `warming_up`. **Built:** that. A separate
+   reason would be a contract change. *Need:* worth it?
+3. **No heart-rate ground truth.** *Need:* if you have a pulse oximeter or smartwatch,
+   one 10-minute recording sitting still next to the board (with the fixed transmitter)
+   would tell us whether the number means anything.
+
+## Tracks M / U — dashboard, Insights, shell
+
+1. **Nav name.** **Built:** `/model` is "Insights" (main nav: Room / Insights / Alerts),
+   page subtitle "What the sensor sees"; the URL stays `/model`. *Need:* OK?
+2. **Heart rate on the home dashboard.** **Built:** shown on `/` next to breathing,
+   smaller, always labelled Experimental, never coloured as an alarm. *Need:* or only
+   on Insights?
+3. **New ntfy topics must be 20+ characters.** **Built:** the server refuses a *new*
+   short topic (it is the only secret protecting the alert feed); an existing short
+   topic keeps working with a warning. *Need:* OK?
