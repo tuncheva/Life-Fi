@@ -63,9 +63,16 @@ export function agentTools(ctx: AppContext, now = () => Date.now()): AgentTool[]
           // the watchdog only fires after a timeout, so a missing engine counts as offline at once
           sensor_software_running: ctx.engine.connected,
           sensor_offline: ctx.watchdog.isOffline || !ctx.engine.connected || ctx.state.latest === null,
+          sensor_offline_reason: ctx.watchdog.isOffline ? ctx.watchdog.reason : null,
+          // readings need >= 50 Wi-Fi frames/s; fewer means breathing, heart and posture are unreliable
+          frames_per_s: r?.health.rate_hz ?? null,
+          frames_per_s_needed: 50,
+          fixed_transmitter_seen: ctx.state.engineStatus?.device ? ctx.state.engineStatus.device.transmitter === "fixed" : null,
           last_reading: iso(ctx.state.lastResultAt),
           presence: r?.presence.state ?? null,
           presence_since: iso(ctx.state.presence?.since ?? null),
+          // true: the dashboard restarted while this state held, so it began at that time or earlier
+          presence_since_is_lower_bound: ctx.state.presence?.at_least ?? null,
           motion: r?.motion ?? null,
           posture: r?.posture?.label ?? null,
           people: r?.count?.value ?? null,

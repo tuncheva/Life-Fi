@@ -124,9 +124,30 @@ describe.skipIf(!RUN)("FirestoreStore against a real project", () => {
     }
   }, 60_000);
 
+  it("saves the open minute without closing it, then adds the rest of the minute", async () => {
+    const m = T0 + 10 * 60_000;
+    for (let t = m; t < m + 30_000; t += 5000) s.addHistory(row(t));
+    // what the 30 s timer does
+    (s as unknown as { saveOpenMinute(): void }).saveOpenMinute();
+    await (s as unknown as { writer: { flush(): Promise<void> } }).writer.flush();
+    const fe = firebaseEnv()!;
+    const read = async () => {
+      const fresh = new FirestoreStore({ ...fe, prefix }, createLogger("warn"), false);
+      try {
+        return (await fresh.queryHistory(m, m + 60_000)).length;
+      } finally {
+        await fresh.close();
+      }
+    };
+    expect(await read()).toBe(6); // a restart now would keep these
+    for (let t = m + 30_000; t < m + 60_000; t += 5000) s.addHistory(row(t));
+    await s.flush();
+    expect(await read()).toBe(12);
+  }, 60_000);
+
   it("purges by retention", async () => {
     const gone = await s.purge(1, T0 + 2 * 86_400_000);
-    expect(gone).toBe(36);
+    expect(gone).toBe(48); // 36 from the first test, 12 from the open-minute test
     expect(await s.queryEvents(T0, T0 + 10_000)).toEqual([]);
     // the January alerts are gone; today's (previous test) is newer than the cutoff and stays
     expect((await s.loadAlerts()).map((a) => a.id)).toEqual(["a-9100"]);

@@ -20,6 +20,7 @@ import {
 
 const MINUTE = 60_000;
 const DELETE_PAGE = 400;
+const OPEN_MINUTE_MS = 30_000;
 const HISTORY_CACHE_MS = 26 * 3600_000;
 const EVENTS_CACHE_MS = 7 * 86_400_000;
 const EVENTS_CACHE_MAX = 5000;
@@ -96,10 +97,13 @@ export class FirestoreStore implements Store {
     };
     this.writer = this.newWriter();
     // a minute with no later row would otherwise wait for the next one
+    // the open minute is saved every OPEN_MINUTE_MS too (merge, so saving it again is safe): a
+    // restart loses at most that much history instead of the whole minute
     this.flushTimer = setInterval(() => {
       if (this.minute !== null && Date.now() - this.minute > 2 * MINUTE) this.flushMinute();
+      else this.saveOpenMinute();
       this.pruneCache();
-    }, MINUTE);
+    }, OPEN_MINUTE_MS);
     this.flushTimer.unref();
     if (warm) this.ready = this.warm();
   }
@@ -184,19 +188,41 @@ export class FirestoreStore implements Store {
     this.minute = m;
     const row = { ...r, heart_bpm: r.heart_bpm ?? null, heart_valid: r.heart_valid ?? null };
     this.buffer.set(r.t, row);
+    this.bufferDirty = true;
     this.ramHistory.set(r.t, row);
+  }
+
+  /** Rows added to the open minute since it was last saved. */
+  private bufferDirty = false;
+
+  private minuteDoc(minute: number, rows: Map<number, HistoryRow>) {
+    return { t: minute, rows: Object.fromEntries([...rows].map(([t, r]) => [String(t), r])) };
+  }
+
+  /** Saves the open minute without closing it (the next save or the flush adds the rest). */
+  private saveOpenMinute(): void {
+    if (this.minute === null || !this.buffer.size || !this.bufferDirty) return;
+    this.queue(this.writer.set(this.col.history.doc(String(this.minute)), this.minuteDoc(this.minute, new Map(this.buffer)), { merge: true }));
+    this.bufferDirty = false;
   }
 
   private flushMinute(): void {
     if (this.minute === null || !this.buffer.size) return;
     const rows = this.buffer;
+    if (!this.bufferDirty) {
+      // already saved by saveOpenMinute
+      this.buffer = new Map();
+      this.minute = null;
+      return;
+    }
     // rows keyed by t and merged: a late row (replay jumping back, a restart in the same minute)
     // adds or replaces its own key instead of overwriting the minute
-    const write = this.writer.set(this.col.history.doc(String(this.minute)), { t: this.minute, rows: Object.fromEntries([...rows].map(([t, r]) => [String(t), r])) }, { merge: true });
+    const write = this.writer.set(this.col.history.doc(String(this.minute)), this.minuteDoc(this.minute, rows), { merge: true });
     // readable until Firestore has it
     this.inflight.add(rows);
     this.queue(write.finally(() => this.inflight.delete(rows)));
     this.buffer = new Map();
+    this.bufferDirty = false;
     this.minute = null;
   }
 
