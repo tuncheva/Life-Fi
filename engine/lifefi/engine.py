@@ -378,6 +378,7 @@ class Engine:
         quiet_for = now - self.last_motion if self.last_motion is not None else now - self.started
         self.breath_valid = bool(self.breath is not None and self.breath.valid and present and not warm
                                  and now - self.breath_at <= breathing.STEP_S * 2
+                                 and self.breath_at >= self.vitals_since
                                  and quiet_for >= r["breathing"]["low_motion_s"])
         self._heart_step(now, present, warm, quiet_for)
         still = M_now is not None and M_now / quiet < r["fall"]["t_still"]

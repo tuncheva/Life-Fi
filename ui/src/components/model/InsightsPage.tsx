@@ -9,6 +9,7 @@ import { RoomCard } from "../Cards";
 import { Section } from "../Section";
 import { btn } from "../ui";
 import { VitalsCard } from "../vitals/VitalsCard";
+import { HoursBody } from "./HoursSection";
 import {
   BreathingBody,
   BreathSummary,
@@ -42,7 +43,7 @@ export function InsightsPage() {
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Insights</h1>
           <p className="text-base font-medium text-muted">What the sensor sees</p>
-          <p className="mt-1 max-w-2xl text-sm text-muted">Everything the system reads from the Wi-Fi signal over the last 15 minutes. Open a section for its chart.</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted">Everything the system reads from the Wi-Fi signal over the last 15 minutes, and breathing, heart and movement over the last hours. Open a section for its chart.</p>
         </div>
         <div className="flex self-start rounded-lg bg-surface-2 p-0.5 sm:self-auto" role="group" aria-label="Time window">
           {WINDOWS.map((w) => (
@@ -71,6 +72,10 @@ export function InsightsPage() {
       </Section>
       <Section id="movement" title="Movement" subtitle="Why vitals go missing" defaultOpen summary={<MovementSummary />}>
         <MovementBody windowS={windowS} />
+      </Section>
+      {/* not open by default: its body queries up to 24 h of stored rows (track H) */}
+      <Section id="hours" title="Last hours" subtitle="How was the night?">
+        <HoursBody />
       </Section>
       <Section id="where" title="Where" subtitle="Distance and the taught spots" defaultOpen summary={<WhereSummary />}>
         <WhereBody windowS={windowS} />

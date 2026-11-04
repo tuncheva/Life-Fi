@@ -14,10 +14,33 @@ export interface HistoryRow {
   breathing_valid: boolean | null;
   posture: string | null;
   count: number | null;
+  /** Null unless the heart estimate was valid (track H). Optional so older callers still compile. */
+  heart_bpm?: number | null;
+  /** Null when the result had no heart or the profile does not store vitals. */
+  heart_valid?: boolean | null;
 }
 
-export const HISTORY_FIELDS = ["presence", "motion", "breathing", "posture", "count"] as const;
+/** The columns the vitals history needs (server/vitals-history.ts); valid flags raw 1/0/null. */
+export interface VitalsRow {
+  t: number;
+  presence: string;
+  motion: number;
+  breathing_bpm: number | null;
+  breathing_valid: number | null;
+  heart_bpm: number | null;
+  heart_valid: number | null;
+  count: number | null;
+}
+
+export const HISTORY_FIELDS = ["presence", "motion", "breathing", "posture", "count", "heart"] as const;
 export type HistoryField = (typeof HISTORY_FIELDS)[number];
+
+/** Columns added after the first release; migrate() adds the missing ones to older DBs. */
+const ADDED_COLUMNS: readonly (readonly [string, string])[] = [
+  ["heart_bpm", "REAL"],
+  ["heart_valid", "INTEGER"],
+];
+const USER_VERSION = 1;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS history (
@@ -27,7 +50,9 @@ CREATE TABLE IF NOT EXISTS history (
   breathing_bpm REAL,
   breathing_valid INTEGER,
   posture TEXT,
-  count INTEGER
+  count INTEGER,
+  heart_bpm REAL,
+  heart_valid INTEGER
 );
 CREATE TABLE IF NOT EXISTS alerts (
   id TEXT PRIMARY KEY,
@@ -51,6 +76,7 @@ export class Store {
   private readonly db: DatabaseSync;
   private readonly insertHistory: StatementSync;
   private readonly selectHistory: StatementSync;
+  private readonly selectVitals: StatementSync;
   private readonly countHistory: StatementSync;
   private readonly purgeHistory: StatementSync;
   private readonly upsertAlert: StatementSync;
@@ -63,15 +89,21 @@ export class Store {
   constructor(readonly path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
+    // wait for another process (a second dev server, a script) instead of failing with SQLITE_BUSY
+    this.db.exec("PRAGMA busy_timeout = 5000");
     if (path !== ":memory:") {
       this.db.exec("PRAGMA journal_mode = WAL");
       this.db.exec("PRAGMA synchronous = NORMAL");
     }
     this.db.exec(SCHEMA);
+    this.migrate();
     this.insertHistory = this.db.prepare(
-      "INSERT OR REPLACE INTO history (t, presence, motion, breathing_bpm, breathing_valid, posture, count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO history (t, presence, motion, breathing_bpm, breathing_valid, posture, count, heart_bpm, heart_valid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     );
     this.selectHistory = this.db.prepare("SELECT * FROM history WHERE t >= ? AND t <= ? ORDER BY t");
+    this.selectVitals = this.db.prepare(
+      "SELECT t, presence, motion, breathing_bpm, breathing_valid, heart_bpm, heart_valid, count FROM history WHERE t >= ? AND t < ? ORDER BY t",
+    );
     this.countHistory = this.db.prepare("SELECT COUNT(*) AS n FROM history");
     this.purgeHistory = this.db.prepare("DELETE FROM history WHERE t < ?");
     this.upsertAlert = this.db.prepare("INSERT OR REPLACE INTO alerts (id, created_at, state, json) VALUES (?, ?, ?, ?)");
@@ -81,10 +113,41 @@ export class Store {
     this.purgeLog = this.db.prepare("DELETE FROM alert_log WHERE t < ?");
   }
 
+  /**
+   * Adds the columns of DBs created before track H. Idempotent, and safe with two processes on
+   * one file: BEGIN IMMEDIATE takes the write lock, so the column check inside sees the other's
+   * work; a failure rolls the whole step back. Runs before any prepare (they name the columns).
+   */
+  private migrate(): void {
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      const have = new Set((this.db.prepare("PRAGMA table_info(history)").all() as { name: string }[]).map((c) => c.name));
+      for (const [name, type] of ADDED_COLUMNS) {
+        if (!have.has(name)) this.db.exec(`ALTER TABLE history ADD COLUMN ${name} ${type}`);
+      }
+      const v = (this.db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+      if (v < USER_VERSION) this.db.exec(`PRAGMA user_version = ${USER_VERSION}`);
+      this.db.exec("COMMIT");
+    } catch (err) {
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // no transaction open (BEGIN itself failed)
+      }
+      throw new Error(`history migration failed: ${(err as Error)?.message ?? String(err)}`);
+    }
+  }
+
   // ---- history ----------------------------------------------------------------
 
   addHistory(r: HistoryRow): void {
-    this.insertHistory.run(r.t, r.presence, r.motion, r.breathing_bpm, r.breathing_valid === null ? null : r.breathing_valid ? 1 : 0, r.posture, r.count);
+    const flag = (b: boolean | null | undefined) => (b === null || b === undefined ? null : b ? 1 : 0);
+    this.insertHistory.run(r.t, r.presence, r.motion, r.breathing_bpm, flag(r.breathing_valid), r.posture, r.count, r.heart_bpm ?? null, flag(r.heart_valid));
+  }
+
+  /** The vitals columns for `from <= t < to`, oldest first (rowid range scan). */
+  vitalsRows(from: number, to: number): VitalsRow[] {
+    return this.selectVitals.all(from, to) as unknown as VitalsRow[];
   }
 
   queryHistory(from: number, to: number, fields?: HistoryField[]): Partial<HistoryRow>[] {
@@ -98,6 +161,8 @@ export class Store {
         breathing_valid: d.breathing_valid === null ? null : d.breathing_valid === 1,
         posture: d.posture as string | null,
         count: d.count as number | null,
+        heart_bpm: (d.heart_bpm ?? null) as number | null,
+        heart_valid: d.heart_valid === null || d.heart_valid === undefined ? null : d.heart_valid === 1,
       };
       if (!fields) return row;
       const picked: Partial<HistoryRow> = { t: row.t };
@@ -105,6 +170,9 @@ export class Store {
         if (f === "breathing") {
           picked.breathing_bpm = row.breathing_bpm;
           picked.breathing_valid = row.breathing_valid;
+        } else if (f === "heart") {
+          picked.heart_bpm = row.heart_bpm;
+          picked.heart_valid = row.heart_valid;
         } else picked[f] = row[f] as never;
       }
       return picked;

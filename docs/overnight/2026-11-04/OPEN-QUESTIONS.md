@@ -62,3 +62,24 @@ from you. Last night's list is still in [../OPEN-QUESTIONS.md](../OPEN-QUESTIONS
 3. **New ntfy topics must be 20+ characters.** **Built:** the server refuses a *new*
    short topic (it is the only secret protecting the alert feed); an existing short
    topic keeps working with a warning. *Need:* OK?
+
+## Track H — overnight vitals history
+
+1. **Breathing and heart rate kept on disk.** Breathing and (experimental) heart rate are
+   kept in the local history file (`data/lifefi.sqlite`, 5 s rows, deleted after
+   `retention_days`, default 30) for the home and clinic profiles, so "Last hours" on
+   Insights can show the night. School stores neither. Nothing leaves this machine.
+   **Built: keep.** *Need:* keep that default, or add a switch "Keep breathing and heart
+   rate history" (off = only presence and movement)?
+
+## Independent engine/firmware review (06:41–06:50)
+
+See [review-engine-firmware.md](review-engine-firmware.md). Finding 1 (a pre-gap breathing
+rate published as valid for up to ~7 s after a gap) is fixed in the working tree (one line in
+`engine/lifefi/engine.py`). **Not fixed yet**, each needs a decision or hardware:
+1. **Calibration taken with the old link survives a switch to the fixed transmitter**
+   (medium). *Proposed:* store the transmitter MAC with the calibration and the distance fit,
+   add a quality reason when they differ. *Need:* OK to build next?
+2. Forced `transmitter_fixed: true` (router) shows "other" in health (low); heart stillness
+   timer after a gap (low); CSI line written in two UART writes (low); CI firmware job never
+   run (low).

@@ -326,3 +326,88 @@ leaves this machine. Keep that default, or add a switch "Keep breathing and hear
     rows, nobody there, heart not measured) — a fresh install previously would show empty frames.
 12. **Query uses `t < to` and selects 8 named columns** on the rowid range (already the PK, so
     indexed); no new index needed. `history/route.ts` needs no edit since it reads `HISTORY_FIELDS`.
+
+## Worker report (H)
+
+**Files.** New: `ui/src/server/vitals-history.ts`, `ui/src/lib/vitals-history.ts`,
+`ui/src/app/api/v1/history/vitals/route.ts`, `ui/src/components/model/{HoursChart,HoursSection}.tsx`,
+`ui/test/vitals-history.test.ts`. Edited: `ui/src/server/store.ts` (columns, `migrate()`,
+`busy_timeout`, `vitalsRows`, `heart` field), `ui/src/server/history.ts` (writes heart, `vitalsRows`),
+`ui/src/lib/api.ts` (additive: `HistoryRow.heart_*`, `getVitalsHistory`),
+`ui/src/components/model/InsightsPage.tsx` (one Section + intro sentence), `ui/test/store.test.ts`.
+Not touched: `runtime.ts`, `history/route.ts`, `contracts/**`, `globals.css`, `data/**`.
+
+**Cut.** Only the plan's cut-outright list (quartile band, `motion_max`, per-bucket quartiles,
+Timeline lane, per-install switch, bounding `/history`). Everything else in steps 1-6 is in,
+including the 60 s refresh and the remembered range.
+
+**Checks** (repo root): `npm run typecheck` green; `npm run lint` green; `npm test` green
+(vitest 23 files / 263 tests; engine 19 passed, 1 skipped, 0 failed). New tests: 5 in
+`store.test.ts` (heart round-trip + `fields=heart` + `vitalsRows`, purge with heart, old-file
+migration + reopen no-op + `user_version` 1, old-build insert/select on a migrated file, two
+Stores on one old file), 23 in `vitals-history.test.ts`.
+Migration on a **copy** of `data/lifefi.sqlite` (scratchpad; the original was not opened, no
+`-wal`/`-shm` existed): 8 155 rows, columns went from 7 to 9, `user_version` 1, migration 6.6 ms,
+`vitalsRows` reads all rows with heart null.
+
+**Deviations.**
+- `summarize(rows, bucketMs)`: dropped the unused `from`/`to` arguments (rows are already ranged).
+- `PRAGMA busy_timeout` is set right after opening, **before** the WAL pragma (setting
+  `journal_mode` also takes a lock), not between WAL and schema.
+- Empty-state order: "Nobody was there in these hours." comes before the `stored: false` text
+  (with nobody present the movement chart would be empty anyway); otherwise as planned.
+- The range is `null` until localStorage is read after mount, so a remembered 1 h does not first
+  send a 24 h query. Switching range clears the shown data ("Loading…") so old data is never shown
+  under the new label.
+- Movement stat reads "Still {x} of the {y} someone was there" (both durations, clearer than "of the time").
+- y ranges reuse `BREATH_SPARK` [0,40] and `HEART_SPARK` [40,140] from `lib/vitals.ts`; movement [0,1].
+
+**Section mounts children only when open** (`Section.tsx`: `{open && …}`), so a closed
+"Last hours" sends no request. It is not `defaultOpen`; its open state is remembered per browser.
+
+**Text for `contracts/api.md`** (track V owns it):
+
+> `HistoryRow` gains `heart_bpm` (number, null unless the heart estimate was `valid`) and
+> `heart_valid` (bool; null when the engine sent no `heart` or the profile does not store vitals).
+> `GET /history?fields=` accepts `heart` (→ `heart_bpm`, `heart_valid`). `breathing_*` and `heart_*`
+> are null when the active profile has `breathing.store: false`. The history DB carries
+> `PRAGMA user_version = 1` (columns added in place on first start; older builds keep working).
+>
+> `GET /history/vitals?hours=1|6|24&to=<ms>` — breathing, heart and movement over the last hours.
+> `hours` default 24, anything else → 400 `bad_request` "hours must be 1, 6 or 24"; `to` default
+> now, must be finite and ≤ now + 60 s, else 400 "to must be ms since epoch, not in the future".
+> Range `[to − hours h, to)`; buckets epoch-aligned: 1 h → 60 s, 6 h → 5 min, 24 h → 10 min.
+> Reply `{from, to, bucket_s, stored, summary, buckets}`; `summary` = `{n, present_n, still_n,
+> breath_n, breath_med, breath_q1, breath_q3, heart_on_n, heart_n, heart_med, heart_q1, heart_q3}`
+> over the whole range; each bucket (only non-empty ones) = `{t, n, present_n, still_n, motion_med,
+> breath_n, breath_med, heart_on_n, heart_n, heart_med}`. Rules: a row is a reading when presence is
+> `present`, the valid flag is 1, the rate is in range (breath 4-60, heart 35-200) and `count ≠ 2`;
+> medians/quartiles are null with fewer than 3 readings; `still` = present and motion < 0.1;
+> `motion_med` over present rows (null when none); `heart_on_n` = present rows with a heart flag;
+> rates rounded to 0.1, motion to 0.01. `stored` = the active profile's `breathing.store`.
+> Heart rate is experimental (one Wi-Fi link), not a medical measurement.
+
+**Q-H1** (for OPEN-QUESTIONS.md):
+
+> **Q-H1.** Breathing and (experimental) heart rate are kept in the local history file
+> (`data/lifefi.sqlite`, 5 s rows, deleted after `retention_days`, default 30) for the home and
+> clinic profiles, so "Last hours" on Insights can show the night. School stores neither. Nothing
+> leaves this machine. Keep that default, or add a switch "Keep breathing and heart rate history"
+> (off = only presence and movement)? Default tonight: keep.
+
+**Known issues.**
+- The real `data/lifefi.sqlite` migrates at the next server start (tested on a copy only). The
+  dev server already running on port 3000 holds the old `Store`; it picks up the new code only after
+  a restart, and until then `/api/v1/history/vitals` may 500 (old Store has no `vitalsRows`).
+- Existing rows have no heart, so "Heart rate" shows "Not measured…" until new heart data is stored.
+- Rows are point samples (the last result of each 5 s): short motion spikes can be missed; only a
+  median is claimed.
+- `/history` span is still unbounded (pre-existing, cut).
+- `npx tsx` was fetched into the npm cache for the copy check (not added to package.json).
+
+**Browser checks.** Restart the dev server first. `/model` → open "Last hours": 1/6/24 h control
+(keyboard, `aria-pressed`), choice remembered on reload; with the existing DB: breathing chart +
+"Read x % …" line, heart block with Experimental pill + caption and "Not measured…" text, movement
+chart + still line, footnote with "median of one 10 min" (1 min / 5 min for 1 h / 6 h). Gaps are
+breaks, not bridged lines. 375 px: no horizontal scroll; dark mode colours. Closed section: no
+`/history/vitals` request in the network panel. `GET /api/v1/history/vitals?hours=2` → 400.

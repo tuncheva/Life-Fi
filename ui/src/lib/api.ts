@@ -1,6 +1,7 @@
 // REST client for contracts/api.md. Types here mirror that file by hand;
 // the Result type is generated from the schema (contracts.gen.ts).
 import type { Result } from "./contracts.gen";
+import type { VitalsHistoryReply } from "./vitals-history";
 
 // The API is served by this Next.js app (src/app/api/v1), so every call is same-origin.
 export const API_BASE = "";
@@ -120,6 +121,9 @@ export interface HistoryRow {
   breathing_valid?: boolean | null;
   posture?: string | null;
   count?: number | null;
+  /** Null unless the heart estimate was valid (track H). */
+  heart_bpm?: number | null;
+  heart_valid?: boolean | null;
 }
 
 export interface RecordingInfo {
@@ -229,6 +233,8 @@ export const updateSettings = (patch: SettingsPatch) => api<PublicSettings>("/se
 export const testNotification = () => api<{ sent: boolean }>("/settings/test-notification", { method: "POST", body: "{}", pin: true });
 export const getHistory = (from: number, to: number, fields?: string) =>
   api<{ rows: HistoryRow[] }>(`/history?from=${from}&to=${to}${fields ? `&fields=${fields}` : ""}`);
+/** Breathing, heart and movement per bucket over the last 1, 6 or 24 h (track H). */
+export const getVitalsHistory = (hours: number) => api<VitalsHistoryReply>(`/history/vitals?hours=${hours}`);
 export const getSource = () => api<SourceState>("/source");
 export const setSource = (s: Omit<SourceState, "state" | "error">) => api<SourceState>("/source", { method: "PUT", body: JSON.stringify(s), pin: true });
 export const getRecordings = () =>

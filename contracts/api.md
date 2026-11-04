@@ -285,6 +285,28 @@ One row per 5 s. Never contains `csi` or `wave`.
 
 `breathing_*` are `null` when the active profile has `breathing.store: false`.
 
+`HistoryRow` also carries `heart_bpm` (number, null unless the heart estimate was `valid`) and
+`heart_valid` (bool; null when the engine sent no `heart` or the profile does not store vitals).
+`GET /history?fields=` accepts `heart` (→ `heart_bpm`, `heart_valid`); `heart_*` follow
+`breathing.store` like `breathing_*`. The history DB carries `PRAGMA user_version = 1` (columns
+added in place on first start; older builds keep working).
+
+### Vitals history (`GET /history/vitals?hours=1|6|24&to=<ms>`)
+
+Breathing, heart and movement over the last hours (Insights → "Last hours"). `hours` default 24,
+anything else → 400 `bad_request` "hours must be 1, 6 or 24"; `to` default now, must be finite
+and ≤ now + 60 s, else 400. Range `[to − hours h, to)`; buckets epoch-aligned: 1 h → 60 s,
+6 h → 5 min, 24 h → 10 min. Reply `{from, to, bucket_s, stored, summary, buckets}`; `summary` =
+`{n, present_n, still_n, breath_n, breath_med, breath_q1, breath_q3, heart_on_n, heart_n,
+heart_med, heart_q1, heart_q3}` over the whole range; each bucket (non-empty ones only) =
+`{t, n, present_n, still_n, motion_med, breath_n, breath_med, heart_on_n, heart_n, heart_med}`.
+A row is a reading when presence is `present`, the valid flag is 1, the rate is in range
+(breath 4–60, heart 35–200) and `count ≠ 2`; medians/quartiles are null with fewer than 3
+readings (the chart shows a gap); `still` = present and motion < 0.1; `motion_med` over present
+rows; `heart_on_n` = present rows with a heart flag; rates rounded to 0.1, motion to 0.01.
+`stored` = the active profile's `breathing.store`. Heart rate is experimental (one Wi-Fi link),
+not a medical measurement.
+
 ### `Recent` (`GET /recent?minutes=N`)
 
 In-memory samples of the last N minutes (1..15, default 15) of results since the current
