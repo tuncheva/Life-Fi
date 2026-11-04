@@ -6,7 +6,8 @@ firmware/tools/csi_recorder.py's two transports (USB serial "@CSI" lines,
 or UDP after an LFSUB subscribe), so the engine reads the board exactly
 as the recorder does.
 
-`serial="auto"` picks the board's USB serial port by itself. A live
+`serial="auto"` opens every COM port at once and keeps the one where the
+board answers (a CSI packet or its "lifefi" log line). A live
 source that cannot read the board (no port, port busy, cable pulled)
 keeps its error in `error`, sets `state = "error"` and tries again every
 RETRY_S, so plugging the board back in recovers without a restart.
@@ -29,8 +30,7 @@ sys.path.insert(0, str(ROOT / "firmware" / "tools"))
 import csi_recorder  # noqa: E402
 
 RETRY_S = 2.0
-# USB-serial bridges on ESP32 boards: Silicon Labs CP210x, WCH CH340/CH9102, Espressif USB-JTAG, FTDI
-BOARD_VIDS = {0x10C4, 0x1A86, 0x303A, 0x0403}
+PROBE_S = 1.5                # how long a COM port gets to answer like the board
 
 TS = csi_recorder.HDR_FIELDS.index("ts_us")
 BOOT = csi_recorder.HDR_FIELDS.index("boot_id")
@@ -66,16 +66,71 @@ class _Thread:
                 "speed": self.speed, "loop": self.loop, "error": self.error}
 
 
-def find_board_port():
-    """The one USB serial port that looks like an ESP32 board; ValueError saying why if not exactly one."""
+def probe_port(port, baud, stop):
+    """An open SerialSource if the board answers on `port` within PROBE_S (a CSI packet or a lifefi log line), else None."""
+    src = csi_recorder.SerialSource(port, baud)
+    heard = []
+    src.on_log = lambda text: heard.append(text) if "lifefi" in text else None
+    end = time.monotonic() + PROBE_S
+    try:
+        src.request()
+        while time.monotonic() < end and not stop.is_set():
+            packet = src.receive()
+            if packet is not None or heard:
+                src.pending = packet                 # the first packet is not lost
+                return src
+    except Exception:
+        pass
+    src.close()
+    return None
+
+
+_probing = set()                                     # ports whose probe is still running (a hung open), skipped
+
+
+def find_board(baud, probe=probe_port):
+    """(port, open source) of the board, every COM port probed at once; ValueError saying why if none answers."""
     from serial.tools import list_ports
 
-    ports = sorted(p.device for p in list_ports.comports() if p.vid in BOARD_VIDS)
+    ports = sorted(p.device for p in list_ports.comports())
     if not ports:
-        raise ValueError("no USB serial port found: is the board plugged in?")
-    if len(ports) > 1:
-        raise ValueError(f"several USB serial ports ({', '.join(ports)}): start the engine with --serial <port>")
-    return ports[0]
+        raise ValueError("no serial port found: is the board plugged in?")
+    found, done, lock = [], threading.Event(), threading.Lock()
+    stop = threading.Event()
+
+    def run(port):
+        try:
+            src = probe(port, baud, stop)
+        except Exception:                            # busy, no such device, access denied
+            src = None
+        finally:
+            with lock:
+                _probing.discard(port)
+                left[0] -= 1
+                if left[0] == 0 and src is None:
+                    done.set()                       # every port said no: don't wait out the deadline
+        if src is None:
+            return
+        with lock:
+            if found:
+                src.close()
+                return
+            found.append((port, src))
+        done.set()
+
+    tried = [p for p in ports if p not in _probing]
+    left = [len(tried)]
+    if not tried:
+        done.set()
+    for port in tried:
+        _probing.add(port)
+        threading.Thread(target=run, args=(port,), daemon=True).start()
+    done.wait(PROBE_S + 0.5)
+    stop.set()
+    with lock:
+        if found:
+            return found[0]
+    raise ValueError(f"no board answered on {', '.join(ports)}: is it running the Life-Fi firmware?")
 
 
 # The firmware's once-a-second estimator line (firmware/src/estimator.c):
@@ -153,13 +208,17 @@ class LiveSource(_Thread):
     def _read(self):
         serial, baud, esp = self.args
         if serial == "auto":
-            serial = find_board_port()
-        src = csi_recorder.SerialSource(serial, baud) if serial else csi_recorder.UdpSource(esp)
+            serial, src = find_board(baud)
+        else:
+            src = csi_recorder.SerialSource(serial, baud) if serial else csi_recorder.UdpSource(esp)
         if serial:
             src.on_log = self._board_line
         self.name = f"usb {serial}" if serial else f"udp {esp or 'broadcast'}"
         self.state, self.error = "running", None
         last_sub = 0.0
+        if getattr(src, "pending", None) is not None:   # caught while probing the port
+            self.last_packet = time.monotonic()
+            self.push(src.pending, time.time_ns() // 1000, "live")
         try:
             while not self._stop.is_set():
                 now = time.monotonic()

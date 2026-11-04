@@ -126,8 +126,11 @@ def _acf_rate(sig):
     return 60.0 * FS / lag
 
 
-def estimate_breathing(ts_us, csi):
-    """Breathing windows from packet timestamps (us) and LLTF CSI [N, 52] complex."""
+def estimate_breathing(ts_us, csi, min_confidence=MIN_CONFIDENCE, min_band_ratio=MIN_BAND_RATIO):
+    """Breathing windows from packet timestamps (us) and LLTF CSI [N, 52] complex.
+
+    The two gates default to the module's; the live engine passes rules.yaml's
+    `breathing.min_confidence` / `min_band_ratio` (lifefi.apnea keeps the defaults)."""
     t = (np.asarray(ts_us, dtype=np.int64) - int(ts_us[0])) / 1e6
     x = _features(np.asarray(csi))
     win, step = int(WINDOW_S * FS), int(STEP_S * FS)
@@ -156,9 +159,9 @@ def estimate_breathing(ts_us, csi):
             acf_bpm = _acf_rate(pc1)
             band_ratio = float(ratio[top].mean())
             reasons = []
-            if conf < MIN_CONFIDENCE:
+            if conf < min_confidence:
                 reasons.append(f"no clear peak ({conf:.2f})")
-            if band_ratio < MIN_BAND_RATIO:
+            if band_ratio < min_band_ratio:
                 reasons.append(f"motion/noise ({band_ratio:.1f})")
             if not abs(acf_bpm - bpm) <= MAX_DISAGREE_BPM:
                 reasons.append("FFT/ACF disagree")

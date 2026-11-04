@@ -16,7 +16,7 @@ movement_model: gbm         # gbm | cnn | none. gbm: better transition F1 on uns
 presence:                   # lifefi.presence (plan-v2 §6.1, E4 deviation in its docstring)
   m_on_x: 2.0               # motion threshold = 2 x empty-room P99 of M (plan-v2: 1.5-2 x)
   m_off_x: 1.0
-  b_on_x: 1.0               # breathing energy, x a 2-min calibration's P99 (E4, ml/check_presence.py)
+  b_on_x: 1.5               # breathing energy, x a 2-min calibration's P99. E4 (ml/results/presence_e4.json b_multiplier): 1.5 flags 0 % of empty windows on all 3 days (1.0: up to 2.6 %), still people found 46-60 % (1.0: 67-83 %); the board's empty room went PRESENT on B alone twice in 1.5 h at 1.0 (2026-11-04). Walking in is found by motion either way
   b_off_x: 1.0              # x its P95 (plan-v2); E4: ~95 % of still windows stay above 0.82 x it
   exit_share: 0.9           # [H] someone left when B is below b_off on 90 % of the exit window (lifefi.presence)
   use_static: false         # S drifts as much as a still person changes it (E4): reported, not used
@@ -29,6 +29,14 @@ presence:                   # lifefi.presence (plan-v2 §6.1, E4 deviation in it
 
 breathing:
   low_motion_s: 20.0        # breathing is shown only after this long without motion (plan-v2 §6.3)
+  # Also what arms lifefi.apnea (it freezes on these valid windows; with 0.40 / 2.0 no window of the
+  # board's paced check was valid, so no_breathing could never arm on this link). Owner allowed own
+  # board recordings for vitals (2026-11-04): data/sessions/breathcheck-* (deep, paced 12 /min) and
+  # empty-* (empty room); calm-* showed calm breathing is below this link's noise, so it is not shown.
+  min_confidence: 0.5       # E1 held-out pick (ml/results/breathing_e1.json): 0.987 right among valid, 0.22 of windows
+  min_band_ratio: 1.0       # same pick; 0.40 / 2.0 accepted no window of the board's paced check, 0.5 / 1.0 two (both 12 /min); 0 of 54 empty-room windows
+  quiet_m_x: 3.0            # [H] stillness bar for the vital signs, x presence's m_on: deep breaths moved the shoulders to 1-2.6 x m_on
+  hold_s: 20.0              # [H] keep showing the last valid rate this long while still and present (display only)
 
 heart:                      # lifefi.heart, EXPERIMENTAL (not validated against a pulse sensor)
   publish: true             # false: `heart` is null in every result

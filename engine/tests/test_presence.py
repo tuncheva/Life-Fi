@@ -68,6 +68,15 @@ check(t is not None and 595 <= t <= 610, f"UNCERTAIN at {t} s (10 min after the 
 s = run(p, 703, 2, M=0.1, B=2.0, breathing_valid=True)
 check(s[-1][1] == "present", "valid breathing brings it back to PRESENT")
 
+print("== entering on breathing energy alone, long after a motion: UNCERTAIN only 10 min later")
+p = fresh()
+run(p, 0, 2, M=1.5, B=0.2)                    # a short motion while empty (< enter_motion_s)
+run(p, 2, 1200, M=0.1, B=0.2)                 # 20 min empty
+s = run(p, 1202, 700, M=0.1, B=2.0)           # still person, breathing energy only
+t_in, t_unc = first(s, "present"), first(s, "uncertain")
+check(t_in is not None and t_unc is not None and 595 <= t_unc - t_in <= 610,
+      f"UNCERTAIN {t_unc and t_in and t_unc - t_in:.0f} s after PRESENT (10 min, not seconds)")
+
 print("== the person leaves: burst, then quiet -> EMPTY after 60 s")
 p = fresh()
 run(p, 0, 3, M=5.0, B=2.0)

@@ -176,16 +176,35 @@ class Port:
         self.device, self.vid = device, vid
 
 
+class FakeSrc:
+    closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def fake_probe(port, baud, stop):
+    """COM9 is the board (answers after 0.3 s), COM3 hangs past the deadline, COM4 is busy."""
+    if port == "COM9":
+        time.sleep(0.3)
+        return FakeSrc()
+    if port == "COM3":
+        stop.wait(5.0)
+        return None
+    raise OSError("access denied")
+
+
 real_comports = list_ports.comports
-for ports, want in (([], "no USB serial port"), ([Port("COM7", 0x10C4)], "COM7"),
-                    ([Port("COM7", 0x10C4), Port("COM9", 0x303A)], "several"),
-                    ([Port("COM1", None)], "no USB serial port")):
+for ports, want in (([], "no serial port"), ([Port("COM4", None)], "no board answered on COM4"),
+                    ([Port("COM3", None), Port("COM4", None), Port("COM9", 0x10C4)], "COM9")):
     list_ports.comports = lambda ports=ports: ports
+    t0 = time.monotonic()
     try:
-        got = sources.find_board_port()
+        got = sources.find_board(921600, probe=fake_probe)[0]
     except ValueError as err:
         got = str(err)
-    check(want in got, f"{[p.device for p in ports]} -> {got}")
+    took = time.monotonic() - t0
+    check(want in got and took < sources.PROBE_S + 1.0, f"{[p.device for p in ports]} -> {got} in {took:.1f} s")
 list_ports.comports = real_comports
 
 srv.stop()

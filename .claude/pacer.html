@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breathing pacer</title>
+<style>
+  :root { --bg: #111418; --fg: #e8eaed; --dim: #8a9099; --accent: #3fd0b4; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 18px/1.4 system-ui, sans-serif; }
+  main { min-height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 24px; padding: 16px; box-sizing: border-box; text-align: center; }
+  #ball { width: 60px; height: 60px; border-radius: 50%; background: var(--accent);
+    transition: width var(--half) ease-in-out, height var(--half) ease-in-out; }
+  #word { font-size: 44px; font-weight: 700; min-height: 1.3em; }
+  #info { color: var(--dim); max-width: 32em; }
+  #clock { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .big #ball { width: 220px; height: 220px; }
+</style>
+</head>
+<body>
+<main>
+  <div id="word">Waiting</div>
+  <div style="height:230px;display:flex;align-items:center"><div id="ball"></div></div>
+  <div id="clock"></div>
+  <div id="info">Sit still between the board and the phone. Claude starts this when you say go.</div>
+</main>
+<script>
+  // ?bpm=15 sets the pace (default 12); 20 s to settle first, then 120 s paced.
+  const BPM = Number(new URLSearchParams(location.search).get("bpm")) || 12;
+  const SETTLE = 20, PACED = 120, HALF = 30 / BPM;
+  const word = document.getElementById("word"), clock = document.getElementById("clock"),
+        info = document.getElementById("info"), main = document.querySelector("main");
+  document.documentElement.style.setProperty("--half", HALF + "s");
+  let t0 = null;
+  window.startPacer = () => { t0 = performance.now(); return "started"; };
+  function tick() {
+    if (t0 !== null) {
+      const s = (performance.now() - t0) / 1000;
+      if (s < SETTLE) {
+        word.textContent = "Get still";
+        clock.textContent = `starting in ${Math.ceil(SETTLE - s)} s`;
+        info.textContent = "Hands in your lap, don't move or talk. Breathe normally for now.";
+        main.classList.remove("big");
+      } else if (s < SETTLE + PACED) {
+        const p = s - SETTLE, inhale = Math.floor(p / HALF) % 2 === 0;
+        word.textContent = inhale ? "Breathe in" : "Breathe out";
+        main.classList.toggle("big", inhale);
+        clock.textContent = `${Math.ceil(SETTLE + PACED - s)} s left`;
+        info.textContent = `Follow the circle with calm, normal breaths: in while it grows, out while it shrinks. ${BPM} breaths per minute.`;
+      } else {
+        word.textContent = "Done";
+        main.classList.remove("big");
+        clock.textContent = "";
+        info.textContent = "You can move now. Claude is checking the result.";
+        return;
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>

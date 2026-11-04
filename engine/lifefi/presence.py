@@ -205,7 +205,9 @@ class Presence:
                         self._go("empty", t)
                         return self.state
                     self.burst_end = None              # B stayed up: the person is still here
-        still_for = t - (self.last_motion if self.last_motion is not None else self.entered)
+        # still since the last motion *after* they came in: entering on breathing alone (no motion)
+        # must not inherit a motion from before, or `uncertain` comes seconds after `present`
+        still_for = t - max(self.last_motion if self.last_motion is not None else self.entered, self.entered)
         if still_for >= c["uncertain_after_s"] and not self.breathing_seen and not recent:
             self._go("uncertain", t)
         return self.state

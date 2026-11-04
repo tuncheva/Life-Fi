@@ -21,7 +21,6 @@ export const SETUP_NAV: NavItem[] = [
   { href: "/label", label: "Labelling", hint: "Record training sessions" },
   { href: "/teach", label: "Teach spots", hint: "Record spots with spoken prompts, then train" },
   { href: "/settings", label: "Settings", hint: "Phone alerts, profile, PIN" },
-  { href: "/emergency", label: "Emergency (building demo, simulated)", hint: "Not real sensor data" },
 ];
 
 /** True when `path` is `href` or a page below it. "/" matches only itself. */

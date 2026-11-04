@@ -210,5 +210,35 @@ res_off, _, _, bad = run("sitting", eng=eng, limit_s=40.0)
 check(not bad and all(r["heart"] is None for _, r in res_off) and res_off[-1][1]["breathing"]["reason"] is not None,
       f"publish false => heart null in every result, still valid ({len(res_off)} results)")
 
+# ---- breathing.hold_s / quiet_m_x: the shown rate (display only) ----
+print("breathing hold and the vital-signs stillness bar")
+eng = Engine()
+eng.rules["breathing"].update(hold_s=20.0, low_motion_s=20.0)
+eng.started, eng.vitals_since = 0.0, -np.inf
+eng.breath = dataclasses.replace(bw, bpm=12.0, valid=True, reason="")
+eng.breath_valid = True
+eng._breath_hold(100.0, True, False, 30.0)
+eng.breath_valid = False                          # the next window is too weak
+eng._breath_hold(110.0, True, False, 40.0)
+check(eng.breath_show == 12.0, f"a weak window inside hold_s keeps the last rate ({eng.breath_show})")
+eng._breath_hold(121.0, True, False, 51.0)
+check(eng.breath_show is None, "after hold_s it is cleared")
+eng.breath_valid = True
+eng._breath_hold(130.0, True, False, 60.0)
+eng.breath_valid = False
+eng._breath_hold(131.0, False, False, 61.0)
+check(eng.breath_show is None, "never held once the person is gone")
+eng._breath_hold(132.0, True, False, 5.0)
+check(eng.breath_show is None, "never held after motion (quiet_for < low_motion_s)")
+eng.last_vital_motion = 133.0
+eng._breath_hold(160.0, True, False, 27.0)
+check(eng.breath_show is None, "a rate from before the last motion is not brought back")
+eng.rules["breathing"]["hold_s"] = 0.0
+eng.breath_valid, eng.last_vital_motion = True, None
+eng._breath_hold(200.0, True, False, 60.0)
+eng.breath_valid = False
+eng._breath_hold(200.5, True, False, 60.5)
+check(eng.breath_show is None, "hold_s 0: only the current window is shown")
+
 print("PASSED" if failures == 0 else f"FAILED ({failures})")
 sys.exit(1 if failures else 0)

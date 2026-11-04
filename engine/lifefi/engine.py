@@ -274,6 +274,8 @@ class Engine:
         self.breath_at = None
         self.next_breath = -np.inf
         self.breath_valid = False
+        self.breath_last = None                      # (now, bpm) of the newest valid breathing window
+        self.breath_show = None                      # the rate on screen: the valid one, or held up to breathing.hold_s
         self.heart_hist = deque()                    # (now, HeartWindow) while still, the last history_s
         self.heart_last = None                       # the newest heart window, valid or not
         self.heart_new = None                        # a window not yet judged by _heart_step
@@ -281,6 +283,7 @@ class Engine:
         self.vitals_since = -np.inf                  # breathing windows from before this belong to an old segment
         self.m_hist = deque()                        # (t, M) for the provisional quiet level
         self.last_motion = None
+        self.last_vital_motion = None
         self.fall_done = []
         self.fall_t = None
         self.still_run = 0.0
@@ -358,6 +361,10 @@ class Engine:
         moving = M_now is not None and M_now > m_on
         if moving:
             self.last_motion = now
+        # the vital signs wait for stillness against their own, higher bar: a deep breath moves the
+        # shoulders past presence's very low m_on, and breathing would never be shown
+        if M_now is not None and M_now > m_on * r["breathing"].get("quiet_m_x", 1.0):
+            self.last_vital_motion = now
 
         self._calibration_step(now)
         self._breathing_step(now)
@@ -375,11 +382,12 @@ class Engine:
         present = state == "present"
         self.events.set("presence_uncertain", state == "uncertain" and not warm, t_ms)
 
-        quiet_for = now - self.last_motion if self.last_motion is not None else now - self.started
+        quiet_for = now - self.last_vital_motion if self.last_vital_motion is not None else now - self.started
         self.breath_valid = bool(self.breath is not None and self.breath.valid and present and not warm
                                  and now - self.breath_at <= breathing.STEP_S * 2
                                  and self.breath_at >= self.vitals_since
                                  and quiet_for >= r["breathing"]["low_motion_s"])
+        self._breath_hold(now, present, warm, quiet_for)
         self._heart_step(now, present, warm, quiet_for)
         still = M_now is not None and M_now / quiet < r["fall"]["t_still"]
 
@@ -426,7 +434,9 @@ class Engine:
         if len(t_raw) < 10 or t_raw[-1] - t_raw[0] < breathing.WINDOW_S:
             return
         ts_us = (t_raw * 1e6).astype(np.int64)
-        w = breathing.estimate_breathing(ts_us, csi)
+        b = self.rules["breathing"]
+        w = breathing.estimate_breathing(ts_us, csi, b.get("min_confidence", breathing.MIN_CONFIDENCE),
+                                         b.get("min_band_ratio", breathing.MIN_BAND_RATIO))
         if not w:
             return
         self.breath, self.breath_at = w[-1], now
@@ -452,6 +462,19 @@ class Engine:
     def _heart_cfg(self):
         """rules.yaml heart, with defaults for a rules file without the block."""
         return {**HEART_DEFAULTS, **(self.rules.get("heart") or {})}
+
+    def _breath_hold(self, now, present, warm, quiet_for):
+        """The breathing rate shown: a valid window's, kept for breathing.hold_s while the same
+        person stays present and still, so one weak window between good ones does not blank it.
+        Display only: breath_valid (presence, heart) stays per window."""
+        b = self.rules["breathing"]
+        if self.breath_valid:
+            self.breath_last = (now, float(self.breath.bpm))
+        last = self.breath_last
+        held = (last is not None and present and not warm and quiet_for >= b["low_motion_s"]
+                and now - last[0] <= b.get("hold_s", 0.0) and last[0] >= self.vitals_since
+                and (self.last_vital_motion is None or last[0] > self.last_vital_motion))
+        self.breath_show = last[1] if (self.breath_valid or held) else None
 
     def _heart_step(self, now, present, warm, quiet_for):
         """Keep the heart windows of the current still stretch: presence, motion or warm-up clear
@@ -480,7 +503,7 @@ class Engine:
         return None
 
     def _breathing_reason(self, now, state, warm, quiet_for):
-        if self.breath_valid:
+        if self.breath_show is not None:
             return None
         return (self._vitals_reason(now, state, warm, quiet_for, self.rules["breathing"]["low_motion_s"])
                 or _window_reason(self.breath) or "unstable")
@@ -667,9 +690,9 @@ class Engine:
             "posture": {"label": post[0], "since": int(post[1] * 1000), "src": post[2]} if show_posture else None,
             "count": None,
             "activity": self._activity(),
-            "breathing": {"bpm": round(float(b.bpm), 1) if self.breath_valid else None,
+            "breathing": {"bpm": round(self.breath_show, 1) if self.breath_show is not None else None,
                           "confidence": round(float(np.clip(b.confidence, 0, 1)), 3) if b is not None else 0.0,
-                          "valid": self.breath_valid, "wave": wave, "reason": breath_reason},
+                          "valid": self.breath_show is not None, "wave": wave, "reason": breath_reason},
             "heart": self._heart_out(now, state, warm, quiet_for, breath_reason),
             "csi": [[round(float(v), 1) for v in row] for row in self.live.F[-5:]],
             "position": self.pos_out,
