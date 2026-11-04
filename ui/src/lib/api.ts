@@ -250,3 +250,39 @@ export const addMark = (event: string, subject: string) => api<LabelLine>("/reco
 
 /** Server-Sent Events stream of status, results and alert transitions. */
 export const LIVE_URL = `${API_BASE}/api/v1/live`;
+
+/** Caregiver agent (track FB): summary, explain an alert, chat over the stored events. */
+export interface AgentReply {
+  text: string;
+  provider: string;
+  model: string;
+  tool_calls: number;
+}
+export interface AgentTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+export interface AgentStatus {
+  configured: boolean;
+  provider: "anthropic" | "gemini";
+  model: string;
+  store: "firestore" | "memory";
+  firebase: { project: string; prefix: string; emulator: boolean } | null;
+}
+export const getAgentStatus = () => api<AgentStatus>("/agent/status");
+
+/** A stored event (track FB): a state change, or one agent run with its question and answer in `data`. */
+export type EventKind = "presence" | "posture" | "count" | "agent";
+export interface StoredEvent {
+  t: number;
+  kind: EventKind;
+  from?: string | number | null;
+  to?: string | number | null;
+  data?: Record<string, unknown>;
+}
+/** Sends the saved PIN, if any: assistant questions and answers come back only with it (or the trust cookie). */
+export const getEvents = (hours = 24, kind?: EventKind) =>
+  api<{ from: number; to: number; total: number; private: boolean; events: StoredEvent[] }>(`/events?hours=${hours}${kind ? `&kind=${kind}` : ""}`, { pin: !!getPin() });
+export const agentSummary = (hours = 24) => api<AgentReply>("/agent/summary", { method: "POST", body: JSON.stringify({ hours }), pin: true });
+export const agentExplain = (alert_id: string) => api<AgentReply>("/agent/explain", { method: "POST", body: JSON.stringify({ alert_id }), pin: true });
+export const agentChat = (messages: AgentTurn[]) => api<AgentReply>("/agent/chat", { method: "POST", body: JSON.stringify({ messages }), pin: true });

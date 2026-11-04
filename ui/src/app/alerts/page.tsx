@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { getAlerts, getSettings, type Alert, type ProfileName } from "@/lib/api";
 import { useLiveSlow } from "@/lib/live";
 import { roomName, alertTitle, clearedText, clock, duration, levelText } from "@/lib/words";
+import { ExplainAlert } from "@/components/model/AssistantSection";
 import { EmptyState, Icon, Notice, PageHeader, Pill, Skeleton, btn, checkLabelCls, type PillTone } from "@/components/ui";
 
 const STATE: Record<Alert["state"], { text: string; tone: PillTone }> = {
@@ -172,6 +173,7 @@ export default function AlertsPage() {
                           </li>
                         ))}
                       </ol>
+                      {a.state !== "dropped" && <ExplainAlert id={a.id} />}
                       <details className="mt-2 text-xs text-subtle">
                         <summary className="inline-flex min-h-11 cursor-pointer items-center">Technical details</summary>
                         <p className="font-mono text-[11px]">

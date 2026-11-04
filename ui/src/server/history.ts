@@ -1,5 +1,5 @@
 // Downsampled history: one row per 5 s, never csi or wave (plan-v2 D9),
-// kept in the SQLite store. The active profile decides whether breathing and heart are stored.
+// kept in the event store (Firestore, track FB). The active profile decides whether breathing and heart are stored.
 import type { Result } from "@/lib/contracts.gen";
 import { type HistoryField, type HistoryRow, type Store, type VitalsRow } from "./store";
 
@@ -28,15 +28,15 @@ export class History {
   }
 
   /** Rows for the vitals history (`from <= t < to`). */
-  vitalsRows(from: number, to: number): VitalsRow[] {
+  vitalsRows(from: number, to: number): Promise<VitalsRow[]> {
     return this.store.vitalsRows(from, to);
   }
 
-  query(from: number, to: number, fields?: HistoryField[]): Partial<HistoryRow>[] {
+  query(from: number, to: number, fields?: HistoryField[]): Promise<Partial<HistoryRow>[]> {
     return this.store.queryHistory(from, to, fields);
   }
 
-  size(): number {
+  size(): Promise<number> {
     return this.store.historySize();
   }
 }

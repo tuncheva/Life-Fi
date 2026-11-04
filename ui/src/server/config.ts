@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { llmProblems } from "./agent/provider";
 
 /** The PIN until someone changes it in settings; /api/v1/setup flags it. */
 export const DEFAULT_PIN = "1234";
@@ -13,7 +14,7 @@ export interface Config {
   /** Shared PIN for dashboard writes (plan-v2 §7.4). Dev default; change it in settings. */
   pin: string;
   dataDir: string;
-  /** SQLite file for history and alerts; ":memory:" keeps nothing. */
+  /** ":memory:" forces the in-memory event store even when Firebase is configured (tests, demos). */
   dbPath: string;
   profilesPath: string;
   /** Where the dashboard listens (LIFEFI_HOST, set by scripts/start.mjs; `next dev` binds every interface). */
@@ -55,6 +56,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
 
   const level = env.LIFEFI_LOG;
   if (level !== undefined && level !== "" && !LOG_LEVELS.includes(level)) problems.push(`LIFEFI_LOG must be one of ${LOG_LEVELS.join(", ")} (got "${level}")`);
+
+  problems.push(...llmProblems(env));
 
   const dataDir = resolve(repoRoot, get("LIFEFI_DATA_DIR", "data"));
   const profilesPath = resolve(repoRoot, get("LIFEFI_PROFILES", join("contracts", "profiles.yml")));

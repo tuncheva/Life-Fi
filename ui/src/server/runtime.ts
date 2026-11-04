@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { AlertManager } from "./alerts";
 import { config, ConfigError, DEFAULT_PIN } from "./config";
 import { buildStatus, type AppContext, type AppState, type EngineStatus } from "./context";
+import { ChangeTracker } from "./changes";
 import { EngineClient } from "./engine-client";
 import { History } from "./history";
 import { LiveHub } from "./hub";
@@ -14,11 +15,16 @@ import { notifyPhone } from "./notify";
 import { loadProfiles } from "./profiles";
 import { ServerRules } from "./rules";
 import { SettingsStore } from "./settings";
-import { Store } from "./store";
+import { MemoryStore, type Store } from "./store";
+import { firebaseEnv, FirestoreStore } from "./store-firestore";
 import { resultValidator } from "./validate";
+import type { Result } from "@/lib/contracts.gen";
 import { Watchdog } from "./watchdog";
 
 const KEY = Symbol.for("lifefi.runtime");
+const LOAD_WAIT_MS = 10_000;
+/** A posture or people-count change is recorded once it has held this long (no flicker events). */
+const CHANGE_HOLD_MS = 10_000;
 type Holder = { [KEY]?: AppContext };
 
 /** The running backend; starts it on first use. */
@@ -46,16 +52,33 @@ function start(): AppContext {
     presence: null,
   };
   const hub = new LiveHub(log);
-  const store = new Store(config.dbPath);
+  const store = openStore(log);
   const history = new History(store);
   const alerts = new AlertManager(profiles, () => settings.value.profile);
   alerts.setEscalateAfter(() => settings.value.notify.escalate_after_s);
   alerts.on("alert", (a) => store.saveAlert(a));
-  const restored = alerts.load(store.loadAlerts());
-  log.info({ db: config.dbPath, history_rows: store.historySize(), alerts: restored }, "store opened");
+  // Firestore reads are async. Sensing starts once saved alerts are loaded, so a new alert never
+  // reuses (and overwrites) a saved id; after LOAD_WAIT_MS it starts anyway with ids reserved
+  // above any saved one (a monitor must not wait on the network).
+  let loadedOk = false;
+  const loading = store
+    .loadAlerts()
+    .then(async (saved) => {
+      const restored = alerts.load(saved);
+      loadedOk = true;
+      log.info({ store: store.kind, history: await store.historySize(), alerts: restored }, "store opened");
+    })
+    .catch((err) => log.error({ error: (err as Error)?.message ?? String(err) }, "store load failed"));
+  const ready = Promise.race([loading, new Promise((r) => setTimeout(r, LOAD_WAIT_MS).unref())]).then(() => {
+    if (!loadedOk) alerts.reserveIds(Math.floor(Date.now() / 1000));
+  });
   const purge = () => {
-    const gone = store.purge(settings.value.retention_days);
-    if (gone) log.info({ rows: gone, days: settings.value.retention_days }, "history purged");
+    void store
+      .purge(settings.value.retention_days)
+      .then((gone) => {
+        if (gone) log.info({ rows: gone, days: settings.value.retention_days }, "history purged");
+      })
+      .catch((err) => log.warn({ error: (err as Error)?.message ?? String(err) }, "purge failed"));
   };
   purge();
   setInterval(purge, 3600_000).unref();
@@ -76,7 +99,7 @@ function start(): AppContext {
   const engine = new EngineClient(config.engineHost, config.enginePort, log, 1000, resultValidator());
 
   const ackTokens = new Map<string, string>();
-  const ctx: AppContext = { log, ackTokens, engine, alerts, watchdog, history, settings, profiles, state, hub, version: config.version };
+  const ctx: AppContext = { log, ackTokens, engine, alerts, watchdog, history, store, settings, profiles, state, hub, version: config.version };
 
   // ---- engine events --------------------------------------------------------
   /** Runs a listener body; one bad message is logged, never fatal to the server. */
@@ -151,6 +174,10 @@ function start(): AppContext {
     rules.onEngineLost();
     hub.broadcast({ type: "status", status: buildStatus(ctx, false) });
   });
+  const changes = new ChangeTracker(CHANGE_HOLD_MS);
+  const recordChanges = (r: Result) => {
+    for (const e of changes.onResult(r)) store.addEvent(e);
+  };
   engine.on("result", (r) => {
     state.latest = r;
     state.lastResultAt = Date.now();
@@ -169,6 +196,7 @@ function start(): AppContext {
     guard("alerts", () => alerts.onResult(r));
     guard("server rules", () => rules.onResult(r));
     guard("history", () => history.add(r, profiles.profiles[settings.value.profile].breathing.store));
+    guard("events", () => recordChanges(r));
     guard("recent", () => recentBuffer().add(r));
     guard("broadcast", () => hub.broadcast(r));
   });
@@ -190,9 +218,11 @@ function start(): AppContext {
     void notifyPhone(a, kind, settings.value, log, token).then((r) => alerts.setNotifyOutcome(a.id, r.ok ? "sent" : r.error === "ntfy topic not set" ? "not_configured" : "failed", r.ok ? null : r.error));
   });
 
-  watchdog.start();
-  rules.start();
-  engine.start();
+  void ready.then(() => {
+    watchdog.start();
+    rules.start();
+    engine.start();
+  });
   log.info({ engine: `${config.engineHost}:${config.enginePort}`, profile: settings.value.profile, config_hash: profiles.hash }, "life-fi backend up");
   if (settings.value.pin === DEFAULT_PIN) log.warn({}, `the PIN is still the default ${DEFAULT_PIN}: change it in Settings`);
 
@@ -203,8 +233,26 @@ function start(): AppContext {
     alerts.stop();
     engine.stop();
     hub.closeAll();
-    store.close();
+    void store.close();
   };
   process.once("exit", shutdown);
   return ctx;
+}
+
+/** Firestore when FIREBASE_* is set, else memory (nothing kept). LIFEFI_DB=:memory: forces memory. */
+function openStore(log: ReturnType<typeof createLogger>): Store {
+  const fe = config.dbPath === ":memory:" ? null : firebaseEnv();
+  if (fe) {
+    try {
+      const store = new FirestoreStore(fe, log);
+      log.info({ project: fe.projectId, prefix: fe.prefix, emulator: fe.emulator }, "event store: firestore");
+      return store;
+    } catch (err) {
+      // a bad key must not take the dashboard down: run unpersisted and say why
+      log.error({ project: fe.projectId, error: (err as Error)?.message ?? String(err) }, "firestore setup failed, check FIREBASE_* in ui/.env; using memory only");
+    }
+  } else {
+    log.warn({}, "event store: memory only (set FIREBASE_PROJECT_ID and credentials in ui/.env to persist)");
+  }
+  return new MemoryStore();
 }

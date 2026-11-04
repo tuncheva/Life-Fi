@@ -9,6 +9,7 @@ import { RoomCard } from "../Cards";
 import { Section } from "../Section";
 import { btn } from "../ui";
 import { VitalsCard } from "../vitals/VitalsCard";
+import { AssistantBody } from "./AssistantSection";
 import { HoursBody } from "./HoursSection";
 import {
   BreathingBody,
@@ -61,6 +62,9 @@ export function InsightsPage() {
         </div>
       </div>
 
+      <Section id="assistant" title="Assistant" subtitle="Ask about the last hours" defaultOpen>
+        <AssistantBody />
+      </Section>
       <Section id="presence" title="Presence" subtitle="Was someone there?" defaultOpen summary={<PresenceSummary />}>
         <PresenceBody windowS={windowS} />
       </Section>

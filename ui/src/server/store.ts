@@ -1,9 +1,7 @@
-// On-disk store (plan-v2 D9, decided for SQLite on 2026-10-27 since the
-// server is TypeScript): downsampled history, alerts and their transitions.
-// Uses Node's built-in node:sqlite, so nothing native has to be compiled.
-import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+// Event store (track FB, 2026-11-04: Firestore replaces SQLite): downsampled history, alerts,
+// their transitions, state-change events and agent runs. Writes are synchronous for the caller
+// (queued, never block the 10 Hz result loop); reads are async. MemoryStore is the same contract
+// with nothing persisted, used in tests and when Firebase is not configured.
 import type { Alert } from "./alerts";
 
 export interface HistoryRow {
@@ -35,177 +33,136 @@ export interface VitalsRow {
 export const HISTORY_FIELDS = ["presence", "motion", "breathing", "posture", "count", "heart"] as const;
 export type HistoryField = (typeof HISTORY_FIELDS)[number];
 
-/** Columns added after the first release; migrate() adds the missing ones to older DBs. */
-const ADDED_COLUMNS: readonly (readonly [string, string])[] = [
-  ["heart_bpm", "REAL"],
-  ["heart_valid", "INTEGER"],
-];
-const USER_VERSION = 1;
+export const EVENT_KINDS = ["presence", "posture", "count", "agent"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS history (
-  t INTEGER PRIMARY KEY,
-  presence TEXT NOT NULL,
-  motion REAL NOT NULL,
-  breathing_bpm REAL,
-  breathing_valid INTEGER,
-  posture TEXT,
-  count INTEGER,
-  heart_bpm REAL,
-  heart_valid INTEGER
-);
-CREATE TABLE IF NOT EXISTS alerts (
-  id TEXT PRIMARY KEY,
-  created_at INTEGER NOT NULL,
-  state TEXT NOT NULL,
-  json TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS alerts_created ON alerts (created_at);
-CREATE TABLE IF NOT EXISTS alert_log (
-  seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  alert_id TEXT NOT NULL,
-  state TEXT NOT NULL,
-  t INTEGER NOT NULL,
-  config_hash TEXT NOT NULL
-);
-`;
+/** A state change seen by the server, or one agent run. Never carries the room name or phone. */
+export interface StoreEvent {
+  t: number;
+  kind: EventKind;
+  from?: string | number | null;
+  to?: string | number | null;
+  data?: Record<string, unknown>;
+}
 
-type DbRow = Record<string, string | number | null>;
+export interface AlertLogRow {
+  alert_id: string;
+  state: string;
+  t: number;
+  config_hash: string;
+}
 
-export class Store {
-  private readonly db: DatabaseSync;
-  private readonly insertHistory: StatementSync;
-  private readonly selectHistory: StatementSync;
-  private readonly selectVitals: StatementSync;
-  private readonly countHistory: StatementSync;
-  private readonly purgeHistory: StatementSync;
-  private readonly upsertAlert: StatementSync;
-  private readonly insertLog: StatementSync;
-  private readonly selectAlerts: StatementSync;
-  private readonly purgeAlerts: StatementSync;
-  private readonly purgeLog: StatementSync;
+export interface Store {
+  readonly kind: "firestore" | "memory";
+  addHistory(r: HistoryRow): void;
+  queryHistory(from: number, to: number, fields?: HistoryField[]): Promise<Partial<HistoryRow>[]>;
+  /** The vitals columns for `from <= t < to`, oldest first. */
+  vitalsRows(from: number, to: number): Promise<VitalsRow[]>;
+  historySize(): Promise<number>;
+  /** Deletes everything older than `retentionDays`. Returns how many history rows went. */
+  purge(retentionDays: number, now?: number): Promise<number>;
+  /** Persists the alert's current state and appends the transition to the log (plan-v2 §7.1). */
+  saveAlert(a: Alert): void;
+  /** Newest first. */
+  loadAlerts(limit?: number): Promise<Alert[]>;
+  addEvent(e: StoreEvent): void;
+  /** `from <= t <= to`, oldest first. */
+  queryEvents(from: number, to: number, kind?: EventKind): Promise<StoreEvent[]>;
+  /** Flushes pending writes. */
+  close(): Promise<void>;
+}
 
-  /** `path` may be ":memory:" (tests). */
-  constructor(readonly path: string) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path);
-    // wait for another process (a second dev server, a script) instead of failing with SQLITE_BUSY
-    this.db.exec("PRAGMA busy_timeout = 5000");
-    if (path !== ":memory:") {
-      this.db.exec("PRAGMA journal_mode = WAL");
-      this.db.exec("PRAGMA synchronous = NORMAL");
-    }
-    this.db.exec(SCHEMA);
-    this.migrate();
-    this.insertHistory = this.db.prepare(
-      "INSERT OR REPLACE INTO history (t, presence, motion, breathing_bpm, breathing_valid, posture, count, heart_bpm, heart_valid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    );
-    this.selectHistory = this.db.prepare("SELECT * FROM history WHERE t >= ? AND t <= ? ORDER BY t");
-    this.selectVitals = this.db.prepare(
-      "SELECT t, presence, motion, breathing_bpm, breathing_valid, heart_bpm, heart_valid, count FROM history WHERE t >= ? AND t < ? ORDER BY t",
-    );
-    this.countHistory = this.db.prepare("SELECT COUNT(*) AS n FROM history");
-    this.purgeHistory = this.db.prepare("DELETE FROM history WHERE t < ?");
-    this.upsertAlert = this.db.prepare("INSERT OR REPLACE INTO alerts (id, created_at, state, json) VALUES (?, ?, ?, ?)");
-    this.insertLog = this.db.prepare("INSERT INTO alert_log (alert_id, state, t, config_hash) VALUES (?, ?, ?, ?)");
-    this.selectAlerts = this.db.prepare("SELECT json FROM alerts ORDER BY created_at DESC LIMIT ?");
-    this.purgeAlerts = this.db.prepare("DELETE FROM alerts WHERE created_at < ?");
-    this.purgeLog = this.db.prepare("DELETE FROM alert_log WHERE t < ?");
+/** The time an alert transition happened. */
+export const transitionTime = (a: Alert) => a.resolved_at ?? a.acked_at ?? a.opened_at ?? a.created_at;
+
+export function pickFields(row: HistoryRow, fields?: HistoryField[]): Partial<HistoryRow> {
+  const full: HistoryRow = { ...row, heart_bpm: row.heart_bpm ?? null, heart_valid: row.heart_valid ?? null };
+  if (!fields) return full;
+  const picked: Partial<HistoryRow> = { t: full.t };
+  for (const f of fields) {
+    if (f === "breathing") {
+      picked.breathing_bpm = full.breathing_bpm;
+      picked.breathing_valid = full.breathing_valid;
+    } else if (f === "heart") {
+      picked.heart_bpm = full.heart_bpm;
+      picked.heart_valid = full.heart_valid;
+    } else picked[f] = full[f] as never;
   }
+  return picked;
+}
 
-  /**
-   * Adds the columns of DBs created before track H. Idempotent, and safe with two processes on
-   * one file: BEGIN IMMEDIATE takes the write lock, so the column check inside sees the other's
-   * work; a failure rolls the whole step back. Runs before any prepare (they name the columns).
-   */
-  private migrate(): void {
-    try {
-      this.db.exec("BEGIN IMMEDIATE");
-      const have = new Set((this.db.prepare("PRAGMA table_info(history)").all() as { name: string }[]).map((c) => c.name));
-      for (const [name, type] of ADDED_COLUMNS) {
-        if (!have.has(name)) this.db.exec(`ALTER TABLE history ADD COLUMN ${name} ${type}`);
-      }
-      const v = (this.db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-      if (v < USER_VERSION) this.db.exec(`PRAGMA user_version = ${USER_VERSION}`);
-      this.db.exec("COMMIT");
-    } catch (err) {
-      try {
-        this.db.exec("ROLLBACK");
-      } catch {
-        // no transaction open (BEGIN itself failed)
-      }
-      throw new Error(`history migration failed: ${(err as Error)?.message ?? String(err)}`);
-    }
-  }
+const flag = (b: boolean | null | undefined) => (b === null || b === undefined ? null : b ? 1 : 0);
 
-  // ---- history ----------------------------------------------------------------
+export const toVitalsRow = (r: HistoryRow): VitalsRow => ({
+  t: r.t,
+  presence: r.presence,
+  motion: r.motion,
+  breathing_bpm: r.breathing_bpm,
+  breathing_valid: flag(r.breathing_valid),
+  heart_bpm: r.heart_bpm ?? null,
+  heart_valid: flag(r.heart_valid),
+  count: r.count,
+});
+
+/** Nothing persisted: tests, LIFEFI_DB=:memory:, or no Firebase credentials. */
+export class MemoryStore implements Store {
+  readonly kind = "memory" as const;
+  private readonly history = new Map<number, HistoryRow>();
+  private readonly alerts = new Map<string, Alert>();
+  readonly alertLog: AlertLogRow[] = [];
+  private events: StoreEvent[] = [];
 
   addHistory(r: HistoryRow): void {
-    const flag = (b: boolean | null | undefined) => (b === null || b === undefined ? null : b ? 1 : 0);
-    this.insertHistory.run(r.t, r.presence, r.motion, r.breathing_bpm, flag(r.breathing_valid), r.posture, r.count, r.heart_bpm ?? null, flag(r.heart_valid));
+    this.history.set(r.t, { ...r });
   }
 
-  /** The vitals columns for `from <= t < to`, oldest first (rowid range scan). */
-  vitalsRows(from: number, to: number): VitalsRow[] {
-    return this.selectVitals.all(from, to) as unknown as VitalsRow[];
+  private sorted(from: number, to: number, toExclusive = false): HistoryRow[] {
+    return [...this.history.values()].filter((r) => r.t >= from && (toExclusive ? r.t < to : r.t <= to)).sort((a, b) => a.t - b.t);
   }
 
-  queryHistory(from: number, to: number, fields?: HistoryField[]): Partial<HistoryRow>[] {
-    const rows = this.selectHistory.all(from, to) as DbRow[];
-    return rows.map((d) => {
-      const row: HistoryRow = {
-        t: d.t as number,
-        presence: d.presence as HistoryRow["presence"],
-        motion: d.motion as number,
-        breathing_bpm: d.breathing_bpm as number | null,
-        breathing_valid: d.breathing_valid === null ? null : d.breathing_valid === 1,
-        posture: d.posture as string | null,
-        count: d.count as number | null,
-        heart_bpm: (d.heart_bpm ?? null) as number | null,
-        heart_valid: d.heart_valid === null || d.heart_valid === undefined ? null : d.heart_valid === 1,
-      };
-      if (!fields) return row;
-      const picked: Partial<HistoryRow> = { t: row.t };
-      for (const f of fields) {
-        if (f === "breathing") {
-          picked.breathing_bpm = row.breathing_bpm;
-          picked.breathing_valid = row.breathing_valid;
-        } else if (f === "heart") {
-          picked.heart_bpm = row.heart_bpm;
-          picked.heart_valid = row.heart_valid;
-        } else picked[f] = row[f] as never;
-      }
-      return picked;
-    });
+  async queryHistory(from: number, to: number, fields?: HistoryField[]): Promise<Partial<HistoryRow>[]> {
+    return this.sorted(from, to).map((r) => pickFields(r, fields));
   }
 
-  historySize(): number {
-    return (this.countHistory.get() as { n: number }).n;
+  async vitalsRows(from: number, to: number): Promise<VitalsRow[]> {
+    return this.sorted(from, to, true).map(toVitalsRow);
   }
 
-  /** Deletes rows older than `retentionDays`. Returns how many history rows went. */
-  purge(retentionDays: number, now = Date.now()): number {
+  async historySize(): Promise<number> {
+    return this.history.size;
+  }
+
+  async purge(retentionDays: number, now = Date.now()): Promise<number> {
     const cutoff = now - retentionDays * 86_400_000;
-    const r = this.purgeHistory.run(cutoff);
-    this.purgeAlerts.run(cutoff);
-    this.purgeLog.run(cutoff);
-    return Number(r.changes);
+    let gone = 0;
+    for (const t of [...this.history.keys()]) {
+      if (t < cutoff) {
+        this.history.delete(t);
+        gone++;
+      }
+    }
+    for (const [id, a] of [...this.alerts]) if (a.created_at < cutoff) this.alerts.delete(id);
+    this.alertLog.splice(0, this.alertLog.length, ...this.alertLog.filter((l) => l.t >= cutoff));
+    this.events = this.events.filter((e) => e.t >= cutoff);
+    return gone;
   }
 
-  // ---- alerts -------------------------------------------------------------------
-
-  /** Persists the alert's current state and appends the transition to the log (plan-v2 §7.1). */
   saveAlert(a: Alert): void {
-    const t = a.resolved_at ?? a.acked_at ?? a.opened_at ?? a.created_at;
-    this.upsertAlert.run(a.id, a.created_at, a.state, JSON.stringify(a));
-    this.insertLog.run(a.id, a.state, t, a.config_hash);
+    this.alerts.set(a.id, structuredClone(a));
+    this.alertLog.push({ alert_id: a.id, state: a.state, t: transitionTime(a), config_hash: a.config_hash });
   }
 
-  loadAlerts(limit = 500): Alert[] {
-    return (this.selectAlerts.all(limit) as { json: string }[]).map((r) => JSON.parse(r.json) as Alert);
+  async loadAlerts(limit = 500): Promise<Alert[]> {
+    return [...this.alerts.values()].sort((a, b) => b.created_at - a.created_at).slice(0, limit).map((a) => structuredClone(a));
   }
 
-  close(): void {
-    this.db.close();
+  addEvent(e: StoreEvent): void {
+    this.events.push(structuredClone(e));
   }
+
+  async queryEvents(from: number, to: number, kind?: EventKind): Promise<StoreEvent[]> {
+    return this.events.filter((e) => e.t >= from && e.t <= to && (!kind || e.kind === kind)).sort((a, b) => a.t - b.t);
+  }
+
+  async close(): Promise<void> {}
 }

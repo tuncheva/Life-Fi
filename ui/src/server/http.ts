@@ -146,6 +146,11 @@ function trustCookie(req: Request): string | undefined {
   return undefined;
 }
 
+/** The PIN header is right, or the browser holds the trust cookie. Does not count wrong PINs (for reads). */
+export function trusted(ctx: AppContext, req: Request): boolean {
+  return pinOk(ctx, req) || ctx.settings.checkTrust(trustCookie(req));
+}
+
 /**
  * Gives a request whose PIN was accepted the trust cookie (PinLimiter), unless it already
  * holds the current one. Call it after the handler ran, so a PIN change hands out the new one.

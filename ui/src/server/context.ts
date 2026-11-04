@@ -4,6 +4,7 @@ import type { AlertManager } from "./alerts";
 import type { Result } from "@/lib/contracts.gen";
 import type { EngineClient } from "./engine-client";
 import type { History } from "./history";
+import type { Store } from "./store";
 import type { ProfilesConfig } from "./profiles";
 import type { SettingsStore } from "./settings";
 import type { Watchdog } from "./watchdog";
@@ -89,6 +90,8 @@ export interface AppContext {
   alerts: AlertManager;
   watchdog: Watchdog;
   history: History;
+  /** Events, alerts and agent runs (Firestore or memory). */
+  store: Store;
   settings: SettingsStore;
   profiles: ProfilesConfig;
   state: AppState;

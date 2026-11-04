@@ -17,8 +17,8 @@ describe("isActive", () => {
 });
 
 describe("navigation model", () => {
-  it("main nav is Room, Insights, Alerts", () => {
-    expect(MAIN_NAV.map((h) => h.href)).toEqual(["/", "/model", "/alerts"]);
+  it("main nav is Room, Insights, Assistant, Events, Alerts", () => {
+    expect(MAIN_NAV.map((h) => h.href)).toEqual(["/", "/model", "/assistant", "/events", "/alerts"]);
     expect(MAIN_NAV.find((h) => h.href === "/model")?.label).toBe("Insights");
   });
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Result } from "../src/lib/contracts.gen";
 import { shareText, withBucketGaps, type VitalsBucket } from "../src/lib/vitals-history";
 import { History } from "../src/server/history";
-import { Store, type VitalsRow } from "../src/server/store";
+import { MemoryStore, type VitalsRow } from "../src/server/store";
 import { MIN_READINGS, parseVitalsQuery, quantile, summarize } from "../src/server/vitals-history";
 
 const NOW = 1_767_225_600_000;
@@ -134,29 +134,27 @@ describe("History.add (heart)", () => {
       ...(heart === undefined ? {} : { heart }),
     }) as unknown as Result;
 
-  const stored = (heart: unknown, storeVitals = true) => {
-    const s = new Store(":memory:");
+  const stored = async (heart: unknown, storeVitals = true) => {
+    const s = new MemoryStore();
     new History(s).add(result(heart), storeVitals);
-    const row = s.queryHistory(0, 10_000)[0]!;
-    s.close();
-    return row;
+    return (await s.queryHistory(0, 10_000))[0]!;
   };
 
-  it("stores nothing vital when the profile says no", () => {
-    expect(stored({ bpm: 60, valid: true, confidence: 0.5 }, false)).toMatchObject({ breathing_bpm: null, breathing_valid: null, heart_bpm: null, heart_valid: null });
+  it("stores nothing vital when the profile says no", async () => {
+    expect(await stored({ bpm: 60, valid: true, confidence: 0.5 }, false)).toMatchObject({ breathing_bpm: null, breathing_valid: null, heart_bpm: null, heart_valid: null });
   });
 
-  it("no heart in the result → heart null", () => {
-    expect(stored(undefined)).toMatchObject({ breathing_bpm: 14, heart_bpm: null, heart_valid: null });
-    expect(stored(null)).toMatchObject({ heart_bpm: null, heart_valid: null });
+  it("no heart in the result → heart null", async () => {
+    expect(await stored(undefined)).toMatchObject({ breathing_bpm: 14, heart_bpm: null, heart_valid: null });
+    expect(await stored(null)).toMatchObject({ heart_bpm: null, heart_valid: null });
   });
 
-  it("an invalid heart keeps the flag but not the number", () => {
-    expect(stored({ bpm: 70, valid: false, confidence: 0.1 })).toMatchObject({ heart_bpm: null, heart_valid: false });
+  it("an invalid heart keeps the flag but not the number", async () => {
+    expect(await stored({ bpm: 70, valid: false, confidence: 0.1 })).toMatchObject({ heart_bpm: null, heart_valid: false });
   });
 
-  it("a valid heart is stored", () => {
-    expect(stored({ bpm: 61.5, valid: true, confidence: 0.6 })).toMatchObject({ t: 5_000, heart_bpm: 61.5, heart_valid: true });
+  it("a valid heart is stored", async () => {
+    expect(await stored({ bpm: 61.5, valid: true, confidence: 0.6 })).toMatchObject({ t: 5_000, heart_bpm: 61.5, heart_valid: true });
   });
 });
 

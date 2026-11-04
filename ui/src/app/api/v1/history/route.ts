@@ -3,7 +3,7 @@ import { fail, read } from "@/server/http";
 
 export const dynamic = "force-dynamic";
 
-export const GET = read((ctx, req) => {
+export const GET = read(async (ctx, req) => {
   const q = new URL(req.url).searchParams;
   const to = q.get("to") ? Number(q.get("to")) : Date.now();
   const from = q.get("from") ? Number(q.get("from")) : to - 24 * 3600 * 1000;
@@ -16,5 +16,5 @@ export const GET = read((ctx, req) => {
     if (bad) return fail(400, "bad_request", `unknown field '${bad}'`);
     fields = list as HistoryField[];
   }
-  return { rows: ctx.history.query(from, to, fields) };
+  return { rows: await ctx.history.query(from, to, fields) };
 });

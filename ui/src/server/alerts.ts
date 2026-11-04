@@ -101,6 +101,11 @@ export class AlertManager extends EventEmitter<AlertManagerEvents> {
     return restored;
   }
 
+  /** New ids start above `n` (used when saved alerts could not be loaded, so they are never overwritten). */
+  reserveIds(n: number): void {
+    if (n > this.seq) this.seq = n;
+  }
+
   list(states?: AlertState[]): Alert[] {
     const all = [...this.alerts.values()].sort((a, b) => b.created_at - a.created_at);
     return states ? all.filter((a) => states.includes(a.state)) : all;

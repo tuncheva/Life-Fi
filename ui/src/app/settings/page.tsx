@@ -9,6 +9,7 @@ import { useLiveSlow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
 import { changedSettings, TOPIC_MIN, topicCheck } from "@/lib/notify";
 import { calibrationText, parseWholeNumber, PROFILE_TEXT } from "@/lib/words";
+import { DataAssistantCard } from "@/components/DataAssistantCard";
 import { Card, Field, Notice, PageHeader, Pill, Skeleton, btn, inputCls, inputRowCls } from "@/components/ui";
 
 function randomTopic(): string {
@@ -366,6 +367,8 @@ export default function SettingsPage() {
           </dl>
         )}
       </Card>
+
+      <DataAssistantCard className="md:col-span-2" />
 
       {(dirty || msg?.where === "save") && (
         <div role="region" aria-label="Unsaved changes" className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:col-span-2">

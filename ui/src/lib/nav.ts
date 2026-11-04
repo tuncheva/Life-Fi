@@ -5,10 +5,12 @@ import type { IconName } from "@/components/ui";
 
 export type NavItem = { href: string; label: string; hint?: string; icon?: IconName };
 
-/** For everyone living with the sensor. Order: Room, Insights, Alerts. */
+/** For everyone living with the sensor. Order: Room, Insights, Assistant, Events, Alerts. */
 export const MAIN_NAV: NavItem[] = [
   { href: "/", label: "Room", icon: "empty" },
   { href: "/model", label: "Insights", icon: "chart" },
+  { href: "/assistant", label: "Assistant", icon: "question" },
+  { href: "/events", label: "Events", icon: "clock" },
   { href: "/alerts", label: "Alerts", icon: "bell" },
 ];
 

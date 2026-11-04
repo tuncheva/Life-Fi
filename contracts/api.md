@@ -82,6 +82,15 @@ Mark events: `sit_down`, `stand_up`, `lie_down`, `get_up`, `fall`, `bed_exit`, `
 | PUT | `/settings` | partial `Settings` (+ `pin` to change it, 4–8 digits) | `Settings` |
 | POST | `/settings/test-notification` | `{}` | `{"sent": true}`, or `502` `{"error":"notify"}` when ntfy refused or no topic is set |
 | GET | `/live` | — | Server-Sent Events, messages below |
+| GET | `/events?hours=&kind=` | — | `{"from", "to", "total", "events": [StoredEvent]}`, newest first, at most 500; `hours` 1..720 (default 24), `kind` one of `presence,posture,count,agent`. `StoredEvent` = `{"t", "kind", "from"?, "to"?, "data"?}` (agent runs: `data` holds mode, question, answer, provider, model, tools, ms, ok) |
+| GET | `/agent/status` | — | `{"configured", "provider": "anthropic" \| "gemini", "model", "store": "firestore" \| "memory", "firebase": {"project", "prefix", "emulator"} \| null}` (never a key) |
+| POST | `/agent/summary` | `{"hours": 24}` (1..168) | `AgentReply` `{"text", "provider", "model", "tool_calls"}` |
+| POST | `/agent/explain` | `{"alert_id": "a-0003"}` | `AgentReply`; `404` `agent_not_found` for an unknown alert |
+| POST | `/agent/chat` | `{"messages": [{"role": "user" \| "assistant", "text"}]}` (last 10 kept, last must be `user`) | `AgentReply` |
+
+Agent errors (track FB): `503 agent_not_configured` (no key for `LLM_PROVIDER`), `409 agent_busy`
+(one run at a time), `502 agent_failed` (provider error or 30 s timeout). The agent reads only derived
+values (status, alerts, state-change events, vitals summary); every run is stored as an `agent` event.
 
 ### `Status`
 
@@ -123,7 +132,7 @@ Every field is always present; unknown is `null`. `board.source` is
 `board.ok` = engine connected, a result < 5 s old and the watchdog not offline.
 `calibration.state` is `none | running | ok | stale | null` (from the latest
 result, else the engine status); `ok` = `state == "ok"`. `storage.db_bytes` is
-the SQLite file plus its WAL; `storage.ok` = the data dir is writable and
+the pre-track-FB SQLite file if one is still on disk, else 0 (events now live in Firestore); `storage.ok` = the data dir is writable and
 `free_bytes` is unknown or > 500 MB.
 Top level: `ok` = `engine.ok && storage.ok` (the server can do its job);
 `ready` = `ok && board.ok` (people are being sensed). Calibration never fails
