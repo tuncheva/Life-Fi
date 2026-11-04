@@ -56,6 +56,10 @@ export class RingBuffer<T> {
   get length(): number {
     return this.count;
   }
+  /** The newest entry, undefined when empty. */
+  last(): T | undefined {
+    return this.count ? this.buf[(this.head - 1 + this.capacity) % this.capacity] : undefined;
+  }
   /** Oldest → newest. */
   toArray(): T[] {
     const out: T[] = new Array(this.count);
@@ -137,6 +141,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [buffers] = useState<LiveBuffers>(() => ({ wave: new RingBuffer(WAVE_HZ * WAVE_SECONDS), csi: new RingBuffer(CSI_ROWS), signals: new RingBuffer(SIGNAL_SECONDS / TICK_S), trend: new RingBuffer(TREND_CAPACITY), version: 0 }));
   const lastBoot = useRef<number | null>(null);
   const lastSource = useRef<Result["source"] | null>(null);
+  // Newest seed time: live results up to it are already in the ring (they were in flight while
+  // /recent answered), so they are skipped once; the first newer one ends the guard.
+  const seededUpTo = useRef(-Infinity);
 
   const refreshAlerts = async () => {
     try {
@@ -170,11 +177,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         setConnected(true);
         void refreshAlerts();
         getStatus().then(setStatus).catch(() => {});
-        // The server keeps the last 15 min in memory: start the trend charts filled (mount and every reconnect).
-        api<RecentReply>("/recent?minutes=15")
+        // The server keeps the last 15 min in memory: start the trend charts filled on mount, and on a
+        // reconnect fetch only what came after the newest sample this page has (the outage).
+        const have = buffers.trend.last()?.t;
+        api<RecentReply>(`/recent?minutes=15${have !== undefined ? `&since=${have}` : ""}`)
           .then((rep) => {
             if (lastBoot.current !== null && (rep.boot_id !== lastBoot.current || rep.source !== lastSource.current)) return;
+            if (!rep.samples.length) return;
             const merged = mergeSeed(rep.samples, buffers.trend.toArray());
+            seededUpTo.current = merged[merged.length - 1]?.t ?? -Infinity;
             // remember whose samples these are, so a first live result from another boot clears them
             if (lastBoot.current === null && rep.boot_id !== null && rep.source !== null) {
               lastBoot.current = rep.boot_id;
@@ -200,6 +211,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             buffers.csi.clear();
             buffers.signals.clear();
             buffers.trend.clear();
+            seededUpTo.current = -Infinity;
             lastHeld.current = false;
             setPositionHeldSince(null);
           }
@@ -228,7 +240,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             spot: pos?.spot ? { name: pos.spot.name, p: pos.spot.p, d: pos.spot.d_m, reliable: spotReliable(pos) } : null,
             R: pos ? pos.R_db : null,
           });
-          buffers.trend.push(trendSample(m));
+          if (m.ts > seededUpTo.current) {
+            seededUpTo.current = -Infinity;
+            buffers.trend.push(trendSample(m));
+          }
           buffers.version++;
           const ps = m.presence.state;
           if (serverPresence.current) {

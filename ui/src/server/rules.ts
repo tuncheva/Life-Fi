@@ -8,8 +8,10 @@ import type { AlertManager } from "./alerts";
 import type { Result } from "@/lib/contracts.gen";
 import { insideHours, minutesOfDayIn, type ProfileName, type ProfilesConfig } from "./profiles";
 
-/** Motion above this counts as "moved": the engine's presence motion threshold maps to 0.1 (engine/README.md). */
-export const MOTION_ON = 0.1;
+import { MOTION_ON } from "@/lib/vitals";
+
+/** Motion above this counts as "moved": the engine's presence motion threshold maps to 0.1 (lib/vitals.ts). */
+export { MOTION_ON };
 
 export class ServerRules {
   private lastMotionAt: number | null = null;

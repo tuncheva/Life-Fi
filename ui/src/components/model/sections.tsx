@@ -6,8 +6,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useLiveSlow, useNow, useResult } from "@/lib/live";
 import { minutesText, secondsWhere, spanSeconds, trendSnapshot, trendStats, windowed, windowText, type TrendSample } from "@/lib/model";
-import { occupancyOf, reasonsOf } from "@/lib/room";
-import { BREATH_TYPICAL } from "@/lib/vitals";
+import { occupancyOf, qualityOf, reasonsOf } from "@/lib/room";
+import { BREATH_TYPICAL, MOTION_ON, STILL_FOR_S } from "@/lib/vitals";
 import { activityText, clock, reasonLinks } from "@/lib/words";
 import { CsiHeatmap, DetectorCard, HealthCard } from "../Cards";
 import { CsiSurface3DLazy, Room3DLazy } from "../LiveViews";
@@ -130,8 +130,10 @@ const HEART_SPEC: TrendChartSpec = {
 };
 
 export function HeartSummary() {
+  const r = useResult();
   const h = useVitals().heart;
-  if (!h) return <>Not measured</>;
+  if (!r) return null;
+  if (!h) return <>Not estimated by this engine</>;
   return <>{h.value ? `${h.value} beats/min` : "No reading"}</>;
 }
 
@@ -140,6 +142,8 @@ export function HeartBody({ windowS }: { windowS: number }) {
   const rows = useTrendRows(windowS);
   // from the ring, not the 2 Hz result, so the chart does not re-render twice a second
   const on = rows.some((s) => s.heartOn);
+  // "not estimated" only when there are results and none carries `heart`; no results is just no data
+  const none = !rows.length ? NO_DATA : null;
   const st = trendStats(rows, (s) => s.heart);
   return (
     <>
@@ -147,13 +151,15 @@ export function HeartBody({ windowS }: { windowS: number }) {
         <ExperimentalPill />
       </div>
       <Tells>Roughly what heart rate does the signal suggest? One Wi-Fi link is near the limit of what it can pick up, so read this as a rough trend, never as a measurement.</Tells>
-      {on ? (
+      {none ? (
+        <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted">{none}</p>
+      ) : on ? (
         <>
           <TrendChart buffers={buffers} spec={HEART_SPEC} windowS={windowS} label={`Experimental heart rate over the last ${windowText(windowS)}`} emptyText="No reading in this window" />
           <Stat>{st.read === 0 ? <NoReading heart /> : `Read ${pct(st.share)} of the time · median ${Math.round(st.median!)} beats/min`}</Stat>
         </>
       ) : (
-        <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted">This engine does not estimate heart rate yet. When it does, the trend appears here.</p>
+        <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted">Heart rate is not estimated by this engine. When it is, the trend appears here.</p>
       )}
       <p className="mt-1 text-xs text-subtle">Experimental. {HEART_CAPTION}</p>
     </>
@@ -162,11 +168,12 @@ export function HeartBody({ windowS }: { windowS: number }) {
 
 // ---- 4. Movement ----
 
-export const STILL_BELOW = 0.2;
+/** The engine's own motion gate for vital signs (lib/vitals.ts MOTION_ON), not a separate UI threshold. */
+export const STILL_BELOW = MOTION_ON;
 const MOVEMENT_SPEC: TrendChartSpec = {
   series: [{ label: "Motion", color: "--chart-motion", pick: (s) => (s.presence === "empty" ? null : s.motion), scale: "m" }],
   axes: [{ scale: "m", range: [0, 1], digits: 1 }],
-  guides: [{ scale: "m", value: STILL_BELOW, label: "Above this, breathing and heart rate can't be read" }],
+  guides: [{ scale: "m", value: STILL_BELOW, label: "Above this counts as moving: vital signs pause" }],
 };
 
 export function MovementSummary() {
@@ -179,10 +186,10 @@ export function MovementBody({ windowS }: { windowS: number }) {
   const { buffers } = useLiveSlow();
   const rows = useTrendRows(windowS);
   const anyone = rows.some((s) => s.presence !== "empty");
-  const still = secondsWhere(rows, (s) => s.presence === "present" && s.motion < STILL_BELOW);
+  const still = secondsWhere(rows, (s) => s.presence === "present" && s.motion <= STILL_BELOW);
   return (
     <>
-      <Tells>How much were they moving, and is that why vital signs were missing? Breathing and heart rate need about 30 s below the dashed line.</Tells>
+      <Tells>{`How much were they moving, and is that why vital signs were missing? Breathing needs about ${STILL_FOR_S.breath} s below the dashed line, heart rate about ${STILL_FOR_S.heart} s.`}</Tells>
       <TrendChart buffers={buffers} spec={MOVEMENT_SPEC} windowS={windowS} label={`Movement over the last ${windowText(windowS)}`} emptyText="Nobody in range" />
       <Stat>{!rows.length ? NO_DATA : anyone ? `Still ${minutesText(still)} ${windowPhrase(rows, windowS)}` : "Nobody in range"}</Stat>
     </>
@@ -193,7 +200,9 @@ export function MovementBody({ windowS }: { windowS: number }) {
 
 const WHERE_SPEC: TrendChartSpec = {
   series: [
-    { label: "Distance", color: "--chart-distance", pick: (s) => s.d, scale: "d", width: 2.5 },
+    { label: "Distance", color: "--chart-distance", pick: (s) => (s.lowQuality ? null : s.d), scale: "d", width: 2.5 },
+    // a rough-guess distance (quality not "medium", lib/room.ts) is drawn thin and dashed, never like a good one
+    { label: "Distance, rough guess", color: "--chart-distance", pick: (s) => (s.lowQuality ? s.d : null), scale: "d", dash: [2, 3], width: 1.5 },
     { label: "Taught spot", color: "--chart-deviation", pick: (s) => s.spotD, scale: "d", dash: [6, 4], width: 2 },
   ],
   axes: [{ scale: "d", range: [0, 6], unit: " m" }],
@@ -202,18 +211,19 @@ const WHERE_SPEC: TrendChartSpec = {
 
 const zoneOf = (d: number) => (d < 1.5 ? "near, under 1.5 m" : d <= 3.5 ? "middle, 1.5–3.5 m" : "far, over 3.5 m");
 
+/** The header describes this moment only, and says so: the body below covers the whole window. */
 export function WhereSummary() {
   const r = useResult();
   const p = r?.position;
   if (!r) return null;
-  if (!p?.valid || p.d_m === null) return <>No distance</>;
-  return <>{`about ${p.d_m.toFixed(1)} m${p.quality === "low" ? " · rough" : ""}`}</>;
+  if (!p?.valid || p.d_m === null) return <>No distance right now</>;
+  return <>{qualityOf(p) === "medium" ? `about ${p.d_m.toFixed(1)} m now` : `rough guess, about ${p.d_m.toFixed(1)} m`}</>;
 }
 
 /** Why the distance is rough, with a link to fix each reason. */
 function WhyRough() {
   const r = useResult();
-  const reasons = r?.position?.quality === "low" ? reasonLinks(reasonsOf(r.position)) : [];
+  const reasons = r?.position?.valid && qualityOf(r.position) !== "medium" ? reasonLinks(reasonsOf(r.position)) : [];
   if (!reasons.length) return null;
   return (
     <ul className="mt-2 space-y-1 text-sm text-muted">
@@ -234,6 +244,8 @@ export function WhereBody({ windowS }: { windowS: number }) {
   const { buffers } = useLiveSlow();
   const rows = useTrendRows(windowS);
   const st = trendStats(rows, (s) => s.d);
+  // same rule as the room view: only "medium" distances are more than a rough guess
+  const rough = trendStats(rows, (s) => (s.lowQuality ? s.d : null)).read * 2 >= st.read;
   const spotOn = rows.some((s) => s.spotOn);
   const [show3d, setShow3d] = useState(false);
   const [src, setSrc] = useState<PositionSource>("distance");
@@ -241,8 +253,8 @@ export function WhereBody({ windowS }: { windowS: number }) {
     <>
       <Tells>How far from the sensor, and does the taught-spot model agree? One link gives a distance, not a direction. The shaded band is the uncertainty; the dashed line is the distance of the spot the model picked, when it is reliable for this room.</Tells>
       <TrendChart buffers={buffers} spec={WHERE_SPEC} windowS={windowS} label={`Distance from the sensor and the taught spot over the last ${windowText(windowS)}`} emptyText="No distance yet: needs movement and about 10 s of packets" />
-      <Legend items={[["--chart-distance", "Distance (± uncertainty)"], ["--chart-deviation", "Taught spot (dashed)"]]} />
-      <Stat>{!rows.length ? NO_DATA : st.median === null ? "No distance yet: needs movement and about 10 s of packets" : `Mostly ${zoneOf(st.median)} · median ${st.median.toFixed(1)} m`}</Stat>
+      <Legend items={[["--chart-distance", "Distance (± uncertainty; thin dotted = rough guess)"], ["--chart-deviation", "Taught spot (dashed)"]]} />
+      <Stat>{!rows.length ? NO_DATA : st.median === null ? "No distance yet: needs movement and about 10 s of packets" : rough ? `Rough guess only: mostly ${zoneOf(st.median)}` : `Mostly ${zoneOf(st.median)} · median ${st.median.toFixed(1)} m`}</Stat>
       {rows.length > 0 && !spotOn && (
         <p className="mt-1 text-sm text-muted">
           No taught-spot model loaded.{" "}
@@ -296,10 +308,12 @@ const HEALTH_SPEC: TrendChartSpec = {
   ],
 };
 
+const packetsText = (hz: number) => `${Math.round(hz)} ${Math.round(hz) === 1 ? "packet" : "packets"}/s`;
+
 export function HealthSummary() {
   const r = useResult();
   if (!r) return <>No data</>;
-  return <>{`${r.health.rate_hz.toFixed(0)} packets/s`}</>;
+  return <>{packetsText(r.health.rate_hz)}</>;
 }
 
 export function HealthBody({ windowS }: { windowS: number }) {
@@ -313,7 +327,7 @@ export function HealthBody({ windowS }: { windowS: number }) {
         <Tells>Is the signal good enough to trust the rest? Everything above needs a steady stream of Wi-Fi packets: 80 per second or more is good, under 50 is poor. The dashed line is the signal strength (RSSI, right axis, dBm).</Tells>
         <TrendChart buffers={buffers} spec={HEALTH_SPEC} windowS={windowS} label={`Packet rate and signal strength over the last ${windowText(windowS)}`} emptyText="No data from the engine" />
         <Legend items={[["--chart-rate", "Packets per second"], ["--chart-rssi", "Signal strength (dBm, dashed)"]]} />
-        <Stat>{!rows.length ? NO_DATA : `Avg ${Math.round(avg((s) => s.rateHz))} packets/s · loss ${(avg((s) => s.lossUdp) * 100).toFixed(1)} %${poor >= 1 ? ` · poor for ${minutesText(poor)}` : ""}`}</Stat>
+        <Stat>{!rows.length ? NO_DATA : `Avg ${packetsText(avg((s) => s.rateHz))} · loss ${(avg((s) => s.lossUdp) * 100).toFixed(1)} %${poor >= 1 ? ` · poor for ${minutesText(poor)}` : ""}`}</Stat>
       </div>
       <HealthCard />
     </div>

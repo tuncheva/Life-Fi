@@ -3,6 +3,7 @@
 // the server (server/recent.ts, GET /api/v1/recent) so a reload starts with the charts filled.
 // Pure and without "use client": the server ring and the route import it too.
 import type { Result } from "./contracts.gen";
+import { qualityOf } from "./room";
 import { BREATH_RANGE, HEART_RANGE, inRange } from "./vitals";
 
 /** 15 min at one result per 0.5 s. */
@@ -26,7 +27,7 @@ export interface TrendSample {
   /** position.d_m / d_sd, only while position.valid. */
   d: number | null;
   sd: number | null;
-  /** position.quality === "low". */
+  /** The distance is only a rough guess: qualityOf() is not "medium" (a missing quality reads as low). */
   lowQuality: boolean;
   /** The taught spot's distance, only when the engine rates the spot model reliable. */
   spotD: number | null;
@@ -60,7 +61,7 @@ export function trendSample(r: Result): TrendSample {
     motion: num(r.motion) ?? 0,
     d: pos?.valid ? num(pos.d_m) : null,
     sd: pos?.valid ? num(pos.d_sd) : null,
-    lowQuality: pos?.quality === "low",
+    lowQuality: !!pos?.valid && qualityOf(pos) !== "medium",
     spotD: spot && spot.reliable === true ? num(spot.d_m) : null,
     spotOn: !!spot,
     rateHz: num(r.health?.rate_hz) ?? 0,
@@ -146,12 +147,26 @@ export function minutesText(seconds: number): string {
 }
 
 /**
- * The server's seed, then the live samples: seed samples older than the first live one, so a
- * reconnect never duplicates points, capped to the newest `cap`.
+ * The server's seed and the live samples merged by time (both oldest first): every seed
+ * sample whose time the live ring does not have, so a reconnect fills the outage gap
+ * without duplicating a point (on equal t the live sample wins), capped to the newest `cap`.
  */
 export function mergeSeed(seed: readonly TrendSample[], live: readonly TrendSample[], cap = TREND_CAPACITY): TrendSample[] {
-  const first = live[0]?.t ?? Infinity;
-  const out = seed.filter((s) => s.t < first).concat(live);
+  const out: TrendSample[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < seed.length || j < live.length) {
+    const a = seed[i];
+    const b = live[j];
+    if (b && (!a || b.t <= a.t)) {
+      if (a && a.t === b.t) i++;
+      out.push(b);
+      j++;
+    } else {
+      out.push(a!);
+      i++;
+    }
+  }
   return out.length > cap ? out.slice(out.length - cap) : out;
 }
 

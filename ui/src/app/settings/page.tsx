@@ -7,6 +7,7 @@ import Link from "next/link";
 import { API_BASE, getDeviceName, getPin, getSettings, setDeviceName, setPin, setProfile, testNotification, updateSettings, type ProfileName, type PublicSettings } from "@/lib/api";
 import { useLiveSlow } from "@/lib/live";
 import { friendlyError, usePin } from "@/lib/pin";
+import { changedSettings, TOPIC_MIN, topicCheck } from "@/lib/notify";
 import { calibrationText, parseWholeNumber, PROFILE_TEXT } from "@/lib/words";
 import { Card, Field, Notice, PageHeader, Pill, Skeleton, btn, inputCls, inputRowCls } from "@/components/ui";
 
@@ -67,7 +68,8 @@ export default function SettingsPage() {
   const esc = parseWholeNumber(escText, 0, 86400);
   const ret = parseWholeNumber(retText, 1, 3650);
   const nameMissing = !!form && !form.room_name.trim();
-  const invalid = esc === null || ret === null || nameMissing;
+  const topic = form && saved ? topicCheck(form.notify.topic, saved.notify.topic) : "ok";
+  const invalid = esc === null || ret === null || nameMissing || topic === "refused";
   const dirty =
     !!form &&
     !!saved &&
@@ -113,14 +115,9 @@ export default function SettingsPage() {
     run(
       "save",
       async () => {
-        const r = await updateSettings({
-          notify: { ...form.notify, escalate_after_s: esc },
-          zone: form.zone,
-          dashboard_url: form.dashboard_url,
-          retention_days: ret,
-          room_name: form.room_name,
-          contact_phone: form.contact_phone,
-        });
+        // Only what changed here: the form was loaded once, and a field another device or the
+        // setup wizard changed meanwhile must not be put back to this page's old copy.
+        const r = await updateSettings(changedSettings(saved!, { ...form, notify: { ...form.notify, escalate_after_s: esc }, retention_days: ret }));
         applySaved(r);
         return r;
       },
@@ -236,9 +233,26 @@ export default function SettingsPage() {
               <li>Press &ldquo;Send test notification&rdquo; and check the phone.</li>
             </ol>
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Topic" hint="Secret, 20 or more characters.">
+              <Field
+                label="Topic"
+                htmlFor="settings-topic"
+                hint={`Secret, ${TOPIC_MIN} or more characters.`}
+                error={
+                  topic === "refused"
+                    ? `Use ${TOPIC_MIN} or more characters, or press generate.`
+                    : topic === "short" && `This topic is short enough to guess. It still works; press generate and save for a safer one.`
+                }
+              >
                 <div className="mt-1 flex gap-2">
-                  <input className={`${inputRowCls} font-mono`} value={form.notify.topic} onChange={(e) => setNotify({ topic: e.target.value })} placeholder="not set: no phone notifications" />
+                  <input
+                    id="settings-topic"
+                    aria-describedby={`settings-topic-hint${topic !== "ok" ? " settings-topic-error" : ""}`}
+                    aria-invalid={topic === "refused"}
+                    className={`${inputRowCls} font-mono`}
+                    value={form.notify.topic}
+                    onChange={(e) => setNotify({ topic: e.target.value })}
+                    placeholder="not set: no phone notifications"
+                  />
                   <button type="button" onClick={() => setNotify({ topic: randomTopic() })} className={btn.secondary}>
                     generate
                   </button>
@@ -254,9 +268,9 @@ export default function SettingsPage() {
               >
                 <input inputMode="numeric" className={inputCls} value={escText} onChange={(e) => setEscText(e.target.value)} aria-invalid={esc === null} />
               </Field>
-              <Field label="Dashboard address" hint="The notification opens it; acknowledge works on the same network.">
+              <Field label="Dashboard address" htmlFor="settings-dashboard-url" hint="The notification opens it; acknowledge works on the same network.">
                 <div className="mt-1 flex gap-2">
-                  <input className={inputRowCls} value={form.dashboard_url} onChange={(e) => set({ dashboard_url: e.target.value })} placeholder="http://192.168.1.10:8080" />
+                  <input id="settings-dashboard-url" aria-describedby="settings-dashboard-url-hint" className={inputRowCls} value={form.dashboard_url} onChange={(e) => set({ dashboard_url: e.target.value })} placeholder="http://192.168.1.10:8080" />
                   <button type="button" onClick={() => set({ dashboard_url: thisOrigin })} className={btn.secondary}>
                     this address
                   </button>

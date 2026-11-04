@@ -13,6 +13,7 @@ import { BreathingChart } from "../BreathingChart";
 import { useRoomStatus } from "../RoomView";
 import { Card, Pill, btn } from "../ui";
 import { Sparkline } from "./Sparkline";
+import { StaleDim } from "./StaleDim";
 
 const pickBreath = (s: TrendSample) => s.breath;
 const pickHeart = (s: TrendSample) => s.heart;
@@ -35,15 +36,18 @@ export function ExperimentalPill() {
   );
 }
 
+/** The number slot keeps its size with or without a number ("—"), and the reason is a small line under it, so the card does not jump. */
 function Reading({ v, big }: { v: VitalView; big: boolean }) {
-  if (v.value === null) return <p className={`font-semibold text-muted ${big ? "text-base" : "text-sm"}`}>{v.text}</p>;
+  const none = v.value === null;
   return (
     <>
       <p className="flex items-baseline gap-1.5">
-        <span className={`font-bold tabular-nums ${big ? "text-4xl" : "text-3xl"}`}>{v.value}</span>
+        <span className={`font-bold tabular-nums ${big ? "text-4xl" : "text-3xl"} ${none ? "text-subtle" : ""}`} aria-hidden={none || undefined}>
+          {none ? "—" : v.value}
+        </span>
         <span className="text-sm text-muted">{v.unit}</span>
       </p>
-      <p className="text-sm text-muted">{v.quality === "steady" ? "Steady reading" : "Rough reading"}</p>
+      <p className="text-sm text-muted">{none ? v.text : v.quality === "steady" ? "Steady reading" : "Rough reading"}</p>
     </>
   );
 }
@@ -54,8 +58,11 @@ function BreathNumber() {
 
 /** Whether the engine sends a heart estimate at all, then the number or reason. */
 function HeartColumn({ buffers }: { buffers: LiveBuffers }) {
-  const heart = useVitals().heart;
-  if (!heart) return <p className="text-sm text-muted">Heart rate: not measured by this engine yet</p>;
+  const result = useResult();
+  const vitals = useVitals();
+  // "not estimated" only when a result exists without `heart`; before any result it is just no reading yet
+  const heart = vitals.heart ?? (result ? null : { ...vitals.breath, unit: "beats/min" as const });
+  if (!heart) return <p className="text-sm text-muted">Heart rate is not estimated by this engine.</p>;
   return (
     <>
       <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
@@ -66,7 +73,9 @@ function HeartColumn({ buffers }: { buffers: LiveBuffers }) {
         <Reading v={heart} big={false} />
       </div>
       <div className="mt-2">
-        <Sparkline buffers={buffers} pick={pickHeart} range={HEART_SPARK} color="--chart-heart" label="Heart rate, last 10 minutes" />
+        <StaleDim>
+          <Sparkline buffers={buffers} pick={pickHeart} range={HEART_SPARK} color="--chart-heart" label="Heart rate, last 10 minutes" />
+        </StaleDim>
       </div>
       <p className="mt-1 text-xs text-subtle">{HEART_CAPTION}</p>
     </>
@@ -122,7 +131,9 @@ export function VitalsCard({ trendsLink = true, className = "" }: { trendsLink?:
             <BreathNumber />
           </div>
           <div className="mt-2">
-            <Sparkline buffers={buffers} pick={pickBreath} range={BREATH_SPARK} color="--chart-breath" label="Breathing rate, last 10 minutes" />
+            <StaleDim>
+              <Sparkline buffers={buffers} pick={pickBreath} range={BREATH_SPARK} color="--chart-breath" label="Breathing rate, last 10 minutes" />
+            </StaleDim>
           </div>
           <p className="mt-1 text-xs text-subtle">Last 10 min</p>
         </div>

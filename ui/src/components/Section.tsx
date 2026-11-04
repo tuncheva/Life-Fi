@@ -1,6 +1,7 @@
 "use client";
 // One collapsible section (docs/overnight/2026-11-04/plans/M-dashboard-model.md §6): a header
-// button with aria-expanded / aria-controls, open state remembered per browser and section,
+// button with aria-expanded / aria-controls (only while the body exists; the <section> is the
+// one named region), open state remembered per browser and section,
 // and the body mounted only while open, so closed sections run no chart loops and load no
 // three.js. A live one-line `summary` sits in the header so a closed section still says
 // something; it is aria-hidden there (a 2 Hz button name would be noisy for screen readers).
@@ -51,7 +52,7 @@ export function Section({
           type="button"
           id={hId}
           aria-expanded={open}
-          aria-controls={bodyId}
+          aria-controls={open ? bodyId : undefined}
           onClick={toggle}
           className="flex min-h-11 w-full items-center gap-3 rounded-card px-4 py-3 text-left sm:px-5"
         >
@@ -66,7 +67,7 @@ export function Section({
         </button>
       </h2>
       {open && (
-        <div id={bodyId} role="region" aria-labelledby={hId} className="border-t border-line p-4 sm:p-5">
+        <div id={bodyId} className="border-t border-line p-4 sm:p-5">
           {children}
         </div>
       )}

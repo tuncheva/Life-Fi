@@ -9,6 +9,16 @@ import type { Result } from "./contracts.gen";
 export const BREATH_RANGE: readonly [number, number] = [4, 60];
 export const HEART_RANGE: readonly [number, number] = [35, 200];
 
+/**
+ * Motion level (0..1) above which the engine counts someone as moving and stops reading
+ * vitals: `presence.motion_level` maps the engine's motion threshold `m_on` to 0.1
+ * (engine/lifefi/presence.py, rules.yaml `motion_span`). The server rules use the same value.
+ */
+export const MOTION_ON = 0.1;
+
+/** Stillness the engine needs before a reading (rules.yaml `breathing.low_motion_s`, `heart.min_still_s`). */
+export const STILL_FOR_S = { breath: 20, heart: 30 } as const;
+
 export type VitalReason = "warming_up" | "no_person" | "motion" | "noise" | "unstable";
 
 export interface VitalView {
@@ -32,14 +42,22 @@ export interface Vitals {
 const REASON_TEXT: Record<VitalReason, string> = {
   warming_up: "Starting up: needs about 30 s of signal",
   no_person: "Nobody to measure",
-  motion: "Can't be read while they move: needs about 30 s of stillness",
+  // the engine's "motion" means "moved within the last 20-30 s", not "moving now"
+  motion: "Moved recently: waiting for about 30 s of stillness",
   noise: "Signal too weak to pick out a rate",
   unstable: "Readings disagree: waiting for a steady one",
 };
 
-export function reasonText(reason: VitalReason): string {
-  return REASON_TEXT[reason] ?? "No steady reading right now";
+/** Plain words for an engine reason; `heart` picks the heart's longer stillness wait. */
+export function reasonText(reason: VitalReason, heart = true): string {
+  if (reason === "motion") return `Moved recently: waiting for about ${heart ? STILL_FOR_S.heart : STILL_FOR_S.breath} s of stillness`;
+  return REASON_TEXT[reason] ?? NO_READING_TEXT;
 }
+
+/** The neutral line when nothing says why there is no number. */
+export const NO_READING_TEXT = "No reading yet";
+/** Only when the current motion level is above the engine's gate (an older engine without reasons). */
+export const MOVING_TEXT = "Can't be read while they move";
 
 export const BLIND_TEXT = "Not available while the room can't be seen";
 export const SEVERAL_TEXT = "Can't be read with several people in the room";
@@ -66,11 +84,11 @@ function one(result: Result, raw: Raw, unit: VitalView["unit"], range: readonly 
     return { value: Math.round(raw.bpm).toFixed(0), unit, state: "reading", quality: steady ? "steady" : "rough", text: what };
   }
   if (raw.valid && raw.bpm !== null) return none(OUT_OF_RANGE_TEXT);
-  if (isReason(raw.reason)) return none(reasonText(raw.reason));
-  // An older engine (no reason): derive one from what the result does say.
+  if (isReason(raw.reason)) return none(reasonText(raw.reason, heart));
+  // An older engine (no reason): derive one only from what the result says right now.
   if (result.presence.state === "empty") return none(REASON_TEXT.no_person);
-  if (result.motion >= 0.2) return none(REASON_TEXT.motion);
-  return none("No steady reading right now");
+  if (result.motion > MOTION_ON) return none(MOVING_TEXT);
+  return none(NO_READING_TEXT);
 }
 
 /** Both vitals for one result; `blind` from useRoomStatus(). */

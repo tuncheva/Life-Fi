@@ -95,7 +95,42 @@ export function PageHeader({ title, description, badge, actions, className = "" 
  * A labelled form control. Hint and error sit inside the <label>, so they are part
  * of the control's accessible name. Callers set aria-invalid on the input.
  */
-export function Field({ label, hint, error, children, className = "" }: { label: ReactNode; hint?: ReactNode; error?: ReactNode; children: ReactNode; className?: string }) {
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+  className = "",
+  htmlFor,
+}: {
+  label: ReactNode;
+  hint?: ReactNode;
+  error?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  /**
+   * The input's id. With it the label is only the label text, so buttons in the same row stay
+   * out of the input's accessible name; give the input aria-describedby `${htmlFor}-hint`.
+   */
+  htmlFor?: string;
+}) {
+  if (htmlFor)
+    return (
+      <div className={`block text-sm font-medium ${className}`}>
+        <label htmlFor={htmlFor}>{label}</label>
+        {children}
+        {hint && (
+          <span id={`${htmlFor}-hint`} className="mt-1 block text-xs font-normal text-muted">
+            {hint}
+          </span>
+        )}
+        {error && (
+          <span id={`${htmlFor}-error`} className="mt-1 block text-xs font-normal text-danger" aria-live="polite">
+            {error}
+          </span>
+        )}
+      </div>
+    );
   return (
     <label className={`block text-sm font-medium ${className}`}>
       {label}

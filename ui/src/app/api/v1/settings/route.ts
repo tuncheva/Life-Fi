@@ -1,6 +1,7 @@
 import { fail, inRange, read, readBody, write } from "@/server/http";
 import { broadcastStatus } from "@/server/recordings";
 import { parseRoom } from "@/server/settings";
+import { TOPIC_MIN, topicCheck } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,9 @@ export const GET = read((ctx) => ctx.settings.public());
 export const PUT = write(async (ctx, req) => {
   const body = await readBody(req);
   const patch: Record<string, unknown> = {};
+  // Checked before anything is applied. A new topic must be unguessable; the short one an install already has keeps working.
+  const topic = (body.notify as { topic?: unknown } | undefined)?.topic;
+  if (typeof topic === "string" && topicCheck(topic, ctx.settings.value.notify.topic ?? "") === "refused") return fail(400, "bad_request", `topic must be ${TOPIC_MIN} or more characters`);
   if (typeof body.pin === "string") {
     if (!/^\d{4,8}$/.test(body.pin)) return fail(400, "bad_request", "pin must be 4 to 8 digits");
     patch.pin = body.pin;

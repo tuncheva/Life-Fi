@@ -5,6 +5,7 @@
 import type { Result } from "./contracts.gen";
 import type { Alert, ProfileName, Status } from "./api";
 import { distanceRange, occupancyOf, REASON_STEP, type QualityReason, type WhereState } from "./room";
+import { MOTION_ON, MOVING_TEXT, NO_READING_TEXT, reasonText } from "./vitals";
 
 /** The room's name comes from the server settings; "Room 1" until the status has arrived. */
 export function roomName(status: Status | null | undefined): string {
@@ -182,8 +183,10 @@ export function breathingText(result: Result): { value: string | null; text: str
   if (result.presence.state === "empty") return { value: null, text: "Nobody to measure" };
   if (b.valid && b.bpm !== null) return { value: b.bpm.toFixed(0), text: b.confidence >= 0.8 ? "breaths a minute · steady reading" : "breaths a minute · rough reading" };
   if (result.count?.value === 2) return { value: null, text: "Can't be read with several people in the room" };
-  if (result.motion >= 0.2) return { value: null, text: "Can't be read while they move" };
-  return { value: null, text: "No steady reading right now" };
+  const reason = result.breathing.reason;
+  if (reason) return { value: null, text: reasonText(reason, false) };
+  if (result.motion > MOTION_ON) return { value: null, text: MOVING_TEXT };
+  return { value: null, text: NO_READING_TEXT };
 }
 
 /** The movement model's classes (results.schema.json activityLabel), in words. */

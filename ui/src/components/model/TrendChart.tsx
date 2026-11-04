@@ -12,6 +12,7 @@ import "uplot/dist/uPlot.min.css";
 import type { LiveBuffers } from "@/lib/live";
 import { trendSnapshot, windowed, type Pick, type TrendSample } from "@/lib/model";
 import { token, useResolvedTheme } from "@/lib/useTheme";
+import { StaleDim } from "../vitals/StaleDim";
 
 export interface TrendSeriesSpec {
   label: string;
@@ -62,6 +63,15 @@ function withAlpha(c: string, a: number): string {
 const STRIP_PX = 8;
 const GAP_S = 2;
 
+/** Evenly spaced x ticks for each window (browser check: 15, 13, 12, 10 ... min was uneven). */
+const X_STEP_S: Record<number, number> = { 120: 30, 300: 60, 900: 180 };
+function xSplits(windowS: number): number[] {
+  const step = X_STEP_S[windowS] ?? windowS / 5;
+  const out: number[] = [];
+  for (let v = -windowS; v <= 0; v += step) out.push(v);
+  return out;
+}
+
 /** "now", "30 s", "5 min" for the seconds-ago axis. */
 function agoText(v: number, windowS: number): string {
   if (v === 0) return "now";
@@ -83,7 +93,15 @@ function withGaps(cols: (number | null)[][]): (number | null)[][] {
   return out;
 }
 
-export function TrendChart({ buffers, spec, windowS, label, emptyText }: { buffers: LiveBuffers; spec: TrendChartSpec; windowS: number; label: string; emptyText?: string }) {
+export function TrendChart(props: { buffers: LiveBuffers; spec: TrendChartSpec; windowS: number; label: string; emptyText?: string }) {
+  return (
+    <StaleDim note>
+      <TrendPlot {...props} />
+    </StaleDim>
+  );
+}
+
+function TrendPlot({ buffers, spec, windowS, label, emptyText }: { buffers: LiveBuffers; spec: TrendChartSpec; windowS: number; label: string; emptyText?: string }) {
   const host = useRef<HTMLDivElement>(null);
   const theme = useResolvedTheme();
   const [points, setPoints] = useState<number | null>(null);
@@ -100,7 +118,7 @@ export function TrendChart({ buffers, spec, windowS, label, emptyText }: { buffe
     const scales: uPlot.Scales = { x: { time: false, range: [-windowS, 0] } };
     for (const a of spec.axes) scales[a.scale] = { range: a.range === "auto" ? autoRange : (a.range as [number, number]) };
     const axes: uPlot.Axis[] = [
-      { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid }, values: (_u, vs) => vs.map((v) => agoText(v, windowS)) },
+      { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { stroke: grid }, splits: () => xSplits(windowS), values: (_u, vs) => vs.map((v) => agoText(v, windowS)) },
       ...spec.axes.map(
         (a, i): uPlot.Axis => ({
           scale: a.scale,
@@ -178,8 +196,9 @@ export function TrendChart({ buffers, spec, windowS, label, emptyText }: { buffe
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = muted;
-        ctx.textAlign = "right";
-        ctx.fillText(g.label, left + width - 4 * dpr(), y - 2 * dpr());
+        // at the left (oldest) end, so the label never covers the newest data
+        ctx.textAlign = "left";
+        ctx.fillText(g.label, left + 4 * dpr(), y - 2 * dpr());
       }
       ctx.restore();
     };
@@ -194,7 +213,8 @@ export function TrendChart({ buffers, spec, windowS, label, emptyText }: { buffe
         bands,
         legend: { show: false },
         cursor: { show: false },
-        padding: [8, 4, 0, 0],
+        // room on the right for the centred "now" label unless a right axis already gives it
+        padding: [8, spec.axes.some((a) => a.side === "right") ? 4 : 16, 0, 0],
         hooks: { drawClear: [drawClear], draw: [draw] },
       },
       [[], ...picks.map(() => [])],
@@ -212,10 +232,10 @@ export function TrendChart({ buffers, spec, windowS, label, emptyText }: { buffe
       const now = rows.length ? rows[rows.length - 1]!.t : 0;
       const cols: (number | null)[][] = [rows.map((r) => (r.t - now) / 1000), ...picks.map((p) => rows.map(p))];
       plot.setData(withGaps(cols) as uPlot.AlignedData);
-      // the empty state follows the main series only (the first one after a spread)
-      const main = cols[1 + (spec.spread ? 2 : 0)]!;
+      // the empty state follows the drawn series (not the spread band): any value at a moment counts
+      const drawnCols = cols.slice(1 + (spec.spread ? 2 : 0));
       let n = 0;
-      for (const v of main) if (v !== null) n++;
+      for (let i = 0; i < rows.length && n < 2; i++) if (drawnCols.some((c) => c[i] !== null)) n++;
       const capped = Math.min(n, 2);
       if (capped !== lastPoints) {
         lastPoints = capped;

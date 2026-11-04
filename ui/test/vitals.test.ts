@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Result } from "../src/lib/contracts.gen";
-import { BLIND_TEXT, OUT_OF_RANGE_TEXT, SEVERAL_TEXT, reasonText, vitalsView, vitalsWaiting } from "../src/lib/vitals";
+import { BLIND_TEXT, MOTION_ON, OUT_OF_RANGE_TEXT, SEVERAL_TEXT, reasonText, vitalsView, vitalsWaiting } from "../src/lib/vitals";
 
 type Over = { breathing?: Record<string, unknown>; heart?: Record<string, unknown> | null; presence?: string; motion?: number; count?: unknown };
 const result = (o: Over = {}): Result => {
@@ -19,7 +19,8 @@ describe("reasonText", () => {
   it("says every reason in words", () => {
     expect(reasonText("warming_up")).toMatch(/Starting up/);
     expect(reasonText("no_person")).toBe("Nobody to measure");
-    expect(reasonText("motion")).toMatch(/move/);
+    expect(reasonText("motion")).toMatch(/Moved recently.*30 s/);
+    expect(reasonText("motion", false)).toMatch(/Moved recently.*20 s/);
     expect(reasonText("noise")).toMatch(/weak/);
     expect(reasonText("unstable")).toMatch(/disagree/);
   });
@@ -54,13 +55,19 @@ describe("vitalsView", () => {
 
   it("uses the engine's reason", () => {
     expect(vitalsView(result({ breathing: { bpm: null, valid: false, reason: "noise" } }), false).breath.text).toBe(reasonText("noise"));
+    // "motion" = moved in the last 20 s (breathing) or 30 s (heart), not "moving now"
+    expect(vitalsView(result({ breathing: { bpm: null, valid: false, reason: "motion" } }), false).breath.text).toMatch(/20 s/);
+    expect(vitalsView(result({ heart: { bpm: null, valid: false, reason: "motion" } }), false).heart?.text).toMatch(/30 s/);
   });
 
   it("falls back when the reason is missing (older engine) or null", () => {
     expect(vitalsView(result({ presence: "empty", breathing: { bpm: null, valid: false } }), false).breath.text).toBe("Nobody to measure");
     expect(vitalsView(result({ motion: 0.4, breathing: { bpm: null, valid: false } }), false).breath.text).toMatch(/move/);
-    expect(vitalsView(result({ breathing: { bpm: null, valid: false } }), false).breath.text).toBe("No steady reading right now");
-    expect(vitalsView(result({ heart: { bpm: null, valid: false, reason: null } }), false).heart?.text).toBe("No steady reading right now");
+    expect(vitalsView(result({ breathing: { bpm: null, valid: false } }), false).breath.text).toBe("No reading yet");
+    // the movement claim only above the engine's own gate (MOTION_ON), never for a still person
+    expect(vitalsView(result({ motion: MOTION_ON + 0.05, breathing: { bpm: null, valid: false } }), false).breath.text).toMatch(/move/);
+    expect(vitalsView(result({ motion: 0.05, breathing: { bpm: null, valid: false } }), false).breath.text).toBe("No reading yet");
+    expect(vitalsView(result({ heart: { bpm: null, valid: false, reason: null } }), false).heart?.text).toBe("No reading yet");
   });
 
   it("is off while blind", () => {

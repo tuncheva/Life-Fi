@@ -38,13 +38,13 @@ export function InsightsPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end gap-x-6 gap-y-3">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-x-6">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Insights</h1>
           <p className="text-base font-medium text-muted">What the sensor sees</p>
           <p className="mt-1 max-w-2xl text-sm text-muted">Everything the system reads from the Wi-Fi signal over the last 15 minutes. Open a section for its chart.</p>
         </div>
-        <div className="flex rounded-lg bg-surface-2 p-0.5" role="group" aria-label="Time window">
+        <div className="flex self-start rounded-lg bg-surface-2 p-0.5 sm:self-auto" role="group" aria-label="Time window">
           {WINDOWS.map((w) => (
             <button key={w} type="button" onClick={() => pick(w)} aria-pressed={windowS === w} className={btn.segment(windowS === w)}>
               {windowText(w)}
@@ -54,7 +54,7 @@ export function InsightsPage() {
       </header>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 [&>*]:min-w-0">
-        <VitalsCard trendsLink={false} />
+        <VitalsCard trendsLink={false} className="lg:self-start" />
         <div className="lg:col-span-2">
           <RoomCard headingLevel={2} />
         </div>

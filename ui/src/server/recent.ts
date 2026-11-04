@@ -58,3 +58,13 @@ export function parseMinutes(q: string | null): number | null {
   const m = Number(q);
   return m >= 1 && m <= 15 ? m : null;
 }
+
+/**
+ * `?since=`: a result time in ms; only samples after it are sent, so a reconnecting client
+ * fetches just what it missed. -Infinity when missing; null for anything but a whole number.
+ */
+export function parseSince(q: string | null): number | null {
+  if (q === null) return -Infinity;
+  if (!/^\d{1,15}$/.test(q)) return null;
+  return Number(q);
+}

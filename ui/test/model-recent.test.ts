@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Result } from "../src/lib/contracts.gen";
-import { parseMinutes, RecentBuffer } from "../src/server/recent";
+import { parseMinutes, parseSince, RecentBuffer } from "../src/server/recent";
 
 const r = (ts: number, boot = 1, source: Result["source"] = "replay"): Result =>
   ({ ts, boot_id: boot, source, presence: { state: "present", value: true, S: 0, B: 0, M: 0 }, motion: 0, count: null, breathing: { bpm: null, valid: false, confidence: 0, wave: [] }, health: { rate_hz: 90 } }) as unknown as Result;
@@ -42,5 +42,16 @@ describe("parseMinutes", () => {
 
   it("refuses everything else", () => {
     for (const q of ["0", "16", "2.5", "abc", "", "-1", " 5"]) expect(parseMinutes(q)).toBeNull();
+  });
+});
+
+describe("parseSince", () => {
+  it("is -Infinity when missing, the number for whole ms", () => {
+    expect(parseSince(null)).toBe(-Infinity);
+    expect(parseSince("1762220000000")).toBe(1762220000000);
+  });
+
+  it("refuses everything else", () => {
+    for (const q of ["", "-1", "1.5", "abc", "1e12", "1234567890123456"]) expect(parseSince(q)).toBeNull();
   });
 });

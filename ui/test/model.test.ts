@@ -45,6 +45,14 @@ describe("trendSample", () => {
     });
   });
 
+  it("marks a distance rough unless the engine rates it medium (missing quality = low, like qualityOf)", () => {
+    const pos = (full as unknown as { position: Record<string, unknown> }).position;
+    const withQ = (q: unknown) => ({ ...full, position: { ...pos, quality: q } }) as unknown as Result;
+    expect(trendSample(withQ("medium")).lowQuality).toBe(false);
+    expect(trendSample(withQ(undefined)).lowQuality).toBe(true);
+    expect(trendSample(withQ("low")).lowQuality).toBe(true);
+  });
+
   it("does not throw on an older engine's result", () => {
     expect(trendSample(bare)).toMatchObject({ occP: null, breath: null, heart: null, heartOn: false, d: null, spotD: null, spotOn: false, rssi: null, lossUdp: 0 });
   });
@@ -106,6 +114,19 @@ describe("mergeSeed", () => {
   it("caps to the newest", () => {
     const seed = Array.from({ length: 10 }, (_, i) => s(i));
     expect(mergeSeed(seed, [s(10)], 4).map((r) => r.t)).toEqual([7, 8, 9, 10]);
+  });
+
+  it("fills a disconnect gap inside the live ring without duplicates", () => {
+    // live had 1..3, the stream dropped, then 7..8 arrived; the server saw 1..8
+    const seed = [1, 2, 3, 4, 5, 6, 7, 8].map((t) => s(t));
+    const live = [s(1), s(2), s(3), s(7, { motion: 0.5 }), s(8)];
+    const out = mergeSeed(seed, live);
+    expect(out.map((r) => r.t)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(out.find((r) => r.t === 7)!.motion).toBe(0.5); // live wins on equal t
+  });
+
+  it("keeps seed samples newer than the newest live one (the outage right before reconnect)", () => {
+    expect(mergeSeed([s(3), s(4), s(5)], [s(1), s(2), s(3)]).map((r) => r.t)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("handles an empty seed or empty live", () => {
