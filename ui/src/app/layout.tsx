@@ -3,18 +3,19 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { LiveProvider } from "@/lib/live";
 import { PinProvider } from "@/lib/pin";
-import { SoundProvider } from "@/lib/sound";
+import { SoundProvider, SoundQuestion } from "@/lib/sound";
 import { THEME_BOOT } from "@/lib/theme";
 import { DISCLAIMER } from "@/lib/words";
 import { TopBar } from "@/components/TopBar";
 import { AlertBanner } from "@/components/AlertBanner";
-import { DevPanel } from "@/components/DevPanel";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Life-Fi",
+  // Child segments set their own title through a small server layout.tsx.
+  title: { default: "Life-Fi", template: "%s · Life-Fi" },
+  applicationName: "Life-Fi",
   description: "Camera-free presence, breathing and fall alerts from Wi-Fi",
 };
 
@@ -36,14 +37,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>
       <body className="flex min-h-full flex-col bg-bg text-fg">
+        <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-4 focus:py-3 focus:font-semibold focus:shadow-lg">
+          Skip to content
+        </a>
         <LiveProvider>
           <PinProvider>
             <SoundProvider>
             <TopBar />
             <AlertBanner />
-            <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:py-6">{children}</main>
+            <main id="main" tabIndex={-1} className="mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-4 sm:py-6">
+              <SoundQuestion />
+              {children}
+            </main>
             <footer className="px-4 pb-16 pt-4 text-center text-xs text-subtle sm:pb-4">{DISCLAIMER} No camera, no microphone, no images.</footer>
-            <DevPanel />
             </SoundProvider>
           </PinProvider>
         </LiveProvider>

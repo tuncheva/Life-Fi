@@ -68,6 +68,10 @@
   --chart-activity: #7b8794;
   --chart-grid: #e3e7ec;
   --chart-axis: #6a7380;
+  --chart-motion: #c2410c;
+  --chart-deviation: #7c3aed;
+  --chart-rssi: #4d7c0f;
+  --chart-distance: #0d9488;
   --posture-lying: #4f46e5;
   --posture-sitting: #9333ea;
   --posture-standing: #db2777;
@@ -117,6 +121,10 @@
     --chart-activity: #6b7683;
     --chart-grid: #232831;
     --chart-axis: #8a939e;
+    --chart-motion: #fb923c;
+    --chart-deviation: #a78bfa;
+    --chart-rssi: #a3e635;
+    --chart-distance: #2dd4bf;
     --posture-lying: #818cf8;
     --posture-sitting: #c084fc;
     --posture-standing: #f472b6;
@@ -164,6 +172,10 @@
   --chart-activity: #6b7683;
   --chart-grid: #232831;
   --chart-axis: #8a939e;
+  --chart-motion: #fb923c;
+  --chart-deviation: #a78bfa;
+  --chart-rssi: #a3e635;
+  --chart-distance: #2dd4bf;
   --posture-lying: #818cf8;
   --posture-sitting: #c084fc;
   --posture-standing: #f472b6;
@@ -265,6 +277,28 @@ body {
   outline-offset: 2px;
   border-radius: 6px;
 }
+/* The skip link moves focus to <main>; the page itself needs no ring. */
+#main:focus-visible {
+  outline: none;
+}
+
+/* Anything scrolled to (a #step link, scrollIntoView) clears the sticky header. */
+[id] {
+  scroll-margin-top: 7rem;
+}
+
+/* Reduced motion: no smooth scrolling, transitions jump, animations play once. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
 
 /* <details> without the default marker; our summaries draw their own chevron. */
 summary {
@@ -276,4 +310,24 @@ summary::-webkit-details-marker {
 }
 details[open] > summary .chev {
   transform: rotate(90deg);
+}
+
+/* --- track M: vitals and model --- */
+/* Chart colours for the vitals card and the /model (Insights) charts; read with token(). */
+:root {
+  --chart-heart: #be123c;
+  --chart-occupancy: #2563eb;
+  --chart-rate: #a16207;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --chart-heart: #fb7185;
+    --chart-occupancy: #60a5fa;
+    --chart-rate: #facc15;
+  }
+}
+:root[data-theme="dark"] {
+  --chart-heart: #fb7185;
+  --chart-occupancy: #60a5fa;
+  --chart-rate: #facc15;
 }

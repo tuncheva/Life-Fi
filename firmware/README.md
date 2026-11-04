@@ -25,7 +25,8 @@ Background on how CSI sensing and counting work:
 | 7 | Flash a real board, check the rate | done: ESP32 dev board, ~100–180 Hz in station mode |
 | 8 | Raw CSI stream over UDP (`csi_frame_hdr_t` v2) + PC recorder (`.csirec`) | done: 1,586 frames / 20 s, 2 lost |
 | 8b | Same stream over USB serial (921600 baud), independent of the Wi-Fi network | done: 1,719 frames / 30 s, 0 lost |
-| Next | Breathing on the PC, dedicated transmitter, more receivers ([roadmap](../docs/plan/upgrade-roadmap.md)) | — |
+| 9 | Dedicated transmitter: a second ESP32 sends ESP-NOW at 100 Hz (`esp32dev_tx`, `esp32cam_tx`); the receiver finds it at boot ([guide](../docs/hardware/fixed-transmitter.md)) | compiles, host-tested; untested on a board |
+| Next | Breathing on the PC, more receivers ([roadmap](../docs/plan/upgrade-roadmap.md)) | — |
 
 ## Build, flash, watch
 
@@ -141,6 +142,7 @@ use PlatformIO's Python, which already has pyserial:
 
 | Mode | When | CSI rate | Setup |
 |---|---|---|---|
+| **Fixed transmitter** (best, no router) | a Life-Fi transmitter is on at boot (checked first, ~2 s) | ~100 Hz, steady | flash a second ESP32 with `esp32dev_tx` / `esp32cam_tx`: [docs/hardware/fixed-transmitter.md](../docs/hardware/fixed-transmitter.md) |
 | **Station** (best) | credentials saved with the `wifi` command, or in `src/wifi_secrets.h` | ~100 Hz: every ping reply from the router is a sample | Type `wifi <ssid> <password>` in the serial monitor (a **2.4 GHz** network; a phone hotspot works). It's saved in the board's flash, not in the repo, and the board restarts. Alternative: `Copy-Item src\wifi_secrets.h.example src\wifi_secrets.h` and rebuild |
 | **Sniffer** (fallback) | no credentials, or connecting failed for 20 s | whatever OFDM traffic is in the air, often 5–50 Hz | none: it surveys the channels of the 3 strongest APs (or `LIFEFI_SNIFF_SSID`) for 3 s each and locks onto the transmitter that gives the most CSI, preferring an AP with ≥ 10 Hz |
 
@@ -185,6 +187,7 @@ timeouts and free heap.
 | `status` | Print thresholds and learned levels |
 | `wifi <ssid> <password>` | Save station credentials in flash and restart in station mode. Quote an SSID with spaces: `wifi "My Net" pass word`. The password is the rest of the line |
 | `wifi clear` | Erase the saved credentials and restart in sniffer mode |
+| `tx` / `tx off` / `tx on` | Show / turn off / turn on the search for a fixed transmitter at boot (saved, restarts) |
 
 Typing into a log that scrolls every second is fiddly. Instead, close the
 monitor and run `powershell -ExecutionPolicy Bypass -File

@@ -30,6 +30,12 @@ presence:                   # lifefi.presence (plan-v2 §6.1, E4 deviation in it
 breathing:
   low_motion_s: 20.0        # breathing is shown only after this long without motion (plan-v2 §6.3)
 
+heart:                      # lifefi.heart, EXPERIMENTAL (not validated against a pulse sensor)
+  publish: true             # false: `heart` is null in every result
+  history_s: 60.0           # contract: bpm = median of the valid windows of the last 60 s
+  min_still_s: 30.0         # the whole 30 s heart window must be after the last motion
+  require_breathing: true   # heart only while breathing is valid (harmonic removal needs its rate)
+
 apnea:                      # lifefi.apnea, `no_breathing` (plan-v2 §6.4)
   hold_s: 15.0              # plan-v2 12 s gave 2 false alerts in 0.47 armed h on E1; 15 s: 0 (ml/check_apnea.py)
   prominence_x: 0.25        # plan-v2 0.4
@@ -46,6 +52,21 @@ fall:                       # lifefi.fall (plan-v2 §6.5); NOT validated: no pub
   fainted_after_s: 20.0     # plan-v2: 20-30 s more stillness -> fainted_suspected
   clear_motion_s: 3.0       # [H] this long above the motion threshold clears fall / fainted
   window_s: 40.0            # how much F the streaming detector looks at
+
+occupancy:                  # lifefi.occupancy: room empty / occupied / unsure from the 4 s disturbance P, no calibration
+  window_s: 4.0             # fixed before testing: the shortest window with >= 32 packets at the worst spot session's rate
+  offset: -1.05             # log10 P (dB²) at p = 0.5: ml/eval_position.py --fit-occupancy (spots-192549 + 193656 pooled, 2026-11-03)
+  scale: 0.96               # decades of P per logistic unit, same fit; LOSO estimate in docs/models.md
+  p_on: 0.8                 # [H] p >= this: occupied
+  p_off: 0.2                # [H] p <= this, presence `empty` and an empty calibration loaded: empty; else unsure
+  empty_hold_s: 30.0        # empty only after this long of all three without a break (presence's breathing window)
+  hold_ticks: 3             # [H] a new state after this many ticks of the same raw state
+
+position:                   # lifefi.position quality
+  transmitter_fixed: auto   # auto: from the frames' source MAC (Life-Fi TX 1A:4C:46:54:58:xx); true/false force it (e.g. a router bolted to the wall)
+
+spots:                      # lifefi.spots
+  reliable_margin: 0.15     # [H] a spot model is `reliable` when its cross-session balanced accuracy >= 1/k + this
 
 posture:                    # lifefi.posture (plan-v2 §6.7)
   publish: false            # hidden in the demo (decision 2026-10-30): results carry posture: null

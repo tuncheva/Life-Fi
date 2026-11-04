@@ -6,6 +6,10 @@
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "lwip/sockets.h"
+#include "sdkconfig.h"
+#if CONFIG_ESP_CONSOLE_UART
+#include "driver/uart.h"
+#endif
 #include "csi_frame.h"
 #include "lifefi_config.h"
 
@@ -96,6 +100,25 @@ void stream_poll(void)
     }
 }
 
+/* The UART VFS writes stdout one character at a time (one driver call and ring item
+ * per byte): ~600-char lines at up to 100 Hz kept the CSI task busy enough to starve
+ * IDLE0 (task watchdog). One driver write per line instead, under the stdout lock so a
+ * log line (ESP_LOG prints through vprintf on the same FILE) never splices into it. */
+static void usb_write_line(const char *line, size_t n)
+{
+#if CONFIG_ESP_CONSOLE_UART
+    if (n > 0 && line[n - 1] == '\n' && uart_is_driver_installed(CONFIG_ESP_CONSOLE_UART_NUM)) {
+        flockfile(stdout);
+        fflush(stdout);                                           /* a log's buffered bytes go first */
+        uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, line, n - 1);
+        uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, "\r\n", 2);  /* what the VFS sent: byte-identical */
+        funlockfile(stdout);
+        return;
+    }
+#endif
+    fputs(line, stdout);
+}
+
 void stream_send(const csi_packet_t *p)
 {
     bool usb = s_usb_until_us > esp_timer_get_time();
@@ -116,9 +139,10 @@ void stream_send(const csi_packet_t *p)
             s_sent++;
         }
     }
-    /* Through stdout, so the line never interleaves with log lines */
-    if (usb && csi_frame_line(line, sizeof(line), frame, len) > 0) {
-        fputs(line, stdout);
+    /* Under the stdout lock, so the line never interleaves with log lines */
+    size_t n;
+    if (usb && (n = csi_frame_line(line, sizeof(line), frame, len)) > 0) {
+        usb_write_line(line, n);
         s_usb_sent++;
     }
 }

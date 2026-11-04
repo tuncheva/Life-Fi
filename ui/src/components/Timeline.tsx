@@ -40,6 +40,15 @@ export function Timeline({ showPosture: wantPosture = true }: { showPosture?: bo
   const [loaded, setLoaded] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [hover, setHover] = useState<Hover | null>(null);
+  // the canvas is drawn at its pixel size: redraw when the layout changes its width (plan F6)
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const c = canvas.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => setWidth(c.clientWidth));
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, []);
 
   // Refetch on range change, on alert changes, and every 15 s.
   useEffect(() => {
@@ -170,7 +179,7 @@ export function Timeline({ showPosture: wantPosture = true }: { showPosture?: bo
     // now line
     g.fillStyle = token("--fg");
     g.fillRect(W - 1.5, presenceY - 2, 1.5, h - presenceY - 18);
-  }, [rows, alerts, hours, result, showPosture, theme]);
+  }, [rows, alerts, hours, result, showPosture, theme, width]);
 
   const onPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const c = canvas.current;

@@ -2,7 +2,7 @@
  * points to tune on recordings (see docs/research/csi-people-counting.md). */
 #pragma once
 
-#define LIFEFI_FW_VERSION "0.1.0"
+#define LIFEFI_FW_VERSION "0.1.1"
 
 /* ---- Wi-Fi link ------------------------------------------------------- */
 
@@ -67,3 +67,44 @@
 #define LIFEFI_COUNT4_SCORE  11.0f
 #define LIFEFI_MAX_COUNT     5
 #define LIFEFI_LEARN_WINDOWS 30 /* seconds recorded by `learn N` */
+
+/* ---- Fixed transmitter (docs/hardware/fixed-transmitter.md) ------------ */
+
+/* A second ESP32 built with -DLIFEFI_ROLE_TX=1 (envs *_tx) sends ESP-NOW
+ * broadcasts at HT20 MCS0 from a fixed MAC 1A:4C:46:54:58:<id>. The receiver
+ * looks for that MAC prefix at boot and, if found, takes its CSI from it. */
+#ifndef LIFEFI_ROLE_TX
+#define LIFEFI_ROLE_TX 0
+#endif
+#ifndef LIFEFI_TX_CHANNEL
+#define LIFEFI_TX_CHANNEL 11            /* default; `channel N` on the TX changes it */
+#endif
+#ifndef LIFEFI_TX_RATE_HZ
+#define LIFEFI_TX_RATE_HZ 100           /* frames per second; `rate N`, LIFEFI_TX_RATE_MIN-500 */
+#endif
+#ifndef LIFEFI_TX_ID
+#define LIFEFI_TX_ID 1                  /* last MAC byte */
+#endif
+#ifndef LIFEFI_TX_LED_GPIO
+#define LIFEFI_TX_LED_GPIO -1           /* status LED, -1 = none */
+#endif
+#ifndef LIFEFI_TX_LED_ACTIVE_LOW
+#define LIFEFI_TX_LED_ACTIVE_LOW 0
+#endif
+#define LIFEFI_TX_MAC_PREFIX { 0x1A, 0x4C, 0x46, 0x54, 0x58 } /* "LFTX", locally administered */
+
+/* Receiver: probe all channels for a fixed transmitter at boot (also needs
+ * the `tx` setting on, the default; `tx off` turns it off) */
+#ifndef LIFEFI_TX_PROBE
+#define LIFEFI_TX_PROBE 1
+#endif
+#define LIFEFI_TX_PROBE_FIRST_MS 400    /* on LIFEFI_TX_CHANNEL */
+#define LIFEFI_TX_PROBE_MS       200    /* on each other channel */
+#define LIFEFI_TX_PROBE_MIN      5      /* frames needed to lock */
+/* The slowest rate the TX accepts. The probe must see it on any channel with
+ * room for lost frames and the channel-switch settle time: at 50 Hz a 200 ms
+ * listen expects 10 frames, twice LIFEFI_TX_PROBE_MIN. */
+#define LIFEFI_TX_RATE_MIN       50
+_Static_assert(LIFEFI_TX_RATE_MIN * LIFEFI_TX_PROBE_MS >= 2 * LIFEFI_TX_PROBE_MIN * 1000,
+               "the receiver's probe could miss a transmitter at LIFEFI_TX_RATE_MIN");
+_Static_assert(LIFEFI_TX_RATE_HZ >= LIFEFI_TX_RATE_MIN, "LIFEFI_TX_RATE_HZ below LIFEFI_TX_RATE_MIN");

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EmergencyMap } from "@/components/EmergencyMap";
 import { AlertList, FloorSummary, PriorityList } from "@/components/EmergencyPanels";
-import { Card, Icon, btn } from "@/components/ui";
+import { Card, Icon, PageHeader, btn } from "@/components/ui";
 import { FLOORS, INCIDENTS, SCENARIOS, createSim, floorStats, hms, markSeen, send, step, type Incident, type Sim, type SimAlert } from "@/lib/emergency";
 import { useNow } from "@/lib/live";
 import { duration } from "@/lib/words";
@@ -96,24 +96,23 @@ export default function EmergencyPage() {
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-end gap-x-4 gap-y-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">Emergency</h1>
-            <span className="rounded-lg bg-replay px-2.5 py-1 text-xs font-medium text-replay-fg">Prototype · simulated building, not connected to sensors</span>
-          </div>
-          <p className="mt-0.5 text-sm text-muted">Who is still inside, where they are, and who to reach first.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 sm:ml-auto">
-          <p className="text-sm text-muted">
-            Viewing as <span className="font-semibold text-fg">Incident commander · Unit 1</span>
-          </p>
-          <button onClick={toggleSound} aria-pressed={sound} className={`${btn.secondary} px-3 py-1.5`}>
-            <Icon name={sound ? "sound" : "sound-off"} className="h-4 w-4" />
-            Sound {sound ? "on" : "off"}
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        className="mb-0!"
+        title="Emergency"
+        badge={<span className="rounded-lg bg-replay px-2.5 py-1 text-xs font-medium text-replay-fg">Prototype · simulated building, not connected to sensors</span>}
+        description="Who is still inside, where they are, and who to reach first."
+        actions={
+          <>
+            <p className="text-sm text-muted">
+              Viewing as <span className="font-semibold text-fg">Incident commander · Unit 1</span>
+            </p>
+            <button onClick={toggleSound} aria-pressed={sound} className={`${btn.secondary} px-3 py-1.5`}>
+              <Icon name={sound ? "sound" : "sound-off"} className="h-4 w-4" />
+              Sound {sound ? "on" : "off"}
+            </button>
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-card border border-line bg-surface p-3 shadow-sm">
         <div role="radiogroup" aria-label="Incident type" className="flex gap-1 rounded-lg bg-surface-2 p-1">

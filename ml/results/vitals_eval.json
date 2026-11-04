@@ -1,0 +1,398 @@
+{
+ "note": "No pulse-oximeter or breathing-belt reference was recorded: plausibility only (resting adult ranges 6-30 breaths/min, 45-120 /min), not accuracy. Spots are 60 s each; heart needs 30 s still after the last motion plus a valid breathing window, so at most ~25 s per spot can show a value. The transmitter was a phone hotspot.",
+ "thresholds": "heart.py unchanged",
+ "sessions": {
+  "192549": {
+   "nocal": {
+    "spots": {
+     "close": {
+      "ticks": 112,
+      "present_ticks": 43,
+      "breathing": {
+       "valid_share_present": 0.0,
+       "reasons": {
+        "warming_up": 53,
+        "no_person": 23,
+        "motion": 36
+       },
+       "bpm": null,
+       "jumps": 0
+      },
+      "heart": {
+       "valid_share_present": 0.0,
+       "reasons": {
+        "warming_up": 53,
+        "no_person": 23,
+        "motion": 36
+       },
+       "bpm": null,
+       "jumps": 0,
+       "valid_share_median_present": 0.0
+      }
+     },
+     "middle": {
+      "ticks": 112,
+      "present_ticks": 112,
+      "breathing": {
+       "valid_share_present": 0.0,
+       "reasons": {
+        "warming_up": 112
+       },
+       "bpm": null,
+       "jumps": 0
+      },
+      "heart": {
+       "valid_share_present": 0.0,
+       "reasons": {
+        "warming_up": 112
+       },
+       "bpm": null,
+       "jumps": 0,
+       "valid_share_median_present": 0.0
+      }
+     },
+     "far": {
+      "ticks": 112,
+      "present_ticks": 112,
+      "breathing": {
+       "valid_share_present": 0.0,
+       "reasons": {
+        "warming_up": 37,
+        "motion": 75
+       },
+       "bpm": null,
+       "jumps": 0
+      },
+      "heart": {
+       "valid_share_present": 0.0,
+       "reasons": {
+        "warming_up": 37,
+        "motion": 75
+       },
+       "bpm": null,
+       "jumps": 0,
+       "valid_share_median_present": 0.0
+      }
+     },
+     "empty": {
+      "ticks": 112,
+      "present_ticks": 112,
+      "breathing": {
+       "valid_share_present": 0.0,
+       "reasons": {
+        "warming_up": 71,
+        "motion": 40,
+        "noise": 1
+       },
+       "bpm": null,
+       "jumps": 0
+      },
+      "heart": {
+       "valid_share_present": 0.0,
+       "reasons": {
+        "warming_up": 71,
+        "motion": 41
+       },
+       "bpm": null,
+       "jumps": 0,
+       "valid_share_median_present": 0.0
+      }
+     }
+    },
+    "ticks": 579,
+    "heart_ms_mean": 20.56,
+    "heart_ms_max": 66.69,
+    "tick_ms_mean": 20.69,
+    "tick_ms_max": 124.56
+   },
+   "fresh": {
+    "error": "calibration refused by the engine: only 37 % of the calibration signal is valid"
+   },
+   "raw_estimators": {
+    "close": {
+     "breathing": {
+      "windows": 5,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "no clear peak": 4,
+       "drift at band edge": 3,
+       "FFT/ACF disagree": 1
+      }
+     },
+     "heart": {
+      "windows": 5,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "near breathing harmonic": 5,
+       "FFT/ACF disagree": 2,
+       "at noise floor": 4,
+       "no clear peak": 3,
+       "several peaks": 3,
+       "peak at band/notch edge": 1,
+       "motion": 1
+      }
+     }
+    },
+    "middle": {
+     "breathing": {
+      "windows": 0,
+      "valid_share": null,
+      "bpm_valid": [],
+      "reasons": {}
+     },
+     "heart": {
+      "windows": 0,
+      "valid_share": null,
+      "bpm_valid": [],
+      "reasons": {}
+     }
+    },
+    "far": {
+     "breathing": {
+      "windows": 4,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "no clear peak": 4,
+       "FFT/ACF disagree": 1
+      }
+     },
+     "heart": {
+      "windows": 4,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "near breathing harmonic": 2,
+       "at noise floor": 4,
+       "no clear peak": 4,
+       "FFT/ACF disagree": 1,
+       "several peaks": 3
+      }
+     }
+    },
+    "empty": {
+     "breathing": {
+      "windows": 6,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "no clear peak": 6,
+       "drift at band edge": 3,
+       "motion/noise": 2,
+       "FFT/ACF disagree": 1
+      }
+     },
+     "heart": {
+      "windows": 6,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "near breathing harmonic": 4,
+       "at noise floor": 6,
+       "no clear peak": 5,
+       "several peaks": 5,
+       "FFT/ACF disagree": 1,
+       "motion": 1
+      }
+     }
+    }
+   }
+  },
+  "193656": {
+   "nocal": {
+    "spots": {
+     "close": {
+      "ticks": 112,
+      "present_ticks": 0,
+      "breathing": {
+       "valid_share_present": null,
+       "reasons": {
+        "warming_up": 46,
+        "no_person": 66
+       },
+       "bpm": null,
+       "jumps": 0
+      },
+      "heart": {
+       "valid_share_present": null,
+       "reasons": {
+        "warming_up": 46,
+        "no_person": 66
+       },
+       "bpm": null,
+       "jumps": 0,
+       "valid_share_median_present": null
+      }
+     },
+     "middle": {
+      "ticks": 112,
+      "present_ticks": 0,
+      "breathing": {
+       "valid_share_present": null,
+       "reasons": {
+        "warming_up": 112
+       },
+       "bpm": null,
+       "jumps": 0
+      },
+      "heart": {
+       "valid_share_present": null,
+       "reasons": {
+        "warming_up": 112
+       },
+       "bpm": null,
+       "jumps": 0,
+       "valid_share_median_present": null
+      }
+     },
+     "far": {
+      "ticks": 112,
+      "present_ticks": 0,
+      "breathing": {
+       "valid_share_present": null,
+       "reasons": {
+        "no_person": 13,
+        "warming_up": 99
+       },
+       "bpm": null,
+       "jumps": 0
+      },
+      "heart": {
+       "valid_share_present": null,
+       "reasons": {
+        "no_person": 13,
+        "warming_up": 99
+       },
+       "bpm": null,
+       "jumps": 0,
+       "valid_share_median_present": null
+      }
+     },
+     "empty": {
+      "ticks": 112,
+      "present_ticks": 0,
+      "breathing": {
+       "valid_share_present": null,
+       "reasons": {
+        "warming_up": 58,
+        "no_person": 54
+       },
+       "bpm": null,
+       "jumps": 0
+      },
+      "heart": {
+       "valid_share_present": null,
+       "reasons": {
+        "warming_up": 58,
+        "no_person": 54
+       },
+       "bpm": null,
+       "jumps": 0,
+       "valid_share_median_present": null
+      }
+     }
+    },
+    "ticks": 578,
+    "heart_ms_mean": 16.81,
+    "heart_ms_max": 27.42,
+    "tick_ms_mean": 27.5,
+    "tick_ms_max": 99.86
+   },
+   "fresh": {
+    "error": "calibration refused by the engine: only 78 % of the calibration signal is valid"
+   },
+   "raw_estimators": {
+    "close": {
+     "breathing": {
+      "windows": 7,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "no clear peak": 7,
+       "drift at band edge": 3,
+       "FFT/ACF disagree": 2
+      }
+     },
+     "heart": {
+      "windows": 7,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "near breathing harmonic": 5,
+       "peak at band/notch edge": 1,
+       "at noise floor": 6,
+       "no clear peak": 3,
+       "several peaks": 3,
+       "FFT/ACF disagree": 2
+      }
+     }
+    },
+    "middle": {
+     "breathing": {
+      "windows": 0,
+      "valid_share": null,
+      "bpm_valid": [],
+      "reasons": {}
+     },
+     "heart": {
+      "windows": 0,
+      "valid_share": null,
+      "bpm_valid": [],
+      "reasons": {}
+     }
+    },
+    "far": {
+     "breathing": {
+      "windows": 1,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "no clear peak": 1,
+       "FFT/ACF disagree": 1
+      }
+     },
+     "heart": {
+      "windows": 1,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "at noise floor": 1,
+       "no clear peak": 1,
+       "several peaks": 1,
+       "FFT/ACF disagree": 1
+      }
+     }
+    },
+    "empty": {
+     "breathing": {
+      "windows": 5,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "no clear peak": 5,
+       "motion/noise": 4,
+       "FFT/ACF disagree": 4,
+       "drift at band edge": 2
+      }
+     },
+     "heart": {
+      "windows": 5,
+      "valid_share": 0.0,
+      "bpm_valid": [],
+      "reasons": {
+       "at noise floor": 3,
+       "no clear peak": 3,
+       "several peaks": 3,
+       "FFT/ACF disagree": 2,
+       "motion": 4,
+       "near breathing harmonic": 2,
+       "peak at band/notch edge": 1
+      }
+     }
+    }
+   }
+  }
+ }
+}

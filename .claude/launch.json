@@ -4,40 +4,43 @@
     {
       "name": "lifefi-static",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8765"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765"
+      ],
       "port": 8765
     },
     {
-      "name": "ui",
+      "name": "app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "ui"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
     },
     {
-      "name": "server",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "server"],
-      "port": 8080
-    },
-    {
-      "name": "mock",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "env": { "LIFEFI_PORT": "8081", "NEXT_PUBLIC_API_URL": "http://localhost:8081", "MOCK_SCENARIO": "fall" },
+      "name": "app-replay",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "concurrently",
+        "-n",
+        "engine,app",
+        "node scripts/engine.mjs --replay data/sessions/spots-20261031-192549/spots-20261031-192549.csirec --loop",
+        "npm run dev -w ui"
+      ],
       "port": 3000
     },
     {
-      "name": "replay",
+      "name": "ui-only",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:replay"],
-      "env": { "LIFEFI_PORT": "8081", "NEXT_PUBLIC_API_URL": "http://localhost:8081" },
-      "port": 3000
-    },
-    {
-      "name": "real",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:real"],
-      "env": { "LIFEFI_PORT": "8081", "NEXT_PUBLIC_API_URL": "http://localhost:8081" },
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "-w",
+        "ui"
+      ],
       "port": 3000
     }
   ]

@@ -16,12 +16,14 @@
 #include "ping/ping_sock.h"
 #include "csi_capture.h"
 #include "lifefi_config.h"
+#include "tx_match.h"
 
 static const char *TAG = "link";
 
 #define NVS_NS       "lifefi"
 #define NVS_KEY_SSID "wifi_ssid"
 #define NVS_KEY_PASS "wifi_pass"
+#define NVS_KEY_TX_PROBE "tx_probe"
 
 static const char *load_credentials(char *ssid, size_t ssid_len, char *pass, size_t pass_len);
 
@@ -241,6 +243,64 @@ static esp_err_t start_sniffer(void)
     return ESP_OK;
 }
 
+/* Look for a Life-Fi fixed transmitter (tx_main.c, MAC prefix
+ * LIFEFI_TX_MAC_PREFIX) on its default channel first, then on all others,
+ * ~1.9 s worst case. Locks onto the busiest one on the first channel where
+ * one sends usable CSI; the AP survey and station mode are then skipped. */
+static bool probe_fixed_tx(void)
+{
+    csi_survey_entry_t *seen = calloc(SCAN_MAX, sizeof(*seen));
+    if (seen == NULL) {
+        return false;
+    }
+    wifi_promiscuous_filter_t f = {
+        .filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT | WIFI_PROMIS_FILTER_MASK_DATA,
+    };
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_promiscuous_filter(&f));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_promiscuous(true));
+
+    TickType_t t0 = xTaskGetTickCount();
+    csi_survey_entry_t best = { 0 };
+    uint8_t best_ch = 0;
+    int best_ms = 0;
+    for (int i = 0; i < 13 && best_ch == 0; i++) {
+        /* LIFEFI_TX_CHANNEL, then 1..13 without it */
+        int ch = i == 0 ? LIFEFI_TX_CHANNEL : (i < LIFEFI_TX_CHANNEL ? i : i + 1);
+        int ms = i == 0 ? LIFEFI_TX_PROBE_FIRST_MS : LIFEFI_TX_PROBE_MS;
+        if (esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE) != ESP_OK) {
+            continue;
+        }
+        csi_capture_survey_start();
+        vTaskDelay(pdMS_TO_TICKS(ms));
+        int n = csi_capture_survey_stop(seen, SCAN_MAX);
+        for (int j = 0; j < n; j++) {   /* busiest first */
+            if (lifefi_is_tx_mac(seen[j].mac) && seen[j].frames >= LIFEFI_TX_PROBE_MIN) {
+                best = seen[j];
+                best_ch = ch;
+                best_ms = ms;
+                break;
+            }
+        }
+    }
+    free(seen);
+    float secs = (xTaskGetTickCount() - t0) * portTICK_PERIOD_MS / 1000.0f;
+
+    if (best_ch == 0) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_promiscuous(false));
+        ESP_LOGI(TAG, "no Life-Fi fixed transmitter found (%.1f s probe)", secs);
+        return false;
+    }
+    s_mode = LINK_FIXED_TX;
+    memcpy(s_bssid, best.mac, sizeof(s_bssid));
+    s_channel = best_ch;
+    snprintf(s_ssid, sizeof(s_ssid), "Life-Fi TX %02u", (unsigned)best.mac[5]);
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_channel(s_channel, WIFI_SECOND_CHAN_NONE));
+    csi_capture_set_target(s_bssid);
+    ESP_LOGI(TAG, "fixed transmitter " MACSTR " on channel %d, %.0f Hz in the probe, rssi %d",
+             MAC2STR(s_bssid), s_channel, best.frames * 1000.0f / best_ms, best.rssi);
+    return true;
+}
+
 esp_err_t wifi_link_start(void)
 {
     s_events = xEventGroupCreate();
@@ -274,7 +334,10 @@ esp_err_t wifi_link_start(void)
     const char *source = load_credentials((char *)wc.sta.ssid, sizeof(wc.sta.ssid),
                                           (char *)wc.sta.password, sizeof(wc.sta.password));
     bool have_ssid = wc.sta.ssid[0] != '\0';
-    s_mode = have_ssid ? LINK_STATION : LINK_SNIFFER;
+    /* While probing for a fixed transmitter the STA_START handler must not
+     * connect: station mode is decided after the probe */
+    bool probe = wifi_link_tx_probe_enabled();
+    s_mode = (have_ssid && !probe) ? LINK_STATION : LINK_SNIFFER;
     if (have_ssid) {
         wc.sta.threshold.authmode = WIFI_AUTH_OPEN;
         ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &wc), TAG, "sta config");
@@ -283,6 +346,15 @@ esp_err_t wifi_link_start(void)
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "wifi start");
     ESP_RETURN_ON_ERROR(csi_capture_start(), TAG, "csi");
 
+    if (probe) {
+        if (probe_fixed_tx()) {
+            return ESP_OK;
+        }
+        if (have_ssid) {
+            s_mode = LINK_STATION;
+            esp_wifi_connect();   /* STA_START has already fired */
+        }
+    }
     if (have_ssid) {
         ESP_LOGI(TAG, "station mode: connecting to \"%s\" (credentials from %s)",
                  (const char *)wc.sta.ssid, source);
@@ -350,6 +422,36 @@ esp_err_t wifi_link_save_credentials(const char *ssid, const char *password)
     return err;
 }
 
+bool wifi_link_tx_probe_enabled(void)
+{
+#if LIFEFI_TX_PROBE
+    uint8_t on = 1;
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        uint8_t v;
+        if (nvs_get_u8(h, NVS_KEY_TX_PROBE, &v) == ESP_OK) {
+            on = v;
+        }
+        nvs_close(h);
+    }
+    return on != 0;
+#else
+    return false;
+#endif
+}
+
+esp_err_t wifi_link_set_tx_probe(bool on)
+{
+    nvs_handle_t h;
+    ESP_RETURN_ON_ERROR(nvs_open(NVS_NS, NVS_READWRITE, &h), TAG, "nvs open");
+    esp_err_t err = nvs_set_u8(h, NVS_KEY_TX_PROBE, on ? 1 : 0);
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
+}
+
 bool wifi_link_connected(void)
 {
     return s_mode == LINK_STATION;
@@ -357,8 +459,10 @@ bool wifi_link_connected(void)
 
 void wifi_link_describe(char *buf, size_t len)
 {
-    snprintf(buf, len, "%s \"%s\" " MACSTR " ch %d | ping timeouts %lu | disconnects %lu",
-             s_mode == LINK_STATION ? "CONNECTED to" : "NOT connected, only listening to",
+    const char *what = s_mode == LINK_STATION    ? "CONNECTED to"
+                       : s_mode == LINK_FIXED_TX ? "FIXED transmitter"
+                                                 : "NOT connected, only listening to";
+    snprintf(buf, len, "%s \"%s\" " MACSTR " ch %d | ping timeouts %lu | disconnects %lu", what,
              s_ssid, MAC2STR(s_bssid), s_channel, (unsigned long)s_ping_timeouts,
              (unsigned long)s_disconnects);
 }

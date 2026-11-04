@@ -4,6 +4,8 @@
 // (empty / present / uncertain, warmup, stale, S/B/M) reaches a consumer view.
 import type { Result } from "./contracts.gen";
 import type { Alert, ProfileName, Status } from "./api";
+import { distanceRange, occupancyOf, REASON_STEP, type QualityReason, type WhereState } from "./room";
+import { MOTION_ON, MOVING_TEXT, NO_READING_TEXT, reasonText } from "./vitals";
 
 /** The room's name comes from the server settings; "Room 1" until the status has arrived. */
 export function roomName(status: Status | null | undefined): string {
@@ -126,7 +128,9 @@ export function roomStatus(input: {
   if (status && !status.engine.connected) {
     return { tone: "offline", headline: "We cannot see the room right now", detail: "The sensor software is not running. Restart the Life-Fi box.", ...none };
   }
-  if (status?.server.sensor_offline || stale) {
+  // an unreadable board counts at once: the engine keeps ticking (warm-up), so neither the
+  // watchdog (30 s start-up grace) nor staleness would catch it, and "starting up" would hide it
+  if (status?.server.sensor_offline || stale || status?.source.state === "error") {
     const age = result ? now - result.ts : null;
     const why =
       status?.source.state === "error" && status.source.error
@@ -151,19 +155,10 @@ export function roomStatus(input: {
     const headline = profile === "school" ? "Room in use" : profile === "clinic" ? "Patient is in the room" : "Someone is home";
     return { tone: "present", headline, detail: since, action: null, blind: false };
   }
-  if (p === "empty") {
+  // presence empty but the occupancy model sees someone: hedge, as the room drawing does (positionView)
+  if (p === "empty" && occupancyOf(result)?.state !== "occupied") {
     const headline = profile === "school" ? "Room is empty" : "Nobody in the room";
     return { tone: "empty", headline, detail: since, action: null, blind: false };
-  }
-  const cal = calibrationText(result.calibration);
-  if (cal.needsAction) {
-    return {
-      tone: "uncertain",
-      headline: "Not sure if anyone is there",
-      detail: "The empty-room calibration is missing or old. Recalibrate while nobody is in the room.",
-      action: { label: "Calibrate", href: "/calibrate/" },
-      blind: false,
-    };
   }
   return { tone: "uncertain", headline: "Not sure if anyone is there", detail: "Someone may be sitting very still or far from the sensor.", action: null, blind: false };
 }
@@ -188,8 +183,10 @@ export function breathingText(result: Result): { value: string | null; text: str
   if (result.presence.state === "empty") return { value: null, text: "Nobody to measure" };
   if (b.valid && b.bpm !== null) return { value: b.bpm.toFixed(0), text: b.confidence >= 0.8 ? "breaths a minute · steady reading" : "breaths a minute · rough reading" };
   if (result.count?.value === 2) return { value: null, text: "Can't be read with several people in the room" };
-  if (result.motion >= 0.2) return { value: null, text: "Can't be read while they move" };
-  return { value: null, text: "No steady reading right now" };
+  const reason = result.breathing.reason;
+  if (reason) return { value: null, text: reasonText(reason, false) };
+  if (result.motion > MOTION_ON) return { value: null, text: MOVING_TEXT };
+  return { value: null, text: NO_READING_TEXT };
 }
 
 /** The movement model's classes (results.schema.json activityLabel), in words. */
@@ -255,7 +252,7 @@ export function alertAction(type: string, profile: ProfileName): string {
       return "Check who is in the room.";
     case "presence_uncertain":
     case "recalibrate_needed":
-      return "Recalibrate while the room is empty.";
+      return "The room signal changed; it settles by itself.";
     default:
       return "Check on the room.";
   }
@@ -263,4 +260,66 @@ export function alertAction(type: string, profile: ProfileName): string {
 
 export function levelText(level: Alert["level"]): string {
   return level === "high" ? "Urgent" : level === "medium" ? "Needs attention" : "For information";
+}
+
+/** Why the distance is only a rough guess, and where in the setup to fix it. */
+export const REASON_TEXT: Record<QualityReason, string> = {
+  transmitter_not_fixed: "The Wi-Fi transmitter has moved or is a phone: fix it in one place",
+  no_distance_fit: "Distance not tuned for this room yet",
+  no_empty_calibration: "Empty-room calibration missing",
+  low_packet_rate: "Weak signal: too few readings per second",
+};
+
+export function reasonLinks(reasons: QualityReason[]): { text: string; href: string }[] {
+  return reasons.map((r) => ({ text: REASON_TEXT[r], href: `/setup?step=${REASON_STEP[r]}` }));
+}
+
+const metres = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+
+/** "roughly 2 to 3 m from the sensor", "less than 1 m from the sensor" */
+export function distancePhrase(d: number, sd: number): string {
+  if (d < 1) return "less than 1 m from the sensor";
+  const { lo, hi } = distanceRange(d, sd);
+  return `roughly ${metres(lo)} to ${metres(hi)} m from the sensor`;
+}
+
+/**
+ * The where-sentence (plan B1.1): never a number unless the engine rates the distance
+ * "medium", never a spot unless the spot model is reliable for this room.
+ */
+export function whereText(w: WhereState): { headline: string; detail: string | null; reasons: string[] } {
+  switch (w.kind) {
+    case "blind":
+      return { headline: w.reason, detail: null, reasons: [] };
+    case "nobody":
+      return { headline: "Nobody in the room", detail: null, reasons: [] };
+    case "unsure":
+      return { headline: "Not sure if anyone is there", detail: null, reasons: [] };
+  }
+  // the board's own head count caps at 2 and means "2 or more": never a number as a fact
+  const who = w.people > 1 ? "More than one person may be here" : "Someone is here";
+  const parts: string[] = [];
+  if (w.people > 1) parts.push("one sensor can't tell them apart");
+  const dist = w.distance;
+  let headline = who;
+  if (!dist) parts.push("we can't tell where in the room right now");
+  else if (dist.quality === "medium") headline = `${who}, ${distancePhrase(dist.d, dist.sd)}`;
+  else parts.push("distance: rough guess only");
+  if (dist?.held) parts.push(dist.heldSince !== null ? `standing still, last measured ${clock(dist.heldSince)}` : "standing still");
+  if (w.spot) parts.push(`probably at the ${w.spot.name.replace(/_/g, " ")}`);
+  const joined = parts.join(" · ");
+  const detail = joined ? joined[0].toUpperCase() + joined.slice(1) : null;
+  const rough = !dist || dist.quality === "low";
+  return { headline, detail, reasons: rough ? w.reasons.map((r) => REASON_TEXT[r]) : [] };
+}
+
+/**
+ * A whole number typed into a form, or null when it is empty, not a whole number
+ * or outside [min, max]. `Number("")` is 0, which would silently save a zero.
+ */
+export function parseWholeNumber(s: string, min: number, max = Number.MAX_SAFE_INTEGER): number | null {
+  const t = s.trim();
+  if (!/^\d+$/.test(t)) return null;
+  const n = Number(t);
+  return n >= min && n <= max ? n : null;
 }

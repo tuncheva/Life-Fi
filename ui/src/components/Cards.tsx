@@ -5,9 +5,10 @@
 // "Sensor details" section for installers and the demo's privacy moment.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { getAlerts, type Alert, type ProfileName } from "@/lib/api";
+import { getAlerts, type Alert } from "@/lib/api";
 import type { Result } from "@/lib/contracts.gen";
-import { useLive, useNow, usePublished, useStale } from "@/lib/live";
+import { useLive, useLiveSlow, useNow, usePublished } from "@/lib/live";
+import { reasonLinks } from "@/lib/words";
 import {
   ACTIVITY_LABELS,
   ACTIVITY_TEXT,
@@ -20,26 +21,18 @@ import {
   clock,
   duration,
   postureText,
-  roomStatus,
   type RoomStatus,
   type Tone,
 } from "@/lib/words";
 import { BreathingChart } from "./BreathingChart";
+import { RoomView, useRoomStatus, useWhere } from "./RoomView";
 import { Card, Icon, Pill, TONE_CLASS, TONE_ICON, btn } from "./ui";
 
 export { Card } from "./ui";
-
-/** The derived room status every view shares. */
-export function useRoomStatus(): RoomStatus & { profile: ProfileName } {
-  const { connected, status, result, presenceSince } = useLive();
-  const stale = useStale(result);
-  const now = useNow();
-  const profile = status?.server.profile ?? "home";
-  return { ...roomStatus({ connected, status, result, stale, presenceSince, profile, now }), profile };
-}
+export { useRoomStatus } from "./RoomView";
 
 function useAlertsToday(): Alert[] {
-  const { alerts: live } = useLive();
+  const { alerts: live } = useLiveSlow();
   const [list, setList] = useState<Alert[]>([]);
   useEffect(() => {
     const start = new Date();
@@ -68,19 +61,20 @@ export interface Headline {
 }
 
 /** The big state block, shared by the room card and presentation mode. */
-export function StateHeadline({ s, size = "md" }: { s: Headline & { action?: RoomStatus["action"] }; size?: "md" | "xl" }) {
+export function StateHeadline({ s, size = "md", level = 1 }: { s: Headline & { action?: RoomStatus["action"] }; size?: "md" | "xl"; level?: 1 | 2 }) {
+  const H = level === 1 ? "h1" : "h2";
   const t = TONE_CLASS[s.tone];
   const xl = size === "xl";
   return (
-    <div className={`flex items-start ${xl ? "gap-6" : "gap-4"}`}>
-      <span className={`flex shrink-0 items-center justify-center rounded-2xl ${t.soft} ${t.text} ${xl ? "h-28 w-28 rounded-3xl" : "h-14 w-14 sm:h-16 sm:w-16"}`}>
-        <Icon name={TONE_ICON[s.tone]} className={xl ? "h-16 w-16" : "h-8 w-8 sm:h-9 sm:w-9"} />
+    <div className={`flex items-start ${xl ? "gap-4 sm:gap-6" : "gap-4"}`}>
+      <span className={`flex shrink-0 items-center justify-center rounded-2xl ${t.soft} ${t.text} ${xl ? "h-16 w-16 sm:h-28 sm:w-28 sm:rounded-3xl" : "h-14 w-14 sm:h-16 sm:w-16"}`}>
+        <Icon name={TONE_ICON[s.tone]} className={xl ? "h-10 w-10 sm:h-16 sm:w-16" : "h-8 w-8 sm:h-9 sm:w-9"} />
       </span>
       <div className="min-w-0">
-        <h1 aria-live="polite" className={`font-bold leading-tight tracking-tight ${xl ? "text-6xl lg:text-7xl" : "text-[1.75rem] sm:text-4xl"}`}>
+        <H aria-live="polite" className={`font-bold leading-tight tracking-tight ${xl ? "text-4xl sm:text-6xl lg:text-7xl" : "text-[1.75rem] sm:text-4xl"}`}>
           {s.headline}
-        </h1>
-        {s.detail && <p className={`mt-1 text-muted ${xl ? "text-3xl" : "text-base sm:text-lg"}`}>{s.detail}</p>}
+        </H>
+        {s.detail && <p className={`mt-1 text-muted ${xl ? "text-xl sm:text-3xl" : "text-base sm:text-lg"}`}>{s.detail}</p>}
         {s.action && (
           <Link href={s.action.href} className={`${btn.primary} mt-3`}>
             {s.action.label}
@@ -104,7 +98,8 @@ function clinicHeadline(s: RoomStatus, alerts: Alert[], posture: Result["posture
   return s;
 }
 
-export function RoomCard({ afterHours }: { afterHours?: { from: string; to: string; now: boolean } | null }) {
+/** `headingLevel` 2 where the page has its own h1 (/model). */
+export function RoomCard({ afterHours, headingLevel = 1 }: { afterHours?: { from: string; to: string; now: boolean } | null; headingLevel?: 1 | 2 }) {
   const { result, status, alerts } = useLive();
   const s = useRoomStatus();
   const today = useAlertsToday();
@@ -133,12 +128,14 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
   // An open alert outranks the calm state colour: the card must not look "all fine" under a red banner.
   const openAlert = alerts.find((a) => a.state === "open");
   const ackedAlert = alerts.find((a) => a.state === "acked");
+  // "Sensor offline" is already the headline and the alert banner: a third band says nothing new (plan F4)
+  const band = urgentBand(openAlert, ackedAlert);
   const urgent = openAlert && openAlert.level !== "low";
   const ring = urgent ? (openAlert.level === "high" ? "border-t-alert-high" : "border-t-alert-medium") : openAlert || ackedAlert ? "border-t-warn" : t.ring;
 
   return (
     <section className={`overflow-hidden rounded-card border border-line border-t-4 bg-surface shadow-sm ${ring}`} aria-label={`${roomName(status)} status`}>
-      {(urgent || ackedAlert) && (
+      {band && (
         <div className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold sm:px-5 ${urgent ? "bg-danger-soft text-danger-fg" : "bg-warn-soft text-warn-fg"}`}>
           <Icon name="alert" className="h-4 w-4 shrink-0" />
           {urgent ? `${alertTitle(openAlert.type)}: not acknowledged yet` : `${alertTitle(ackedAlert!.type)}: ${ackedAlert!.acked_by ?? "someone"} is on it`}
@@ -161,8 +158,9 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
         </span>
       </div>
       <div className="px-4 py-4 sm:px-5 sm:py-5">
-        <StateHeadline s={head} />
+        <StateHeadline s={head} level={headingLevel} />
         {schoolNote && <div className="mt-3">{schoolNote}</div>}
+        <WhereBlock />
       </div>
 
       {showFacts && result && (
@@ -184,6 +182,44 @@ export function RoomCard({ afterHours }: { afterHours?: { from: string; to: stri
         <span className="text-xs text-muted sm:ml-auto">{PROFILE_TEXT[profile].assumption}</span>
       </div>
     </section>
+  );
+}
+
+function urgentBand(open: Alert | undefined, acked: Alert | undefined): boolean {
+  if (open && open.level !== "low") return open.type !== "sensor_offline";
+  return !!acked && acked.type !== "sensor_offline";
+}
+
+/** Where in the room: the sentence (live region), the drawing, and why the distance is rough. */
+function WhereBlock() {
+  const { where, text } = useWhere();
+  const fixes = text.reasons.length && where.kind === "here" ? reasonLinks(where.reasons) : [];
+  return (
+    <div className="mt-4 border-t border-line pt-4">
+      <div aria-live="polite" className="min-h-6">
+        {/* the headline above already says nobody / not sure / not watching; only "here" adds a where */}
+        {where.kind === "here" && (
+          <p className="text-base sm:text-lg">
+            <span className="font-semibold">{text.headline}</span>
+            {text.detail && <span className="text-muted"> · {text.detail}</span>}
+          </p>
+        )}
+      </div>
+      <RoomView className="mx-auto mt-2 max-h-[42vh] sm:max-h-[60vh]" />
+      {fixes.length > 0 && (
+        <ul className="mt-2 space-y-1 text-sm text-muted">
+          <li className="text-xs font-medium text-subtle">Why the distance is only rough:</li>
+          {fixes.map((f) => (
+            <li key={f.href} className="flex flex-wrap items-baseline gap-x-2">
+              <span>{f.text}</span>
+              <Link href={f.href} className="font-medium text-link hover:underline">
+                Fix
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -380,7 +416,7 @@ const RAMP: [number, number, number][] = [
   [94, 201, 98],
   [253, 231, 37],
 ];
-function ramp(t: number): [number, number, number] {
+export function ramp(t: number): [number, number, number] {
   const x = Math.max(0, Math.min(1, t)) * (RAMP.length - 1);
   const i = Math.min(RAMP.length - 2, Math.floor(x));
   const f = x - i;
@@ -391,7 +427,7 @@ function ramp(t: number): [number, number, number] {
 
 /** The raw CSI amplitudes: "this is everything the sensor sees". */
 export function CsiCanvas({ className = "h-40" }: { className?: string }) {
-  const { buffers } = useLive();
+  const { buffers } = useLiveSlow();
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     let raf = 0;
@@ -402,7 +438,7 @@ export function CsiCanvas({ className = "h-40" }: { className?: string }) {
       if (!c || drawn === buffers.version) return;
       drawn = buffers.version;
       const rows = buffers.csi.toArray();
-      // colour range from what is on screen (2nd-98th percentile): the mock and the real engine use different dB levels
+      // colour range from what is on screen (2nd-98th percentile): dB levels depend on the room and the board gain
       const sample: number[] = [];
       for (let r = 0; r < rows.length; r += 2) for (let k = 0; k < rows[r]!.length; k += 4) sample.push(rows[r]![k]!);
       sample.sort((a, b) => a - b);

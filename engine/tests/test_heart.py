@@ -13,7 +13,8 @@ import sys
 import numpy as np
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
-from lifefi.heart import estimate_heart, summarize  # noqa: E402
+from lifefi import breathing as B  # noqa: E402
+from lifefi.heart import _still, estimate_heart, summarize  # noqa: E402
 
 failures = 0
 
@@ -91,6 +92,10 @@ check(s["valid"] <= 0.1 * s["windows"], f"no heart reported ({s['valid']}/{s['wi
 print("== a person moving")
 s = run(90, heart_bpm=70, motion=True, seed=9)
 check(s["valid"] <= 0.1 * s["windows"], f"motion blocks the estimate ({s['valid']}/{s['windows']} valid)")
+
+print("== motion check is NaN-safe")
+check(not _still(float("nan")), "a NaN band ratio fails the motion check")
+check(_still(B.MIN_BAND_RATIO) and not _still(B.MIN_BAND_RATIO - 1e-9), "threshold unchanged (>= MIN_BAND_RATIO passes)")
 
 print(f"\ntest_heart {'FAILED' if failures else 'PASSED'}: {failures} failure(s)")
 sys.exit(1 if failures else 0)

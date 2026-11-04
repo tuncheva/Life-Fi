@@ -1,27 +1,25 @@
 "use client";
 // Always-visible elements (plan-v2 §8): replay banner that cannot be dismissed,
-// connection lost, sensor silent, calibration state, warm-up / uncertain.
-// Navigation by audience (docs/plan/ui-ux.md §4.6): "Room" and "Alerts" for
-// everyone; installer pages, presentation mode and theme under "Setup".
-import { useEffect, useRef } from "react";
+// connection lost, sensor silent, warm-up / uncertain.
+// Navigation by audience (docs/plan/ui-ux.md §4.6): Room, Insights and Alerts for
+// everyone (lib/nav.ts); installer pages, presentation mode and theme under "Setup".
+// One problem, one message (B-ui-ux F4): the bars here step back when an open
+// alert already says the same thing.
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useLive, useNow, useStale } from "@/lib/live";
+import { useLiveSlow, useNow, useResult, useStale } from "@/lib/live";
+import { fetchOptional, needsSetup, readLocalSetup, type SetupResponse } from "@/lib/setup";
 import { useSound } from "@/lib/sound";
 import { applyTheme, type Theme } from "@/lib/theme";
 import { useThemeChoice } from "@/lib/useTheme";
-import { roomName, calibrationText, duration } from "@/lib/words";
+import { MAIN_NAV, SETUP_NAV, isActive } from "@/lib/nav";
+import { roomName, duration } from "@/lib/words";
 import { Icon, Pill } from "./ui";
 
-const SETUP: { href: string; label: string; hint: string }[] = [
-  { href: "/calibrate/", label: "Calibration", hint: "Teach it the empty room" },
-  { href: "/source/", label: "Source & replay", hint: "Live sensor or a recording" },
-  { href: "/label/", label: "Labelling", hint: "Record training sessions" },
-  { href: "/settings/", label: "Settings", hint: "Phone alerts, profile, PIN" },
-];
-
 export function SystemBanners() {
-  const { connected, result, status, alerts } = useLive();
+  const { connected, status, alerts } = useLiveSlow();
+  const result = useResult();
   const stale = useStale(result);
   const now = useNow();
   const replay = (status?.source.mode ?? result?.source) === "replay";
@@ -37,7 +35,8 @@ export function SystemBanners() {
       )}
       {connected && status?.engine.connected && status.source.state === "error" && (
         <div className={`${bar} bg-danger text-white`} role="alert">
-          Can&apos;t read the sensor board{status.source.error ? `: ${status.source.error}` : ""}. Trying again every few seconds…
+          Can&apos;t read the sensor board{status.source.error ? `: ${status.source.error}` : ""}
+          {/[.?!]$/.test(status.source.error ?? "") ? "" : "."} Trying again every few seconds…
         </div>
       )}
       {!connected && status && (
@@ -45,7 +44,7 @@ export function SystemBanners() {
           Can&apos;t reach the Life-Fi box. Reconnecting…
         </div>
       )}
-      {connected && status && !status.engine.connected && (
+      {connected && status && !status.engine.connected && !offlineAlert && (
         <div className={`${bar} bg-danger text-white`} role="alert">
           The sensor software is not running. The room is not being watched.
         </div>
@@ -59,19 +58,103 @@ export function SystemBanners() {
   );
 }
 
-export function TopBar() {
-  const { connected, result, status, alerts } = useLive();
+/** The one always-visible status word, a leaf so the header does not re-render with every result. */
+function StatusPills() {
+  const { connected, status } = useLiveSlow();
+  const result = useResult();
   const stale = useStale(result);
+  const replay = (status?.source.mode ?? result?.source) === "replay";
+  return (
+    <>
+      {!connected && !status ? (
+        <Pill tone="neutral" dot>
+          Connecting…
+        </Pill>
+      ) : !connected ? (
+        <Pill tone="danger" dot>
+          Offline
+        </Pill>
+      ) : status && (!status.engine.connected || status.server.sensor_offline || stale || status.source.state === "error") ? (
+        <Pill tone="danger" dot title="No readings from the sensor">
+          Sensor offline
+        </Pill>
+      ) : replay ? (
+        <Pill tone="replay" dot>
+          Replay
+        </Pill>
+      ) : (
+        <Pill tone="ok" dot title="Showing the room as it is now">
+          Live
+        </Pill>
+      )}
+      {result?.health.warmup && (
+        <Pill tone="warn" title="Just restarted. Nothing can be detected for a few seconds.">
+          Starting up
+        </Pill>
+      )}
+      {result?.presence.state === "uncertain" && !result.health.warmup && <Pill tone="uncertain">Presence unclear</Pill>}
+    </>
+  );
+}
+
+function subscribeLocalSetup(cb: () => void): () => void {
+  window.addEventListener("lifefi-setup", cb);
+  window.addEventListener("storage", cb);
+  return () => {
+    window.removeEventListener("lifefi-setup", cb);
+    window.removeEventListener("storage", cb);
+  };
+}
+
+/**
+ * "Finish setup" while the room is not set up: the server's GET /setup when it
+ * exists, else this browser's record of /setup and the calibration state.
+ * Fetched on mount and when the calibration state, the engine link or the source changes, never on a timer.
+ */
+function FinishSetupPill() {
+  const { status } = useLiveSlow();
+  const calibration = status?.engine.status?.calibration.state ?? null;
+  const engineUp = status?.engine.connected ?? false;
+  const source = status?.source.mode ?? null;
+  const localDone = useSyncExternalStore(subscribeLocalSetup, () => readLocalSetup() !== null, () => true);
+  const [setup, setSetup] = useState<SetupResponse | null>(null);
+  useEffect(() => {
+    let live = true;
+    void fetchOptional<SetupResponse>("/setup").then((s) => {
+      if (live) setSetup(s);
+    });
+    return () => {
+      live = false;
+    };
+  }, [calibration, localDone, engineUp, source]);
+  // Nothing to say before the box answered at all.
+  if (!status || !needsSetup({ setup, localDone, calibration })) return null;
+  return (
+    <Link href="/setup" className="inline-flex min-h-8 items-center gap-1 rounded-full bg-warn-soft px-2.5 py-1 text-xs font-semibold text-warn-fg hover:opacity-90">
+      Finish setup
+      <Icon name="chevron" className="h-3.5 w-3.5" />
+    </Link>
+  );
+}
+
+export function TopBar() {
+  const { status, alerts } = useLiveSlow();
   const path = usePathname();
   const theme = useThemeChoice();
   const sound = useSound();
   const menu = useRef<HTMLDetailsElement>(null);
-  // Close the Setup menu on a click outside it or on Escape.
+  const summary = useRef<HTMLElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Close the Setup menu on a click outside it or on Escape (focus goes back to "Setup").
   useEffect(() => {
     const close = (e: Event) => {
       const m = menu.current;
       if (!m?.open) return;
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !m.contains(e.target as Node)) m.open = false;
+      if (e instanceof KeyboardEvent) {
+        if (e.key !== "Escape") return;
+        m.open = false;
+        summary.current?.focus();
+      } else if (!m.contains(e.target as Node)) m.open = false;
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", close);
@@ -80,99 +163,93 @@ export function TopBar() {
       document.removeEventListener("keydown", close);
     };
   }, []);
+  // Close it on any route change too (back button, a link on the page); a DOM
+  // property, not state: onToggle keeps menuOpen in sync.
+  useEffect(() => {
+    if (menu.current) menu.current.open = false;
+  }, [path]);
   // Presentation mode draws its own header and banners.
   if (path.startsWith("/present")) return null;
 
-  const replay = (status?.source.mode ?? result?.source) === "replay";
-  const calState = result?.calibration ?? status?.engine.status?.calibration ?? null;
-  const cal = calibrationText(calState);
   const open = alerts.filter((a) => a.state === "open" && a.level !== "low").length;
-  const onSetup = SETUP.some((s) => path.startsWith(s.href.replace(/\/$/, "")));
+  const onSetup = SETUP_NAV.some((s) => isActive(s.href, path));
   const closeMenu = () => {
     if (menu.current) menu.current.open = false;
   };
 
+  // Phones: icon above a small label; from sm: icon and label in a row.
   const navCls = (active: boolean) =>
-    `relative inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${active ? "bg-fg text-bg" : "text-muted hover:bg-surface-2 hover:text-fg"}`;
+    `relative inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1 text-[11px] font-medium sm:flex-row sm:gap-1.5 sm:px-3 sm:py-2 sm:text-sm ${active ? "bg-fg text-bg" : "text-muted hover:bg-surface-2 hover:text-fg"}`;
+  const badgeCls = "rounded-full bg-alert-high px-1.5 text-xs font-bold text-alert-fg";
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
       <SystemBanners />
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
-        <Link href="/" className="flex items-center gap-2" aria-label={`Life-Fi, ${roomName(status)}`}>
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5">
+        <Link href="/" className="flex min-h-11 items-center gap-2" aria-label={`Life-Fi, ${roomName(status)}`}>
           <span aria-hidden className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-fg">
             <Icon name="wave" className="h-5 w-5" />
           </span>
-          <span className="text-lg font-bold tracking-tight">Life-Fi</span>
+          <span className="text-lg font-bold tracking-tight max-[359px]:sr-only">Life-Fi</span>
           <span className="hidden text-sm text-muted sm:inline">· {roomName(status)}</span>
         </Link>
 
         {/* Always-visible status (plan-v2 §8), in words. On phones this is its own row. */}
-        <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-1.5 sm:order-none sm:w-auto sm:flex-1">
-          {!connected && !status ? (
-            <Pill tone="neutral" dot>
-              Connecting…
-            </Pill>
-          ) : !connected ? (
-            <Pill tone="danger" dot>
-              Offline
-            </Pill>
-          ) : status && (!status.engine.connected || status.server.sensor_offline || stale) ? (
-            <Pill tone="danger" dot title="No readings from the sensor">
-              Sensor offline
-            </Pill>
-          ) : replay ? (
-            <Pill tone="replay" dot>
-              Replay
-            </Pill>
-          ) : (
-            <Pill tone="ok" dot title="Showing the room as it is now">
-              Live
-            </Pill>
-          )}
-          {result?.health.warmup && (
-            <Pill tone="warn" title="Just restarted. Nothing can be detected for a few seconds.">
-              Starting up
-            </Pill>
-          )}
-          {result?.presence.state === "uncertain" && !result.health.warmup && <Pill tone="uncertain">Presence unclear</Pill>}
-          {calState && (
-            <Link href="/calibrate/" className={cal.tone === "ok" ? "hidden sm:inline-flex" : "inline-flex"} title="Empty-room calibration">
-              <Pill tone={cal.tone}>{cal.text}</Pill>
-            </Link>
-          )}
+        <div className="order-last flex w-full min-w-0 flex-wrap items-center gap-1.5 pb-1 sm:order-none sm:w-auto sm:flex-1 sm:pb-0">
+          <StatusPills />
+          <FinishSetupPill />
         </div>
 
         <nav aria-label="Main" className="ml-auto flex items-center gap-1">
-          <Link href="/" className={navCls(path === "/")} aria-current={path === "/" ? "page" : undefined}>
-            Room
-          </Link>
-          <Link href="/alerts/" className={navCls(path.startsWith("/alerts"))} aria-current={path.startsWith("/alerts") ? "page" : undefined}>
-            Alerts
-            {open > 0 && (
-              <span className="rounded-full bg-alert-high px-1.5 text-xs font-bold text-alert-fg" aria-label={`${open} open`}>
-                {open}
-              </span>
-            )}
-          </Link>
-          <Link href="/emergency/" className={navCls(path.startsWith("/emergency"))} aria-current={path.startsWith("/emergency") ? "page" : undefined}>
-            Emergency
-          </Link>
-          <details ref={menu} className="relative">
-            <summary className={navCls(onSetup)} aria-label="Setup menu">
-              <Icon name="settings" className="h-4 w-4" />
-              <span className="hidden sm:inline">Setup</span>
+          {MAIN_NAV.map((item) => {
+            const here = isActive(item.href, path);
+            const badge = item.href === "/alerts" && open > 0;
+            return (
+              <Link key={item.href} href={item.href} className={navCls(here)} aria-current={here ? "page" : undefined}>
+                <span className="relative">
+                  {item.icon && <Icon name={item.icon} className="h-5 w-5" />}
+                  {badge && (
+                    <span aria-hidden className={`${badgeCls} absolute -right-2.5 -top-1.5 sm:hidden`}>
+                      {open}
+                    </span>
+                  )}
+                </span>
+                {item.label}
+                {badge && (
+                  <>
+                    <span aria-hidden className={`${badgeCls} hidden sm:inline`}>
+                      {open}
+                    </span>
+                    <span className="sr-only">, {open} open</span>
+                  </>
+                )}
+              </Link>
+            );
+          })}
+          <details ref={menu} className="relative" onToggle={(e) => setMenuOpen(e.currentTarget.open)}>
+            <summary ref={summary} className={`${navCls(onSetup)} cursor-pointer list-none [&::-webkit-details-marker]:hidden`} aria-label="Setup menu" aria-expanded={menuOpen}>
+              <Icon name="settings" className="h-5 w-5" />
+              <span aria-hidden>Setup</span>
             </summary>
-            <div className="absolute right-0 z-30 mt-2 w-64 rounded-card border border-line bg-surface p-1.5 shadow-xl">
+            <div className="absolute right-0 z-30 mt-2 max-h-[min(80vh,40rem)] w-[min(18rem,calc(100vw-2rem))] overflow-y-auto rounded-card border border-line bg-surface p-1.5 shadow-xl">
               <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-subtle">For installers</p>
-              {SETUP.map((s) => (
-                <Link key={s.href} href={s.href} onClick={closeMenu} className="block rounded-lg px-3 py-2 hover:bg-surface-2">
-                  <span className="block text-sm font-medium">{s.label}</span>
-                  <span className="block text-xs text-muted">{s.hint}</span>
-                </Link>
-              ))}
+              {SETUP_NAV.map((s) => {
+                const here = isActive(s.href, path);
+                return (
+                  <Link
+                    key={s.href}
+                    href={s.href}
+                    onClick={closeMenu}
+                    aria-current={here ? "page" : undefined}
+                    className={`flex min-h-11 flex-col justify-center rounded-lg px-3 py-1.5 hover:bg-surface-2 ${here ? "bg-surface-2" : ""}`}
+                  >
+                    <span className="block text-sm font-medium">{s.label}</span>
+                    <span className="block text-xs text-muted">{s.hint}</span>
+                  </Link>
+                );
+              })}
               <div className="my-1.5 border-t border-line" />
-              <Link href="/present/" onClick={closeMenu} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-surface-2">
+              <Link href="/present" onClick={closeMenu} className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-surface-2">
                 <Icon name="monitor" className="h-4 w-4" /> Presentation mode
               </Link>
               <div className="px-3 pb-1.5 pt-2">
@@ -205,6 +282,5 @@ export function TopBar() {
 }
 
 function btnSeg(on: boolean): string {
-  return `rounded-md px-2 py-1 text-xs font-medium ${on ? "bg-surface text-fg shadow-sm" : "text-muted"}`;
+  return `min-h-11 rounded-md px-2 py-1 text-xs font-medium ${on ? "bg-surface text-fg shadow-sm" : "text-muted"}`;
 }
-
